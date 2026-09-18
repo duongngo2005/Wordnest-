@@ -11,6 +11,10 @@ import {
   StoryLength,
   StoryTopic,
 } from "@/lib/validation/story";
+import {
+  aiExtractedVocabularyResponseSchema,
+  ExtractedVocabularyItem,
+} from "@/lib/validation/document";
 import { normalizeTerm } from "@/services/vocabulary/parser";
 
 export interface AIService {
@@ -26,6 +30,10 @@ export interface AIService {
     surroundingSentence: string;
     context?: string;
   }): Promise<ContextualTranslationResponse>;
+  extractVocabularyFromText(
+    text: string,
+    options?: { maxTerms?: number; cefrTarget?: string }
+  ): Promise<ExtractedVocabularyItem[]>;
 }
 
 // Built-in educational dictionary for core terms and offline fallback
@@ -494,6 +502,159 @@ You MUST respond strictly with a valid JSON object matching this schema:
       cefr: curated?.cefr || "B1",
     };
   }
+
+  /**
+   * Extracts key vocabulary words, academic terms, and idioms from document text.
+   */
+  async extractVocabularyFromText(
+    text: string,
+    options?: { maxTerms?: number; cefrTarget?: string }
+  ): Promise<ExtractedVocabularyItem[]> {
+    if (!text || text.trim().length === 0) {
+      return [];
+    }
+
+    const maxTerms = options?.maxTerms || 25;
+
+    if (!this.apiKey) {
+      console.warn("GEMINI_API_KEY is not set; using local intelligent document extractor fallback.");
+      return this.generateFallbackExtractedVocabulary(text, maxTerms);
+    }
+
+    const prompt = `You are an expert English language educator and lexicographer for Vietnamese learners.
+Analyze the following English text and extract the top ${maxTerms} most valuable vocabulary items (words, phrasal verbs, academic terms, and collocations) that an English learner should study.
+
+For each extracted item:
+- term: the base dictionary form (e.g. "meticulous", "reluctant", "take responsibility")
+- meaning: natural, accurate Vietnamese meaning
+- cefr: estimated CEFR level ("A1" | "A2" | "B1" | "B2" | "C1" | "C2")
+- frequency: the exact or estimated count of how many times this term or its close inflection appears in the text (integer >= 1)
+- originalSentence: an exact sentence from the provided text where this term is used.
+
+Text to analyze:
+"""
+${text.slice(0, 15000)}
+"""
+
+You MUST respond strictly with a valid JSON array of objects matching this schema:
+[
+  {
+    "term": "string",
+    "meaning": "string",
+    "cefr": "A1" | "A2" | "B1" | "B2" | "C1" | "C2",
+    "frequency": 1,
+    "originalSentence": "string"
+  }
+]`;
+
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.2,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Gemini extract vocabulary HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawText) throw new Error("No vocabulary extracted by AI");
+
+      const parsed = JSON.parse(rawText);
+      const validated = aiExtractedVocabularyResponseSchema.safeParse(parsed);
+
+      if (!validated.success) {
+        throw new Error("Invalid vocabulary extraction schema from AI");
+      }
+
+      return validated.data;
+    } catch (err) {
+      console.warn("Document vocabulary extraction AI failed, using fallback:", err);
+      return this.generateFallbackExtractedVocabulary(text, maxTerms);
+    }
+  }
+
+  /**
+   * Heuristic fallback for extracting key vocabulary from text when offline.
+   */
+  private generateFallbackExtractedVocabulary(
+    text: string,
+    maxTerms = 25
+  ): ExtractedVocabularyItem[] {
+    const STOP_WORDS = new Set([
+      "the", "and", "that", "with", "from", "have", "this", "they", "will", "would",
+      "there", "their", "about", "which", "when", "make", "time", "know", "take", "people",
+      "into", "year", "your", "good", "some", "could", "them", "other", "than", "then",
+      "now", "look", "only", "come", "its", "over", "think", "also", "back", "after",
+      "use", "two", "how", "our", "work", "first", "well", "way", "even", "new",
+      "want", "because", "any", "these", "give", "day", "most", "us", "are", "were",
+      "been", "being", "has", "had", "does", "done", "what", "where", "who", "whom",
+      "why", "here", "just", "such", "through", "more", "very", "much", "many"
+    ]);
+
+    // Split into sentences
+    const rawSentences = text
+      .split(/(?<=[.?!])\s+|\n+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 15);
+
+    // Tokenize words
+    const wordCounts = new Map<string, number>();
+    const tokens = text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || [];
+
+    for (const rawToken of tokens) {
+      const lower = rawToken.toLowerCase();
+      if (lower.length >= 4 && !STOP_WORDS.has(lower)) {
+        wordCounts.set(lower, (wordCounts.get(lower) || 0) + 1);
+      }
+    }
+
+    // Sort by frequency desc, then length desc
+    const sortedWords = Array.from(wordCounts.entries())
+      .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+      .slice(0, maxTerms);
+
+    const items: ExtractedVocabularyItem[] = [];
+
+    for (const [word, frequency] of sortedWords) {
+      const curated = CURATED_DICTIONARY[word];
+      const meaning = curated ? curated.meaningVi : `Nghĩa của từ "${word}"`;
+      const cefr = curated?.cefr || (word.length > 8 ? "B2" : "B1");
+
+      // Find sentence containing this word
+      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const wordRegex = new RegExp(`\\b${escaped}\\b`, "i");
+      const foundSentence = rawSentences.find((s) => wordRegex.test(s));
+
+      const originalSentence = foundSentence || `This is an example sentence using the word ${word}.`;
+
+      items.push({
+        term: word,
+        meaning,
+        cefr: (["A1", "A2", "B1", "B2", "C1", "C2"].includes(cefr) ? cefr : "B1") as
+          | "A1"
+          | "A2"
+          | "B1"
+          | "B2"
+          | "C1"
+          | "C2",
+        frequency,
+        originalSentence,
+      });
+    }
+
+    return items;
+  }
 }
+
 
 export const aiService = new GeminiAIService();

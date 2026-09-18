@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { parseVocabularyInput, MAX_VOCABULARY_TERMS } from "@/services/vocabulary/parser";
-import { Sparkles, BookOpen, AlertCircle, Loader2 } from "lucide-react";
+import { Sparkles, BookOpen, AlertCircle, Loader2, FileUp } from "lucide-react";
 import { WordNestMascot } from "../ui/Mascot";
 
 const SAMPLE_INPUT = "apple; resilient; take responsibility; cloud computing; reluctant";
@@ -79,13 +80,23 @@ export function BulkInputForm() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleFillSample}
-          className="text-xs font-bold px-3 py-1.5 rounded-lg border-2 border-[#221C16] bg-[#FEF3C7] hover:bg-[#FDE68A] text-[#92400E] shadow-[2px_2px_0px_#221C16] active:translate-y-0.5 transition-all"
-        >
-          Nhập mẫu thử nghiệm
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href="/import"
+            className="text-xs font-bold px-3 py-1.5 rounded-lg border-2 border-[#221C16] bg-[#E0F2FE] hover:bg-[#BAE6FD] text-[#0369A1] shadow-[2px_2px_0px_#221C16] active:translate-y-0.5 transition-all flex items-center gap-1.5"
+          >
+            <FileUp className="w-3.5 h-3.5" />
+            <span>Nhập từ PDF / Word / TXT</span>
+          </Link>
+
+          <button
+            type="button"
+            onClick={handleFillSample}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg border-2 border-[#221C16] bg-[#FEF3C7] hover:bg-[#FDE68A] text-[#92400E] shadow-[2px_2px_0px_#221C16] active:translate-y-0.5 transition-all"
+          >
+            Nhập mẫu
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
