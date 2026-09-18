@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+:root {
+  --bg-vintage: #FAF6EE;
+  --bg-card: #FFFDF9;
+  --ink: #221C16;
+  --ink-muted: #6B6258;
+  --brick-orange: #E06B43;
+  --brick-orange-dark: #C2410C;
+  --warm-gold: #F59E0B;
+  --sage-teal: #0D9488;
+  --brick-border: 2.5px solid #221C16;
+}
+
+body {
+  background-color: var(--bg-vintage);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Tactile Retro-Toy Brick Shadows & Buttons */
+.brick-card {
+  background-color: var(--bg-card);
+  border: 2.5px solid var(--ink);
+  box-shadow: 4px 4px 0px var(--ink);
+  border-radius: 14px;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.brick-card-sm {
+  background-color: var(--bg-card);
+  border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0px var(--ink);
+  border-radius: 10px;
+}
+
+.brick-button-primary {
+  background-color: var(--brick-orange);
+  color: #FFFFFF;
+  font-weight: 700;
+  border: 2.5px solid var(--ink);
+  box-shadow: 3.5px 3.5px 0px var(--ink);
+  border-radius: 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.08s ease-in-out;
+  user-select: none;
+  cursor: pointer;
+}
+
+.brick-button-primary:hover:not(:disabled) {
+  background-color: #EA580C;
+  transform: translate(-1px, -1px);
+  box-shadow: 4.5px 4.5px 0px var(--ink);
+}
+
+.brick-button-primary:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1.5px 1.5px 0px var(--ink);
+}
+
+.brick-button-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: 2px 2px 0px var(--ink);
+}
+
+.brick-button-secondary {
+  background-color: #FEF3C7;
+  color: var(--ink);
+  font-weight: 700;
+  border: 2.5px solid var(--ink);
+  box-shadow: 3px 3px 0px var(--ink);
+  border-radius: 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.08s ease-in-out;
+  user-select: none;
+  cursor: pointer;
+}
+
+.brick-button-secondary:hover:not(:disabled) {
+  background-color: #FDE68A;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px var(--ink);
+}
+
+.brick-button-secondary:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px var(--ink);
+}
+
+.brick-button-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.brick-button-success {
+  background-color: #10B981;
+  color: #FFFFFF;
+  font-weight: 700;
+  border: 2.5px solid var(--ink);
+  box-shadow: 3.5px 3.5px 0px var(--ink);
+  border-radius: 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.08s ease-in-out;
+  cursor: pointer;
+}
+
+.brick-button-success:hover:not(:disabled) {
+  background-color: #059669;
+  transform: translate(-1px, -1px);
+  box-shadow: 4.5px 4.5px 0px var(--ink);
+}
+
+.brick-button-success:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1.5px 1.5px 0px var(--ink);
+}
+
+.brick-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+/* Audio speaker pulse animation */
+@keyframes audioPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+.speaking-pulse {
+  animation: audioPulse 0.8s infinite ease-in-out;
+}

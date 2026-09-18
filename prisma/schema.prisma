@@ -1,0 +1,50 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum FlashcardStatus {
+  NEW
+  LEARNING
+  KNOWN
+}
+
+model Deck {
+  id          String      @id @default(cuid())
+  name        String
+  description String?     @db.Text
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  cards       Flashcard[]
+
+  @@map("decks")
+}
+
+model Flashcard {
+  id               String          @id @default(cuid())
+  deckId           String
+  deck             Deck            @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  term             String
+  normalizedTerm   String
+  meaningVi        String          @db.Text
+  definitionEn     String          @db.Text
+  ipa              String?
+  partOfSpeech     String?
+  cefr             String?
+  exampleEn        String          @db.Text
+  exampleVi        String          @db.Text
+  imageUrl         String?         @db.Text
+  imageSource      String?
+  imageSearchQuery String?
+  status           FlashcardStatus @default(NEW)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([deckId, normalizedTerm])
+  @@index([deckId])
+  @@map("flashcards")
+}
