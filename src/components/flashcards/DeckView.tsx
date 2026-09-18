@@ -12,6 +12,7 @@ import {
   Filter,
   Layers,
   BookOpen,
+  HelpCircle,
 } from "lucide-react";
 import { WordNestMascot } from "../ui/Mascot";
 
@@ -173,6 +174,14 @@ export function DeckView({ initialDeck }: DeckViewProps) {
             >
               <BookOpen className="w-4 h-4 text-[#E06B43]" />
               <span>Short Story</span>
+            </Link>
+
+            <Link
+              href={`/decks/${deck.id}/quiz`}
+              className="brick-button-secondary px-4 sm:px-5 py-3 text-xs sm:text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16] bg-[#FEF3C7] text-[#92400E] hover:bg-[#FDE68A]"
+            >
+              <HelpCircle className="w-4 h-4 text-[#B45309]" />
+              <span>Quiz (Trắc nghiệm)</span>
             </Link>
 
             <Link

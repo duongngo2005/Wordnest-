@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { WordNestMascot } from "./Mascot";
+import { BarChart3, PlusCircle } from "lucide-react";
 
 export function Header() {
   return (
@@ -28,12 +29,21 @@ export function Header() {
           </div>
         </Link>
 
-        <nav className="flex items-center gap-2">
+        <nav className="flex items-center gap-1.5 sm:gap-2">
+          <Link
+            href="/progress"
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-[#221C16] px-2.5 sm:px-3 py-1.5 rounded-lg border-2 border-transparent hover:border-[#221C16] hover:bg-[#FEF3C7] transition-all"
+          >
+            <BarChart3 className="w-4 h-4 text-[#E06B43]" />
+            <span>Tiến độ</span>
+          </Link>
+
           <Link
             href="/"
-            className="text-xs sm:text-sm font-bold text-[#221C16] px-3 py-1.5 rounded-lg border-2 border-transparent hover:border-[#221C16] hover:bg-[#FEF3C7] transition-all"
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-[#221C16] px-2.5 sm:px-3 py-1.5 rounded-lg border-2 border-[#221C16] bg-[#FAF6EE] hover:bg-[#FEF3C7] transition-all shadow-[2px_2px_0px_#221C16]"
           >
-            Tạo thẻ mới
+            <PlusCircle className="w-4 h-4 text-[#221C16]" />
+            <span>Tạo thẻ</span>
           </Link>
         </nav>
       </div>
