@@ -11,6 +11,7 @@ import {
   Trash2,
   Filter,
   Layers,
+  BookOpen,
 } from "lucide-react";
 import { WordNestMascot } from "../ui/Mascot";
 
@@ -164,14 +165,24 @@ export function DeckView({ initialDeck }: DeckViewProps) {
             )}
           </div>
 
-          {/* Big Study Button */}
-          <Link
-            href={`/decks/${deck.id}/study`}
-            className="brick-button-primary px-6 py-3.5 text-sm sm:text-base font-black gap-2 shrink-0 shadow-[4px_4px_0px_#221C16]"
-          >
-            <GraduationCap className="w-5 h-5" />
-            <span>Study (Bắt đầu học)</span>
-          </Link>
+          {/* Actions: Short Story and Study */}
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+            <Link
+              href={`/decks/${deck.id}/story`}
+              className="brick-button-secondary px-4 sm:px-5 py-3 text-xs sm:text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16]"
+            >
+              <BookOpen className="w-4 h-4 text-[#E06B43]" />
+              <span>Short Story</span>
+            </Link>
+
+            <Link
+              href={`/decks/${deck.id}/study`}
+              className="brick-button-primary px-5 sm:px-6 py-3 text-xs sm:text-sm font-black gap-2 shadow-[3.5px_3.5px_0px_#221C16]"
+            >
+              <GraduationCap className="w-4 h-4" />
+              <span>Study (Bắt đầu học)</span>
+            </Link>
+          </div>
         </div>
 
         {/* Deck Status Counters & Filter Bar */}

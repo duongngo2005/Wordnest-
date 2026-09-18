@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "npx tsx scripts/verify-phase1.ts",
+    "verify:phase2": "npx tsx scripts/verify-phase2.ts",
     "db:push": "prisma db push",
     "db:generate": "prisma generate"
   },

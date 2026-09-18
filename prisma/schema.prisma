@@ -20,6 +20,7 @@ model Deck {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   cards       Flashcard[]
+  stories     Story[]
 
   @@map("decks")
 }
@@ -47,4 +48,21 @@ model Flashcard {
   @@unique([deckId, normalizedTerm])
   @@index([deckId])
   @@map("flashcards")
+}
+
+model Story {
+  id          String   @id @default(cuid())
+  deckId      String
+  deck        Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  title       String
+  content     String   @db.Text
+  cefr        String
+  length      String
+  topic       String
+  targetWords Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([deckId])
+  @@map("stories")
 }
