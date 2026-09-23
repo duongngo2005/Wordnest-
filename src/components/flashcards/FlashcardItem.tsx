@@ -424,7 +424,7 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
 
   return (
     <article
-      className="wn-vocabulary-card flex flex-col justify-between overflow-hidden p-4 sm:p-5"
+      className="wn-vocabulary-card relative flex flex-col justify-between overflow-visible p-4 sm:p-5 focus-within:z-30"
       aria-label={`Thẻ từ vựng: ${card.term}`}
     >
       <div>
@@ -443,14 +443,21 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
 
           <div className="flex shrink-0 items-center gap-1">
             <PronounceButton text={card.term} label="Nghe" size="sm" />
-            <details className="relative">
+            <details className="relative wn-menu-details">
               <summary
                 aria-label={`Tùy chọn cho ${card.term}`}
                 className="wn-button wn-button-quiet wn-icon-button cursor-pointer list-none"
               >
                 <MoreHorizontal className="h-5 w-5 text-[#6B6258]" />
               </summary>
-              <div className="absolute right-0 z-20 mt-1.5 grid w-40 gap-1 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-1.5 shadow-[3px_3px_0px_#221C16]">
+              <div
+                className="fixed inset-0 z-40 cursor-default"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                }}
+              />
+              <div className="absolute right-0 top-full z-50 mt-1.5 grid w-40 gap-1 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-1.5 shadow-[3px_3px_0px_#221C16]">
                 <button
                   type="button"
                   onClick={startEdit}

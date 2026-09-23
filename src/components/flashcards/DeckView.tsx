@@ -148,8 +148,8 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
       </Link>
 
       {/* Deck Header Card */}
-      <section className="wn-primary-surface overflow-hidden bg-[#FFFDF9]" aria-labelledby="deck-name">
-        <div className="flex items-center justify-between border-b-2 border-dashed border-[#C9BFB1] bg-[#F4EFE6] px-4 py-2.5 sm:px-5">
+      <section className="wn-primary-surface relative overflow-visible bg-[#FFFDF9] focus-within:z-30" aria-labelledby="deck-name">
+        <div className="flex items-center justify-between rounded-t-[calc(var(--radius-lg)-2px)] border-b-2 border-dashed border-[#C9BFB1] bg-[#F4EFE6] px-4 py-2.5 sm:px-5">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
               <Layers className="h-4 w-4 text-[#D97706]" strokeWidth={2.5} />
@@ -159,14 +159,21 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
             </span>
           </div>
 
-          <details className="relative">
+          <details className="relative wn-menu-details">
             <summary
               aria-label="Thêm tùy chọn"
               className="flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
             >
               <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
             </summary>
-            <div className="absolute right-0 z-30 mt-2 grid w-52 gap-1 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
+            <div
+              className="fixed inset-0 z-40 cursor-default"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.currentTarget.closest("details")?.removeAttribute("open");
+              }}
+            />
+            <div className="absolute right-0 top-full z-50 mt-1.5 grid w-52 gap-1 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
               <a
                 href={`/api/decks/${deck.id}/export`}
                 download

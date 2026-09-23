@@ -50,7 +50,7 @@ function DeckRow({
   const summary = isDue ? `${deck.dueTodayCount} thẻ cần ôn` : `${deck.totalCards} thẻ`;
 
   return (
-    <li className="wn-tile flex min-w-0 flex-col justify-between gap-4 p-3.5">
+    <li className="wn-tile relative flex min-w-0 flex-col justify-between gap-4 p-3.5 overflow-visible focus-within:z-30">
       <Link
         href={`/decks/${deck.id}`}
         className="group flex min-w-0 items-start gap-3 rounded-lg p-0.5 transition-transform active:translate-x-0.5"
@@ -80,14 +80,21 @@ function DeckRow({
           Ôn tập
         </Link>
 
-        <details className="relative">
+        <details className="relative wn-menu-details">
           <summary
             aria-label={`Tùy chọn cho ${deck.name}`}
             className="wn-icon-button flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
           >
             <MoreHorizontal className="h-4 w-4 text-[#6B6258]" aria-hidden="true" />
           </summary>
-          <div className="absolute right-0 z-20 mt-2 w-56 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-3 shadow-[3px_3px_0px_#221C16]">
+          <div
+            className="fixed inset-0 z-40 cursor-default"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.currentTarget.closest("details")?.removeAttribute("open");
+            }}
+          />
+          <div className="absolute right-0 top-full z-50 mt-1.5 w-56 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-3 shadow-[3px_3px_0px_#221C16]">
             <label className="wn-field-label">
               <span>Chuyển bộ sưu tập</span>
               <select
@@ -452,9 +459,13 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
             : `${folder.progress.deckCount} bộ từ`;
 
           return (
-            <article key={folder.id} className="wn-primary-surface overflow-hidden bg-[#FFFDF9]">
+            <article key={folder.id} className="wn-primary-surface relative overflow-visible bg-[#FFFDF9] focus-within:z-30">
               {/* Folder Top Bar */}
-              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 border-b-2 border-[#221C16] bg-[#FEF3C7] p-3 sm:px-4">
+              <div
+                className={`grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-t-[calc(var(--radius-lg)-2px)] bg-[#FEF3C7] p-3 sm:px-4 ${
+                  isExpanded ? "border-b-2 border-[#221C16]" : "rounded-b-[calc(var(--radius-lg)-2px)]"
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() =>
@@ -508,14 +519,21 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
                   <span>Bộ từ</span>
                 </button>
 
-                <details className="relative">
+                <details className="relative wn-menu-details">
                   <summary
                     aria-label={`Tùy chọn cho ${folder.name}`}
                     className="wn-icon-button flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
                   >
                     <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
                   </summary>
-                  <div className="absolute right-0 z-20 mt-2 w-48 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
+                  <div
+                    className="fixed inset-0 z-40 cursor-default"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.currentTarget.closest("details")?.removeAttribute("open");
+                    }}
+                  />
+                  <div className="absolute right-0 top-full z-50 mt-1.5 w-48 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
                     <button
                       type="button"
                       onClick={() => openFolderComposer(folder)}

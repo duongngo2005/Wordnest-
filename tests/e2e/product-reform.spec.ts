@@ -31,6 +31,31 @@ test("keeps collection and empty-deck creation actions visible", async ({ page }
   await expect(page.getByText("Hàng loạt", { exact: true })).toHaveCount(0);
 });
 
+test("keeps the collection overflow menu visible outside its card", async ({ page }, testInfo) => {
+  const folder = await db.folder.create({
+    data: { name: `Overflow ${testInfo.testId}`, normalizedName: `overflow-${testInfo.testId}`.toLowerCase() },
+  });
+
+  try {
+    await page.setViewportSize({ width: 430, height: 932 });
+    await page.goto("/");
+    await page.getByLabel(`Tùy chọn cho ${folder.name}`).click();
+    const renameButton = page.getByRole("button", { name: "Đổi tên" });
+    await expect(renameButton).toBeVisible();
+    await expect
+      .poll(() =>
+        renameButton.evaluate((button) => {
+          const bounds = button.getBoundingClientRect();
+          const target = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+          return target === button || button.contains(target);
+        })
+      )
+      .toBe(true);
+  } finally {
+    await db.folder.deleteMany({ where: { id: folder.id } });
+  }
+});
+
 test("shows an AI preview before persistence and keeps failed generation non-destructive", async ({ page }, testInfo) => {
   const deck = await db.deck.create({ data: { name: `AI preview ${testInfo.testId}` } });
   deckId = deck.id;

@@ -440,6 +440,20 @@ summary { list-style: none; }
 
 .wn-mobile-nav { display: flex; gap: var(--space-3xs); }
 
+/* Dropdown Menu Stacking Context Fix */
+article:has(.wn-menu-details[open]),
+li:has(.wn-menu-details[open]),
+section:has(.wn-menu-details[open]),
+div:has(> .wn-menu-details[open]) {
+  position: relative;
+  z-index: 40 !important;
+}
+
+.wn-menu-details[open] {
+  position: relative;
+  z-index: 50 !important;
+}
+
 /* Animations */
 @keyframes audioPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
 .speaking-pulse { animation: audioPulse .8s infinite ease-in-out; }
