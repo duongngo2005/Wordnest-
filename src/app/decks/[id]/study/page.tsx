@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Header } from "@/components/ui/Header";
 import { StudyMode } from "@/components/study/StudyMode";
 import { deckService } from "@/services/vocabulary";
+import { fsrsService } from "@/services/fsrs";
 
 export const revalidate = 0;
 
@@ -17,6 +18,7 @@ export default async function StudyPage({ params }: StudyPageProps) {
   if (!deck) {
     notFound();
   }
+  const reviewQueue = await fsrsService.getReviewQueue({ deckId: deck.id });
 
   return (
     <div className="min-h-screen bg-[#FAF6EE] flex flex-col selection:bg-[#FDE68A] selection:text-[#221C16]">
@@ -25,7 +27,8 @@ export default async function StudyPage({ params }: StudyPageProps) {
         <StudyMode
           deckId={deck.id}
           deckName={deck.name}
-          initialCards={deck.cards}
+          initialCards={reviewQueue.queue}
+          mode="scheduled-review"
         />
       </main>
     </div>

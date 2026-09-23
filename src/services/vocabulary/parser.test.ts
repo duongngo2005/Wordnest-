@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseVocabularyInput, normalizeTerm } from "./parser";
+import { parseManualFlashcardPaste, parseVocabularyInput, normalizeTerm } from "./parser";
 
 describe("Vocabulary Parser", () => {
   it("parses simple semicolon separated words: apple;banana", () => {
@@ -58,5 +58,20 @@ describe("Vocabulary Parser", () => {
   it("normalizes terms correctly", () => {
     expect(normalizeTerm("  Take   Responsibility  ")).toBe("take responsibility");
     expect(normalizeTerm("APPLE")).toBe("apple");
+  });
+
+  it("parses tab-separated manual flashcards from a spreadsheet", () => {
+    expect(
+      parseManualFlashcardPaste("deployment\ttriển khai\nreliable\tđáng tin cậy")
+    ).toEqual([
+      { term: "deployment", meaningVi: "triển khai" },
+      { term: "reliable", meaningVi: "đáng tin cậy" },
+    ]);
+  });
+
+  it("skips empty pasted rows without inventing flashcards", () => {
+    expect(parseManualFlashcardPaste("\t\ndeployment\ttriển khai\n\t")).toEqual([
+      { term: "deployment", meaningVi: "triển khai" },
+    ]);
   });
 });

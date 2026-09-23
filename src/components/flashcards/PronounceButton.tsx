@@ -2,7 +2,7 @@
 
 import React, { useState, useSyncExternalStore } from "react";
 import { Volume2 } from "lucide-react";
-import { speakEnglish } from "@/lib/speech";
+import { speakEnglish, isSpeechSupported } from "@/lib/speech";
 
 interface PronounceButtonProps {
   text: string;
@@ -23,7 +23,7 @@ export function PronounceButton({
 
   const supported = useSyncExternalStore(
     emptySubscribe,
-    () => typeof window !== "undefined" && "speechSynthesis" in window,
+    () => isSpeechSupported(),
     () => true
   );
 

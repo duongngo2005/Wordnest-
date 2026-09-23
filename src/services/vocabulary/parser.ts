@@ -8,6 +8,24 @@ export function normalizeTerm(term: string): string {
   return term.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+export interface ManualFlashcardRow {
+  term: string;
+  meaningVi: string;
+}
+
+/** Parses spreadsheet rows in the primary manual-entry format: word<TAB>meaning. */
+export function parseManualFlashcardPaste(input: string): ManualFlashcardRow[] {
+  if (!input || typeof input !== "string") return [];
+
+  return input.split(/\r?\n/).flatMap((line) => {
+    const [term = "", ...meaningParts] = line.split("\t");
+    const meaningVi = meaningParts.join("\t").trim();
+    const trimmedTerm = term.trim();
+
+    return trimmedTerm || meaningVi ? [{ term: trimmedTerm, meaningVi }] : [];
+  });
+}
+
 export interface ParseResult {
   terms: string[];
   normalizedTerms: string[];

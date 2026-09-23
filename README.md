@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WordNest
 
-## Getting Started
+WordNest is a personal English vocabulary app. Its v1 daily loop is intentionally small:
 
-First, run the development server:
+**Add vocabulary → browse flashcards → scheduled review → practice → retry mistakes → focused practice.**
+
+## Core v1
+
+- Create cards manually (term + Vietnamese meaning is enough) or paste a batch.
+- Review cards on the scheduled-review queue.
+- Practice with multiple choice and typed Vietnamese → English recall, then retry mistakes.
+- Use **Cần luyện thêm** and **Luyện tập trung** as transparent, read-only views of recent practice evidence.
+- Audio and images remain optional aids on individual cards.
+
+`FSRS` owns *when* a card is scheduled. `PracticeAttempt` records retrieval evidence; practice does not change FSRS scheduling.
+
+## Optional / advanced tools
+
+JSON import remains available under **More**; CSV export is a secondary data-portability action. AI card generation, Story creation, contextual translation, Story Cloze, Free Practice and the detailed Progress view are parked outside the daily loop. Document import, CSV import and the external Story bridge are retired. Existing Stories and their historical practice evidence remain readable. Manual creation, editing, review and practice work without an AI provider.
+
+## Development
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npx prisma validate
+npx prisma migrate status
+npm run typecheck
+npm run lint
+npm run build
+npx vitest run
+npx playwright test
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The app uses Next.js, TypeScript, Prisma/MySQL, Vitest and Playwright. Preserve Prisma migration history; do not reset or `db push` around migrations.

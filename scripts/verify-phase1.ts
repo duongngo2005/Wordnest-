@@ -1,7 +1,7 @@
 import { db } from "../src/lib/db";
 import { deckService } from "../src/services/vocabulary/deck-service";
 import { parseVocabularyInput } from "../src/services/vocabulary/parser";
-import { FlashcardStatus } from "@prisma/client";
+import { fsrsService, Rating } from "../src/services/fsrs/fsrs-service";
 
 async function verifyPhase1() {
   console.log("==================================================");
@@ -57,16 +57,24 @@ async function verifyPhase1() {
     console.log(`✅ Apple card has illustrative image: ${appleCard.imageUrl.substring(0, 50)}...`);
   }
 
-  // Step 9: Study Mode interactions (Again -> LEARNING, Know -> KNOWN)
-  console.log("\n5. Testing Study Mode Status Transitions...");
+  // Step 9: Scheduled Review owns scheduler/status transitions.
+  console.log("\n5. Testing Scheduled Review Status Transitions...");
   const cardToLearn = dbCards[0]; // apple
   const cardToKnow = dbCards[1];  // resilient
 
-  console.log(`   Action: "Again" on "${cardToLearn.term}" -> updating to LEARNING`);
-  await deckService.updateCardStatus(cardToLearn.id, FlashcardStatus.LEARNING);
+  console.log(`   Action: "Again" on "${cardToLearn.term}" -> FSRS Learning`);
+  await fsrsService.processScheduledReview(cardToLearn.id, {
+    rating: Rating.Again,
+    reviewEventId: crypto.randomUUID(),
+    expectedSchedulerVersion: cardToLearn.schedulerVersion,
+  });
 
-  console.log(`   Action: "Know" on "${cardToKnow.term}" -> updating to KNOWN`);
-  await deckService.updateCardStatus(cardToKnow.id, FlashcardStatus.KNOWN);
+  console.log(`   Action: "Easy" on "${cardToKnow.term}" -> FSRS Review`);
+  await fsrsService.processScheduledReview(cardToKnow.id, {
+    rating: Rating.Easy,
+    reviewEventId: crypto.randomUUID(),
+    expectedSchedulerVersion: cardToKnow.schedulerVersion,
+  });
 
   // Step 10 & 11: Browser reload simulation (re-fetch from MySQL)
   console.log("\n6. Simulating browser reload & data persistence check...");

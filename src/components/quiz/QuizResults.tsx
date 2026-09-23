@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { WordNestMascot } from "../ui/Mascot";
 import { PronounceButton } from "../flashcards/PronounceButton";
-import { QuizQuestion, QuizSubmissionResult } from "@/services/vocabulary/quiz-service";
+import { QuizQuestion, QuizQuestionExplanation, QuizSubmissionResult } from "@/services/vocabulary/quiz-service";
 import {
   RotateCcw,
   ArrowLeft,
@@ -19,6 +19,9 @@ export interface AnswerRecord {
   question: QuizQuestion;
   userAnswer: string;
   isCorrect: boolean;
+  expectedAnswer?: string;
+  explanation?: QuizQuestionExplanation;
+  responseMs?: number;
 }
 
 interface QuizResultsProps {
@@ -30,6 +33,7 @@ interface QuizResultsProps {
   total: number;
   accuracy: number;
   records: AnswerRecord[];
+  retryRecords?: AnswerRecord[];
   submissionResult: QuizSubmissionResult | null;
   onRestart: () => void;
 }
@@ -40,6 +44,7 @@ export function QuizResults({
   total,
   accuracy,
   records,
+  retryRecords = [],
   submissionResult,
   onRestart,
 }: QuizResultsProps) {
@@ -111,23 +116,33 @@ export function QuizResults({
 
           <div className="col-span-2 sm:col-span-1 bg-[#FAF6EE] border-2 border-[#221C16] rounded-xl p-3 sm:p-4 text-center shadow-[2px_2px_0px_#221C16]">
             <p className="text-[11px] font-extrabold uppercase text-[#6B6258] tracking-wider">
-              Thẻ đã cập nhật
+              Câu đã ghi nhận
             </p>
             <p className="text-2xl sm:text-3xl font-black text-[#221C16] mt-0.5">
-              {submissionResult?.cardsUpdatedCount ?? total}
+              {submissionResult ? total : 0}
             </p>
           </div>
         </div>
 
-        {/* Status update notification banner */}
+        {/* Practice evidence notification banner */}
         <div className="bg-[#F0FDF4] border-2 border-[#16A34A] rounded-xl p-3 text-xs sm:text-sm font-bold text-[#166534] flex items-center justify-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-[#16A34A] shrink-0" />
           <span>
-            Hệ thống đã tự động cập nhật trạng thái: {correctCount} từ ghi nhận{" "}
-            <strong className="underline decoration-wavy">Đã thuộc</strong>, {incorrectCount} từ
-            cần ôn ở <strong className="underline decoration-wavy">Đang học</strong>.
+            Quiz đã ghi nhận {correctCount} câu <strong className="underline decoration-wavy">đúng</strong> và{" "}
+            {incorrectCount} câu <strong className="underline decoration-wavy">sai</strong>. Luyện tập không thay đổi lịch ôn.
           </span>
         </div>
+
+        {/* Retry Reinforcement Notification Banner */}
+        {submissionResult?.retryTotal && submissionResult.retryTotal > 0 ? (
+          <div className="bg-[#EFF6FF] border-2 border-[#3B82F6] rounded-xl p-3 text-xs sm:text-sm font-bold text-[#1D4ED8] flex items-center justify-center gap-2 shadow-[2px_2px_0px_#1D4ED8]">
+            <Sparkles className="w-4 h-4 text-[#3B82F6] shrink-0" />
+            <span>
+              Lần đầu: <strong>{submissionResult.firstPassScore ?? score}/{submissionResult.firstPassTotal ?? total}</strong>.
+              {" "}Bạn đã sửa đúng <strong>{submissionResult.retryScore}/{submissionResult.retryTotal}</strong> câu khi luyện lại.
+            </span>
+          </div>
+        ) : null}
 
         {/* Action Buttons */}
         <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
@@ -203,7 +218,9 @@ export function QuizResults({
         <div className="space-y-3">
           {filteredRecords.map((record, index) => {
             const { question, userAnswer, isCorrect } = record;
-            const exp = question.explanation;
+            const exp = record.explanation ?? (question.type !== "typed_vi_en" ? question.explanation : undefined);
+            const expectedAnswer = record.expectedAnswer ?? (question.type !== "typed_vi_en" ? question.correctAnswer : "");
+            const retryAttempt = retryRecords.find((rr) => rr.question.id === question.id);
 
             return (
               <div
@@ -237,6 +254,18 @@ export function QuizResults({
                         )}
                       </span>
 
+                      {retryAttempt && (
+                        <span
+                          className={`inline-flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded border ${
+                            retryAttempt.isCorrect
+                              ? "bg-[#DCFCE7] text-[#15803D] border-[#15803D]"
+                              : "bg-[#FEE2E2] text-[#B91C1C] border-[#B91C1C]"
+                          }`}
+                        >
+                          {retryAttempt.isCorrect ? "Đã sửa đúng khi luyện lại ✓" : "Chưa đúng khi luyện lại ✗"}
+                        </span>
+                      )}
+
                       <span className="text-xs font-bold text-[#6B6258]">
                         Câu {index + 1}
                       </span>
@@ -246,7 +275,7 @@ export function QuizResults({
                       <p className="text-base sm:text-lg font-black text-[#221C16]">
                         {question.prompt}
                       </p>
-                      <PronounceButton text={exp.term} size="sm" />
+                      {exp && <PronounceButton text={exp.term} size="sm" />}
                     </div>
                     {question.promptDetail && (
                       <p className="text-xs font-medium text-[#6B6258]">
@@ -277,20 +306,22 @@ export function QuizResults({
                         Đáp án đúng:
                       </span>
                       <span className="font-black text-[#15803D]">
-                        {question.correctAnswer}
+                        {expectedAnswer}
                       </span>
                     </div>
                   )}
                 </div>
 
                 {/* Explanation sentence & meaning */}
-                <div className="mt-3 bg-white/70 p-3 rounded-lg border border-black/10 text-xs space-y-1">
-                  <p className="font-semibold text-[#221C16]">
-                    <strong className="text-[#E06B43]">{exp.term}</strong>: {exp.meaningVi}
-                  </p>
-                  <p className="italic text-[#4A4036]">&ldquo;{exp.exampleEn}&rdquo;</p>
-                  <p className="text-[#6B6258]">{exp.exampleVi}</p>
-                </div>
+                {exp && (
+                  <div className="mt-3 bg-white/70 p-3 rounded-lg border border-black/10 text-xs space-y-1">
+                    <p className="font-semibold text-[#221C16]">
+                      <strong className="text-[#E06B43]">{exp.term}</strong>: {exp.meaningVi}
+                    </p>
+                    {exp.exampleEn && <p className="italic text-[#4A4036]">&ldquo;{exp.exampleEn}&rdquo;</p>}
+                    {exp.exampleVi && <p className="text-[#6B6258]">{exp.exampleVi}</p>}
+                  </div>
+                )}
               </div>
             );
           })}

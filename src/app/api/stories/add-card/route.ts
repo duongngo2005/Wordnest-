@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
+import { InvalidJsonBodyError, readJsonBody } from "@/lib/http/json";
 import { addCardFromStoryRequestSchema } from "@/lib/validation/story";
 import { storyService } from "@/services/vocabulary";
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = await readJsonBody(request);
     const validation = addCardFromStoryRequestSchema.safeParse(body);
 
     if (!validation.success) {
@@ -36,6 +37,9 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof InvalidJsonBodyError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    }
     console.error("Error adding card from story:", error);
     const msg = error instanceof Error ? error.message : "Không thể thêm thẻ từ câu chuyện";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });

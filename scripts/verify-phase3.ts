@@ -46,22 +46,14 @@ async function verifyPhase3() {
 
   // 3. Submit Quiz Attempt and Update Card Statuses
   console.log("\n3. Testing Quiz Submission and Card Status Updates...");
-  const cardResults = [
-    { cardId: deck.cards[0].id, correct: true },
-    { cardId: deck.cards[1].id, correct: true },
-    { cardId: deck.cards[2].id, correct: false },
-    { cardId: deck.cards[3].id, correct: true },
-  ];
-
-  const score = cardResults.filter((c) => c.correct).length; // 3
-  const total = cardResults.length; // 4
   const expectedAccuracy = Number(((3 / 4) * 100).toFixed(1)); // 75.0%
 
   const submissionResult = await quizService.submitQuizResult(deck.id, {
-    score,
-    total,
-    cardResults,
-    updateCardStatus: true,
+    sessionId: quizData.sessionId,
+    answers: quizData.questions.map((question, index) => ({
+      questionId: question.id,
+      answer: index === 2 ? question.options.find((option) => option !== question.correctAnswer)! : question.correctAnswer,
+    })),
   });
 
   console.log(`✅ Quiz submitted successfully:`);
@@ -88,8 +80,10 @@ async function verifyPhase3() {
     where: { deckId: deck.id },
   });
 
-  const card1 = updatedCards.find((c) => c.id === deck.cards[0].id);
-  const card3 = updatedCards.find((c) => c.id === deck.cards[2].id);
+  const correctQuestion = quizData.questions[0];
+  const incorrectQuestion = quizData.questions[2];
+  const card1 = updatedCards.find((c) => c.id === correctQuestion.cardId);
+  const card3 = updatedCards.find((c) => c.id === incorrectQuestion.cardId);
 
   console.log(`   - Correct Card 1 status: ${card1?.status} (expected: KNOWN)`);
   console.log(`   - Incorrect Card 3 status: ${card3?.status} (expected: LEARNING)`);

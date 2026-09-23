@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <rect width="512" height="512" rx="115" fill="#221C16"/>
+  <rect x="28" y="28" width="456" height="456" rx="90" fill="#FFFDF9" stroke="#E06B43" stroke-width="16"/>
+  <!-- Central golden accent star / dot -->
+  <circle cx="256" cy="180" r="26" fill="#F59E0B" stroke="#221C16" stroke-width="6"/>
+  <!-- Stylized W for WordNest -->
+  <path d="M 130 190 L 195 365 L 256 245 L 317 365 L 382 190" 
+        fill="none" 
+        stroke="#E06B43" 
+        stroke-width="36" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
+</svg>

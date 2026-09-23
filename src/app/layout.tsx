@@ -12,15 +12,41 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+import { PwaRegister } from "@/components/pwa/PwaRegister";
+import { ToastProvider } from "@/components/ui/ToastProvider";
+
 export const metadata: Metadata = {
-  title: "WordNest — Turn words into stories.",
-  description: "Ứng dụng học từ vựng tiếng Anh thông minh với flashcard AI, phát âm chuẩn xác và ghi nhớ theo ngữ cảnh cho người Việt.",
+  title: "WordNest — Thêm từ, học và ôn tập.",
+  description:
+    "Ứng dụng học từ vựng tiếng Anh cá nhân với flashcard, ôn tập ngắt quãng và luyện nhớ chủ động.",
+  applicationName: "WordNest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "WordNest",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#FAF6EE",
 };
 
 export default function RootLayout({
@@ -32,9 +58,14 @@ export default function RootLayout({
     <html
       lang="vi"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col bg-[#FAF6EE] text-[#221C16]">
-        {children}
+      <body
+        className="min-h-full flex flex-col bg-[#FAF6EE] text-[#221C16]"
+        suppressHydrationWarning
+      >
+        <ToastProvider>{children}</ToastProvider>
+        <PwaRegister />
       </body>
     </html>
   );

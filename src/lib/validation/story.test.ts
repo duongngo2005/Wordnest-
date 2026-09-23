@@ -38,8 +38,19 @@ describe("Phase 2 Story & Translation Validation Schemas", () => {
     expect(aiStoryResponseSchema.safeParse(story).success).toBe(true);
   });
 
+  it("accepts a Story response when optional contextual translations are absent", () => {
+    expect(
+      aiStoryResponseSchema.safeParse({
+        title: "The Plan",
+        content: "The team allocated funds carefully.",
+        usage: [{ term: "allocate", usedAs: "allocated" }],
+      }).success
+    ).toBe(true);
+  });
+
   it("validates translate in context request", () => {
     const req = {
+      storyId: "story-123",
       deckId: "deck-123",
       selectedText: "reluctant",
       surroundingSentence: "He was reluctant to admit his mistake.",

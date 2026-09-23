@@ -29,14 +29,30 @@ export type GenerateStoryRequest = z.infer<typeof generateStoryRequestSchema>;
 export const aiStoryResponseSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
-  wordsUsed: z.array(z.string()).default([]),
+  // Kept optional so older provider responses can still be read during rollout.
+  wordsUsed: z.array(z.string()).optional().default([]),
+  usage: z
+    .array(
+      z
+        .object({
+          term: z.string().trim().min(1).max(200),
+          usedAs: z.string().trim().min(1).max(200),
+        })
+        .strict()
+    )
+    .optional()
+    .default([]),
+  // This is an enhancement, never a prerequisite for a valid Story.
+  contextualTranslations: z.array(z.unknown()).optional(),
 });
 
 export type AIStoryResponse = z.infer<typeof aiStoryResponseSchema>;
 
 export const translateInContextRequestSchema = z.object({
+  storyId: z.string().min(1, "storyId is required"),
   deckId: z.string().min(1, "deckId is required"),
   selectedText: z.string().min(1, "Từ/cụm từ bôi đen không được để trống"),
+  canonicalTerm: z.string().min(1).optional(),
   surroundingSentence: z.string().min(1, "Câu ngữ cảnh không được để trống"),
   context: z.string().optional().default(""),
 });
@@ -47,6 +63,7 @@ export const contextualTranslationResponseSchema = z.object({
   selectedText: z.string().min(1),
   meaningVi: z.string().min(1),
   contextualMeaningVi: z.string().min(1),
+  definitionVi: z.string().nullable().optional().default(null),
   ipa: z.string().nullable().optional().default(null),
   partOfSpeech: z.string().nullable().optional().default(null),
   definitionEn: z.string().min(1),

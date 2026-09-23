@@ -1,14 +1,20 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { FlashcardData } from "../flashcards/FlashcardItem";
 import { PronounceButton } from "../flashcards/PronounceButton";
-import { FlashcardStatus } from "@prisma/client";
+import {
+  Rating,
+  previewNextReviews,
+  ReviewSchedulePreview,
+} from "@/lib/fsrs";
 import {
   ArrowLeft,
   RotateCcw,
-  CheckCircle2,
+  ThumbsUp,
+  Zap,
+  HelpCircle,
 } from "lucide-react";
 import { WordNestMascot } from "../ui/Mascot";
 
@@ -16,77 +22,154 @@ interface StudyModeProps {
   deckId: string;
   deckName: string;
   initialCards: FlashcardData[];
+  mode: "scheduled-review" | "free-practice";
+  backHref?: string;
+  backLabel?: string;
 }
 
-export function StudyMode({ deckId, deckName, initialCards }: StudyModeProps) {
-  const [cards, setCards] = useState<FlashcardData[]>(initialCards);
+interface FailedScheduledReview {
+  cardId: string;
+  rating: Rating;
+  reviewEventId: string;
+  expectedSchedulerVersion: number;
+}
+
+export function StudyMode({
+  deckId,
+  deckName,
+  initialCards,
+  mode,
+  backHref,
+  backLabel = "Quay lại bộ thẻ",
+}: StudyModeProps) {
+  const [reviewedCards, setReviewedCards] = useState<Record<string, FlashcardData>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnswerRevealed, setIsAnswerRevealed] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Session summary counters
-  const [sessionKnown, setSessionKnown] = useState(0);
-  const [sessionLearning, setSessionLearning] = useState(0);
+  // Session summary counters for 4 FSRS ratings
+  const [sessionAgain, setSessionAgain] = useState(0);
+  const [sessionHard, setSessionHard] = useState(0);
+  const [sessionGood, setSessionGood] = useState(0);
+  const [sessionEasy, setSessionEasy] = useState(0);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [failedReview, setFailedReview] = useState<FailedScheduledReview | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const reviewInFlight = useRef(false);
+
+  const cards = useMemo(
+    () => initialCards.map((card) => reviewedCards[card.id] ?? card),
+    [initialCards, reviewedCards]
+  );
 
   const totalCards = cards.length;
   const currentCard = cards[currentIndex];
 
-  const updateCardStatusOnServer = async (cardId: string, status: FlashcardStatus) => {
+  // Calculate FSRS next review preview intervals for the current card
+  const reviewSchedule: ReviewSchedulePreview | null = useMemo(() => {
+    if (!currentCard || mode !== "scheduled-review") return null;
     try {
-      await fetch(`/api/cards/${cardId}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-    } catch (err) {
-      console.error("Failed to update status on server:", err);
+      return previewNextReviews(currentCard, new Date());
+    } catch {
+      return null;
     }
+  }, [currentCard, mode]);
+
+  const submitReviewOnServer = async (
+    cardId: string,
+    rating: Rating,
+    reviewEventId: string,
+    expectedSchedulerVersion: number
+  ) => {
+      const res = await fetch(`/api/cards/${cardId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating, reviewEventId, expectedSchedulerVersion }),
+      });
+      const data: unknown = await res.json();
+      if (!res.ok) {
+        const message =
+          typeof data === "object" && data !== null && "error" in data && typeof data.error === "string"
+            ? data.error
+            : "Máy chủ không thể lưu lượt ôn.";
+        throw new Error(message);
+      }
+      return (data as { card: FlashcardData }).card;
   };
 
-  const handleAction = React.useCallback(
-    async (action: "again" | "know") => {
-      if (isSubmitting || !currentCard) return;
+  const advanceCard = React.useCallback(() => {
+    if (currentIndex + 1 < totalCards) {
+      setCurrentIndex((prev) => prev + 1);
+      setIsAnswerRevealed(false);
+    } else {
+      setIsCompleted(true);
+    }
+  }, [currentIndex, totalCards]);
+
+  const handleReviewAction = React.useCallback(
+    async (rating: Rating) => {
+      if (mode !== "scheduled-review" || !currentCard || reviewInFlight.current) return;
+
+      reviewInFlight.current = true;
       setIsSubmitting(true);
+      setSaveError(null);
 
-      const newStatus =
-        action === "again" ? FlashcardStatus.LEARNING : FlashcardStatus.KNOWN;
-
-      if (action === "again") {
-        setSessionLearning((prev) => prev + 1);
-      } else {
-        setSessionKnown((prev) => prev + 1);
+      const cardId = currentCard.id;
+      const retry = failedReview?.cardId === cardId ? failedReview : null;
+      const reviewEventId = retry?.reviewEventId ?? crypto.randomUUID();
+      const expectedSchedulerVersion = retry?.expectedSchedulerVersion ?? currentCard.schedulerVersion ?? 0;
+      const appliedRating = retry?.rating ?? rating;
+      try {
+        const updatedCard = await submitReviewOnServer(
+          cardId,
+          appliedRating,
+          reviewEventId,
+          expectedSchedulerVersion
+        );
+        setReviewedCards((previous) => ({
+          ...previous,
+          [updatedCard.id]: { ...currentCard, ...updatedCard },
+        }));
+        if (appliedRating === Rating.Again) setSessionAgain((prev) => prev + 1);
+        else if (appliedRating === Rating.Hard) setSessionHard((prev) => prev + 1);
+        else if (appliedRating === Rating.Good) setSessionGood((prev) => prev + 1);
+        else if (appliedRating === Rating.Easy) setSessionEasy((prev) => prev + 1);
+        setFailedReview(null);
+        advanceCard();
+      } catch (error) {
+        console.error("Failed to submit review to server:", error);
+        setSaveError(
+          error instanceof Error
+            ? `Lượt ôn chưa được lưu: ${error.message}`
+            : "Lượt ôn chưa được lưu. Vui lòng thử lại khi có kết nối mạng."
+        );
+        setFailedReview({ cardId, rating: appliedRating, reviewEventId, expectedSchedulerVersion });
+      } finally {
+        reviewInFlight.current = false;
+        setIsSubmitting(false);
       }
-
-      // Update local cards state
-      setCards((prev) =>
-        prev.map((c, i) => (i === currentIndex ? { ...c, status: newStatus } : c))
-      );
-
-      // Persist to MySQL in background
-      await updateCardStatusOnServer(currentCard.id, newStatus);
-
-      // Proceed to next card or complete
-      if (currentIndex + 1 < totalCards) {
-        setCurrentIndex((prev) => prev + 1);
-        setIsAnswerRevealed(false);
-      } else {
-        setIsCompleted(true);
-      }
-      setIsSubmitting(false);
     },
-    [isSubmitting, currentCard, currentIndex, totalCards]
+    [advanceCard, currentCard, failedReview, mode]
   );
+
+  const handleFreePracticeNext = () => {
+    if (mode !== "free-practice") return;
+    advanceCard();
+  };
 
   const handleRestart = () => {
     setCurrentIndex(0);
     setIsAnswerRevealed(false);
     setIsCompleted(false);
-    setSessionKnown(0);
-    setSessionLearning(0);
+    setSessionAgain(0);
+    setSessionHard(0);
+    setSessionGood(0);
+    setSessionEasy(0);
+    setSaveError(null);
+    setFailedReview(null);
   };
 
-  // Keyboard navigation: Space = Reveal, 1 = Again, 2 = Know
+  // Keyboard navigation: Space = Reveal, 1 = Again, 2 = Hard, 3 = Good, 4 = Easy
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isCompleted) return;
@@ -94,20 +177,26 @@ export function StudyMode({ deckId, deckName, initialCards }: StudyModeProps) {
       if (e.code === "Space" && !isAnswerRevealed) {
         e.preventDefault();
         setIsAnswerRevealed(true);
-      } else if (isAnswerRevealed) {
+      } else if (isAnswerRevealed && mode === "scheduled-review" && !isSubmitting) {
         if (e.key === "1" || e.code === "Digit1") {
           e.preventDefault();
-          handleAction("again");
+          handleReviewAction(Rating.Again);
         } else if (e.key === "2" || e.code === "Digit2") {
           e.preventDefault();
-          handleAction("know");
+          handleReviewAction(Rating.Hard);
+        } else if (e.key === "3" || e.code === "Digit3") {
+          e.preventDefault();
+          handleReviewAction(Rating.Good);
+        } else if (e.key === "4" || e.code === "Digit4") {
+          e.preventDefault();
+          handleReviewAction(Rating.Easy);
         }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isAnswerRevealed, isCompleted, handleAction]);
+  }, [isAnswerRevealed, isCompleted, isSubmitting, mode, handleReviewAction]);
 
   // If deck is empty
   if (!cards || cards.length === 0) {
@@ -116,18 +205,22 @@ export function StudyMode({ deckId, deckName, initialCards }: StudyModeProps) {
         <div className="brick-card p-8 bg-[#FFFDF9] space-y-4">
           <WordNestMascot mood="thinking" size={96} />
           <h2 className="text-xl font-black text-[#221C16]">
-            Bộ từ vựng này chưa có thẻ nào!
+            Không có thẻ nào để học!
           </h2>
           <p className="text-sm text-[#6B6258]">
-            Hãy thêm từ vựng vào bộ thẻ để bắt đầu học.
+            {mode === "scheduled-review"
+              ? "Hiện không có thẻ đến hạn trong hàng đợi ôn tập."
+              : "Bộ từ vựng này chưa có thẻ nào."}
           </p>
-          <Link
-            href={`/decks/${deckId}`}
-            className="brick-button-primary px-5 py-2.5 text-sm font-bold inline-flex items-center gap-2"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Quay lại bộ thẻ
-          </Link>
+          <div className="flex justify-center gap-3">
+            <Link
+              href={backHref ?? `/decks/${deckId}`}
+              className="brick-button-primary px-5 py-2.5 text-xs sm:text-sm font-bold inline-flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              {backLabel}
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -135,6 +228,11 @@ export function StudyMode({ deckId, deckName, initialCards }: StudyModeProps) {
 
   // Completion screen
   if (isCompleted) {
+    const totalReviews = sessionAgain + sessionHard + sessionGood + sessionEasy;
+    const successfulReviews = sessionGood + sessionEasy;
+    const accuracy =
+      totalReviews > 0 ? Math.round((successfulReviews / totalReviews) * 100) : 100;
+
     return (
       <div className="max-w-md mx-auto py-8 px-4 text-center space-y-6 animate-in fade-in zoom-in-95 duration-200">
         <div className="brick-card p-6 sm:p-8 bg-[#FFFDF9] space-y-6">
@@ -147,31 +245,63 @@ export function StudyMode({ deckId, deckName, initialCards }: StudyModeProps) {
               Xuất sắc! Đã hoàn thành!
             </h2>
             <p className="text-xs sm:text-sm text-[#6B6258] font-medium">
-              Bạn vừa hoàn tất phiên học cho bộ từ vựng:{" "}
+              Bạn vừa hoàn tất {mode === "scheduled-review" ? "phiên ôn tập" : "phiên luyện tự do"} cho bộ từ vựng:{" "}
               <strong className="text-[#221C16]">{deckName}</strong>
             </p>
           </div>
 
-          {/* Session Results */}
-          <div className="grid grid-cols-2 gap-3 pt-2">
-            <div className="p-3.5 rounded-xl border-2 border-[#16A34A] bg-[#DCFCE7] text-center shadow-[2px_2px_0px_#16A34A]">
-              <div className="text-2xl sm:text-3xl font-black text-[#15803D]">
-                {sessionKnown}
+          {saveError && (
+            <div role="alert" className="rounded-lg border-2 border-[#B91C1C] bg-[#FEE2E2] px-3 py-2 text-left text-xs font-bold text-[#991B1B]">
+              {saveError}
+            </div>
+          )}
+
+          {mode === "scheduled-review" && <>
+          {/* FSRS Session Breakdown */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+            <div className="p-3 rounded-xl border-2 border-[#991B1B] bg-[#FEE2E2] text-center shadow-[2px_2px_0px_#991B1B]">
+              <div className="text-xl sm:text-2xl font-black text-[#991B1B]">
+                {sessionAgain}
               </div>
-              <div className="text-xs font-extrabold text-[#15803D] uppercase tracking-wider mt-0.5">
-                Đã thuộc (Know)
+              <div className="text-[10px] font-extrabold text-[#991B1B] uppercase tracking-wider mt-0.5">
+                Again
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl border-2 border-[#D97706] bg-[#FEF3C7] text-center shadow-[2px_2px_0px_#D97706]">
-              <div className="text-2xl sm:text-3xl font-black text-[#B45309]">
-                {sessionLearning}
+            <div className="p-3 rounded-xl border-2 border-[#B45309] bg-[#FEF3C7] text-center shadow-[2px_2px_0px_#B45309]">
+              <div className="text-xl sm:text-2xl font-black text-[#B45309]">
+                {sessionHard}
               </div>
-              <div className="text-xs font-extrabold text-[#B45309] uppercase tracking-wider mt-0.5">
-                Cần ôn lại (Again)
+              <div className="text-[10px] font-extrabold text-[#B45309] uppercase tracking-wider mt-0.5">
+                Hard
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl border-2 border-[#15803D] bg-[#DCFCE7] text-center shadow-[2px_2px_0px_#15803D]">
+              <div className="text-xl sm:text-2xl font-black text-[#15803D]">
+                {sessionGood}
+              </div>
+              <div className="text-[10px] font-extrabold text-[#15803D] uppercase tracking-wider mt-0.5">
+                Good
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl border-2 border-[#1E40AF] bg-[#DBEAFE] text-center shadow-[2px_2px_0px_#1E40AF]">
+              <div className="text-xl sm:text-2xl font-black text-[#1E40AF]">
+                {sessionEasy}
+              </div>
+              <div className="text-[10px] font-extrabold text-[#1E40AF] uppercase tracking-wider mt-0.5">
+                Easy
               </div>
             </div>
           </div>
+
+          {/* Retention Accuracy Rate */}
+          <div className="p-3 rounded-xl bg-[#FAF6EE] border-2 border-[#221C16]/20 flex items-center justify-between text-xs font-bold text-[#6B6258]">
+            <span>Độ ghi nhớ phiên này:</span>
+            <span className="text-base font-black text-[#15803D]">{accuracy}%</span>
+          </div>
+          </>}
 
           <div className="pt-2 flex flex-col gap-2.5">
             <button
@@ -179,14 +309,14 @@ export function StudyMode({ deckId, deckName, initialCards }: StudyModeProps) {
               className="brick-button-primary w-full py-3 text-sm font-black gap-2"
             >
               <RotateCcw className="w-4 h-4" />
-              Luyện tập lại lần nữa
+              {mode === "scheduled-review" ? "Xem lại hàng đợi" : "Luyện tập lại"}
             </button>
             <Link
-              href={`/decks/${deckId}`}
+              href={backHref ?? `/decks/${deckId}`}
               className="brick-button-secondary w-full py-3 text-sm font-bold gap-2 text-center"
             >
               <ArrowLeft className="w-4 h-4" />
-              Quay lại danh sách thẻ
+              {backHref ? backLabel : "Quay lại danh sách thẻ"}
             </Link>
           </div>
         </div>
@@ -194,51 +324,63 @@ export function StudyMode({ deckId, deckName, initialCards }: StudyModeProps) {
     );
   }
 
+  // Next intervals display strings
+  const againInterval = reviewSchedule?.again.intervalText || "10m";
+  const hardInterval = reviewSchedule?.hard.intervalText || "1d";
+  const goodInterval = reviewSchedule?.good.intervalText || "3d";
+  const easyInterval = reviewSchedule?.easy.intervalText || "7d";
+
   return (
     <div className="max-w-xl mx-auto py-6 px-4 space-y-5">
-      {/* Top Header & Progress Bar */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
+      {/* Top Header, Queue Filter & Progress Bar */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <Link
-            href={`/decks/${deckId}`}
+            href={backHref ?? `/decks/${deckId}`}
             className="inline-flex items-center gap-1 text-xs font-bold text-[#6B6258] hover:text-[#221C16] p-1 rounded-md"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Thoát Study</span>
+            <span>{backHref ? backLabel : "Thoát Study"}</span>
           </Link>
 
-          {/* Progress Indicator: e.g. 3 / 20 */}
-          <div className="brick-badge bg-[#FAF6EE] text-[#221C16] font-mono text-sm px-3 py-1">
+          <span className="text-[11px] font-bold text-[#6B6258]">
+            {mode === "scheduled-review" ? "Ôn tập" : "Luyện tự do"}
+          </span>
+
+          {/* Progress Indicator */}
+          <div className="font-mono text-xs font-bold text-[#6B6258]">
             {currentIndex + 1} / {totalCards}
           </div>
         </div>
 
         {/* Visual Progress Bar */}
-        <div className="w-full h-3 bg-[#E5E0D5] rounded-full border-2 border-[#221C16] overflow-hidden">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-[#E5E0D5]">
           <div
             className="h-full bg-[#E06B43] transition-all duration-300"
             style={{ width: `${((currentIndex + 1) / totalCards) * 100}%` }}
           />
         </div>
+        {saveError && (
+          <div role="alert" className="rounded-lg border-2 border-[#B91C1C] bg-[#FEE2E2] px-3 py-2 text-xs font-bold text-[#991B1B]">
+            {saveError}
+            {failedReview && mode === "scheduled-review" && (
+              <button
+                onClick={() => void handleReviewAction(failedReview.rating)}
+                className="ml-2 underline"
+              >
+                Gửi lại lượt ôn
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Main Flashcard in Study Mode */}
-      <div className="brick-card p-6 sm:p-8 bg-[#FFFDF9] min-h-[360px] sm:min-h-[420px] flex flex-col justify-between shadow-[6px_6px_0px_#221C16]">
+      <div className="surface-card flex min-h-[380px] flex-col justify-between p-6 sm:min-h-[440px] sm:p-8">
         {/* Front of Card (Always Visible) */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              {currentCard.cefr && (
-                <span className="brick-badge bg-[#E06B43] text-white">
-                  {currentCard.cefr}
-                </span>
-              )}
-              {currentCard.partOfSpeech && (
-                <span className="text-xs font-bold italic text-[#6B6258] bg-[#FAF6EE] px-2 py-0.5 rounded border border-[#221C16]/20">
-                  {currentCard.partOfSpeech}
-                </span>
-              )}
-            </div>
+            <div className="text-xs font-semibold italic text-[#6B6258]">{isAnswerRevealed ? currentCard.partOfSpeech : null}</div>
 
             <PronounceButton text={currentCard.term} size="sm" label="Nghe từ" />
           </div>
@@ -265,27 +407,30 @@ export function StudyMode({ deckId, deckName, initialCards }: StudyModeProps) {
                 className="w-full h-full object-cover"
                 loading="eager"
               />
+              {currentCard.imageAuthor && (
+                <div className="absolute bottom-1.5 right-1.5 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded backdrop-blur-sm">
+                  {currentCard.imageAuthor} {currentCard.imageSource ? `• ${currentCard.imageSource}` : ""}
+                </div>
+              )}
             </div>
           )}
 
           {/* Back / Revealed Answer */}
           {isAnswerRevealed ? (
-            <div className="space-y-4 pt-4 border-t-2 border-[#221C16] animate-in fade-in duration-200">
+            <div className="space-y-4 border-t border-[#221C16]/12 pt-4 animate-in fade-in duration-200">
               {/* Vietnamese Meaning */}
-              <div className="p-3.5 rounded-xl bg-[#FAF6EE] border-2 border-[#221C16]/40">
+              <div className="rounded-xl bg-[#FAF6EE] p-3.5">
                 <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#E06B43] mb-0.5">
                   Nghĩa tiếng Việt
                 </div>
                 <p className="text-lg sm:text-xl font-extrabold text-[#221C16]">
                   {currentCard.meaningVi}
                 </p>
-                <p className="text-xs sm:text-sm text-[#6B6258] mt-1 italic">
-                  {currentCard.definitionEn}
-                </p>
+                {currentCard.definitionEn ? <p className="text-xs sm:text-sm text-[#6B6258] mt-1 italic">{currentCard.definitionEn}</p> : null}
               </div>
 
               {/* Example Sentence */}
-              <div className="p-3.5 rounded-xl bg-[#FFFDF9] border-2 border-[#221C16] space-y-1.5 shadow-[2px_2px_0px_#221C16]">
+              {currentCard.exampleEn ? <div className="space-y-1.5 rounded-xl bg-[#FAF6EE] p-3.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#6B6258]">
                     Ví dụ minh họa
@@ -295,10 +440,8 @@ export function StudyMode({ deckId, deckName, initialCards }: StudyModeProps) {
                 <p className="text-sm font-semibold text-[#221C16]">
                   &ldquo;{currentCard.exampleEn}&rdquo;
                 </p>
-                <p className="text-xs text-[#6B6258] font-medium">
-                  &rarr; {currentCard.exampleVi}
-                </p>
-              </div>
+                {currentCard.exampleVi ? <p className="text-xs text-[#6B6258] font-medium">&rarr; {currentCard.exampleVi}</p> : null}
+              </div> : null}
             </div>
           ) : (
             <div className="py-6 text-center text-xs text-[#6B6258] italic">
@@ -307,43 +450,88 @@ export function StudyMode({ deckId, deckName, initialCards }: StudyModeProps) {
           )}
         </div>
 
-        {/* Bottom Actions */}
+        {/* Bottom Actions: 4 FSRS Review Buttons */}
         <div className="pt-6">
           {!isAnswerRevealed ? (
             <button
               onClick={() => setIsAnswerRevealed(true)}
-              className="brick-button-secondary w-full py-3.5 text-base font-black shadow-[4px_4px_0px_#221C16]"
+              className="brick-button-secondary w-full py-3.5 text-base font-black"
             >
-              Hiện đáp án (Show Answer)
+              Hiện đáp án
             </button>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              {/* Again Button -> LEARNING */}
+          ) : mode === "scheduled-review" ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
+              {/* 1: Again (Rating 1) */}
               <button
-                onClick={() => handleAction("again")}
+                onClick={() => handleReviewAction(Rating.Again)}
                 disabled={isSubmitting}
-                className="brick-button-secondary py-3.5 text-sm sm:text-base font-black bg-[#FEF3C7] text-[#B45309] border-[#B45309] flex items-center justify-center gap-2"
+                className="p-2.5 sm:p-3 rounded-xl border-2 border-[#991B1B] bg-[#FEE2E2] hover:bg-[#FECACA] text-[#991B1B] shadow-[2.5px_2.5px_0px_#991B1B] flex flex-col items-center justify-center gap-0.5 active:translate-y-0.5 transition-all text-center min-h-[54px] whitespace-nowrap"
               >
-                <RotateCcw className="w-4 h-4" />
-                <span>Again (Chưa nhớ)</span>
-                <span className="text-[10px] bg-[#B45309]/15 px-1 rounded font-mono hidden sm:inline">
-                  [1]
-                </span>
+                <div className="flex items-center gap-1 font-black text-xs sm:text-sm">
+                  <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                  <span>Again</span>
+                  <span className="hidden sm:inline text-[10px] bg-black/10 px-1 rounded font-mono">[1]</span>
+                </div>
+                <div className="text-[11px] font-extrabold opacity-80">
+                  {againInterval}
+                </div>
               </button>
 
-              {/* Know Button -> KNOWN */}
+              {/* 2: Hard (Rating 2) */}
               <button
-                onClick={() => handleAction("know")}
+                onClick={() => handleReviewAction(Rating.Hard)}
                 disabled={isSubmitting}
-                className="brick-button-success py-3.5 text-sm sm:text-base font-black flex items-center justify-center gap-2"
+                className="p-2.5 sm:p-3 rounded-xl border-2 border-[#B45309] bg-[#FEF3C7] hover:bg-[#FDE68A] text-[#92400E] shadow-[2.5px_2.5px_0px_#B45309] flex flex-col items-center justify-center gap-0.5 active:translate-y-0.5 transition-all text-center min-h-[54px] whitespace-nowrap"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Know (Đã thuộc)</span>
-                <span className="text-[10px] bg-black/20 px-1 rounded font-mono hidden sm:inline">
-                  [2]
-                </span>
+                <div className="flex items-center gap-1 font-black text-xs sm:text-sm">
+                  <HelpCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Hard</span>
+                  <span className="hidden sm:inline text-[10px] bg-black/10 px-1 rounded font-mono">[2]</span>
+                </div>
+                <div className="text-[11px] font-extrabold opacity-80">
+                  {hardInterval}
+                </div>
+              </button>
+
+              {/* 3: Good (Rating 3) */}
+              <button
+                onClick={() => handleReviewAction(Rating.Good)}
+                disabled={isSubmitting}
+                className="p-2.5 sm:p-3 rounded-xl border-2 border-[#15803D] bg-[#DCFCE7] hover:bg-[#BBF7D0] text-[#166534] shadow-[2.5px_2.5px_0px_#15803D] flex flex-col items-center justify-center gap-0.5 active:translate-y-0.5 transition-all text-center min-h-[54px] whitespace-nowrap"
+              >
+                <div className="flex items-center gap-1 font-black text-xs sm:text-sm">
+                  <ThumbsUp className="w-3.5 h-3.5 shrink-0" />
+                  <span>Good</span>
+                  <span className="hidden sm:inline text-[10px] bg-black/10 px-1 rounded font-mono">[3]</span>
+                </div>
+                <div className="text-[11px] font-extrabold opacity-80">
+                  {goodInterval}
+                </div>
+              </button>
+
+              {/* 4: Easy (Rating 4) */}
+              <button
+                onClick={() => handleReviewAction(Rating.Easy)}
+                disabled={isSubmitting}
+                className="p-2.5 sm:p-3 rounded-xl border-2 border-[#1E40AF] bg-[#DBEAFE] hover:bg-[#BFDBFE] text-[#1E40AF] shadow-[2.5px_2.5px_0px_#1E40AF] flex flex-col items-center justify-center gap-0.5 active:translate-y-0.5 transition-all text-center min-h-[54px] whitespace-nowrap"
+              >
+                <div className="flex items-center gap-1 font-black text-xs sm:text-sm">
+                  <Zap className="w-3.5 h-3.5 shrink-0" />
+                  <span>Easy</span>
+                  <span className="hidden sm:inline text-[10px] bg-black/10 px-1 rounded font-mono">[4]</span>
+                </div>
+                <div className="text-[11px] font-extrabold opacity-80">
+                  {easyInterval}
+                </div>
               </button>
             </div>
+          ) : (
+            <button
+              onClick={handleFreePracticeNext}
+              className="brick-button-primary w-full py-3.5 text-base font-black shadow-[4px_4px_0px_#221C16]"
+            >
+              Thẻ tiếp theo
+            </button>
           )}
         </div>
       </div>

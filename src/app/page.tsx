@@ -1,66 +1,46 @@
 import React from "react";
+import Link from "next/link";
+import { ArrowDown, BookOpen, Plus } from "lucide-react";
 import { Header } from "@/components/ui/Header";
-import { WordNestMascot } from "@/components/ui/Mascot";
 import { BulkInputForm } from "@/components/flashcards/BulkInputForm";
-import { RecentDecks } from "@/components/flashcards/RecentDecks";
-import { deckService } from "@/services/vocabulary";
-import { Sparkles } from "lucide-react";
+import { FolderLibrary } from "@/components/folders/FolderLibrary";
+import { folderService } from "@/services/vocabulary";
 
-// Revalidate frequently so newly created decks appear
 export const revalidate = 0;
 
 export default async function HomePage() {
-  const recentDecks = await deckService.getRecentDecks(8);
+  const library = await folderService.getLibrary();
+  const deckCount = library.folders.reduce((count, folder) => count + folder.decks.length, 0) + library.uncategorizedDecks.length;
 
   return (
-    <div className="min-h-screen bg-[#FAF6EE] flex flex-col selection:bg-[#FDE68A] selection:text-[#221C16]">
+    <div className="app-shell">
       <Header />
-
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-6 sm:py-10 space-y-8 sm:space-y-10">
-        {/* Hero Section with Mascot */}
-        <section className="brick-card p-6 sm:p-8 bg-[#FFFDF9] flex flex-col sm:flex-row items-center justify-between gap-6 overflow-hidden relative">
-          {/* Subtle Background Pattern Accent */}
-          <div className="space-y-3 text-center sm:text-left z-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border-2 border-[#221C16] bg-[#FEF3C7] text-xs font-black text-[#92400E]">
-              <Sparkles className="w-3.5 h-3.5 text-[#E06B43]" />
-              Smart English Flashcards for Vietnamese Learners
-            </div>
-
-            <h1 className="text-3xl sm:text-5xl font-black text-[#221C16] tracking-tight leading-none">
-              Turn words into <span className="text-[#E06B43] underline decoration-[#F59E0B] decoration-wavy decoration-2">stories.</span>
-            </h1>
-
-            <p className="text-sm sm:text-base text-[#6B6258] font-medium max-w-lg leading-relaxed">
-              Nhập danh sách từ vựng bất kỳ &mdash; WordNest sẽ tự động phân tích nghĩa tiếng Việt chuẩn xác, phiên âm IPA, câu ví dụ thực tế và hình ảnh trực quan giúp bạn ghi nhớ nhanh hơn.
+      <main className="page-container space-y-8 py-5 sm:py-9">
+        <section className="home-intro">
+          <div className="max-w-2xl">
+            <p className="section-kicker">WordNest</p>
+            <h1>Hôm nay bạn muốn học gì?</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-[#6B6258] sm:text-base">
+              Mở một bộ từ để ôn tập, hoặc thêm vài từ mới rồi bắt đầu theo nhịp của bạn.
             </p>
           </div>
-
-          {/* Mascot Display Area */}
-          <div className="shrink-0 flex flex-col items-center justify-center p-2 z-10">
-            <div className="transition-transform hover:scale-105 duration-200">
-              <WordNestMascot mood="happy" size={130} />
-            </div>
-            <span className="text-[11px] font-bold text-[#6B6258] mt-1 bg-[#FAF6EE] px-2 py-0.5 rounded-full border border-[#221C16]/20">
-              Nesty Mascot
-            </span>
+          <div className="flex flex-wrap gap-2">
+            <Link href="#library" className="brick-button-primary gap-2 px-4 py-3 text-sm"><BookOpen className="h-4 w-4" /> Xem bộ từ</Link>
+            <Link href="#add-vocabulary" className="brick-button-secondary gap-2 px-4 py-3 text-sm"><Plus className="h-4 w-4" /> Thêm từ</Link>
           </div>
         </section>
 
-        {/* Bulk Input Form */}
-        <section>
-          <BulkInputForm />
+        <section className="learning-glance" aria-label="Tổng quan thư viện">
+          <span className="text-sm font-black text-[#221C16]">{deckCount} bộ từ đang chờ bạn</span>
+          <a href="#library" className="inline-flex items-center gap-1 text-xs font-bold text-[#A64B2B]">Đi tới thư viện <ArrowDown className="h-3.5 w-3.5" /></a>
         </section>
 
-        {/* Recent Decks */}
-        <section>
-          <RecentDecks decks={recentDecks} />
+        <section id="library" className="scroll-mt-20">
+          <FolderLibrary {...library} />
         </section>
+
+        <BulkInputForm folders={library.folders.map((folder) => ({ id: folder.id, name: folder.name }))} />
       </main>
-
-      {/* Footer */}
-      <footer className="w-full border-t-2 border-[#221C16] py-6 bg-[#FAF6EE] text-center text-xs text-[#6B6258] font-bold">
-        <p>WordNest &bull; Turn words into stories &bull; Built for learners</p>
-      </footer>
     </div>
   );
 }

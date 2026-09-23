@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { FlashcardStatus } from "@prisma/client";
+import { fsrsService, SpacedRepetitionStats } from "@/services/fsrs";
 
 export interface GlobalProgressStats {
   totalCards: number;
@@ -20,6 +21,7 @@ export interface DeckProgressItem {
   newCount: number;
   learningCount: number;
   knownCount: number;
+  dueTodayCount: number;
   masteryRate: number;
   quizAttemptsCount: number;
   lastQuizAccuracy: number | null;
@@ -29,38 +31,48 @@ export interface DeckProgressItem {
 
 export interface ProgressSummary {
   stats: GlobalProgressStats;
+  spacedRepetition: SpacedRepetitionStats;
   decks: DeckProgressItem[];
 }
 
 export class ProgressService {
   /**
-   * Computes comprehensive learning progress and quiz statistics across all decks.
+   * Computes comprehensive learning progress, FSRS spaced repetition,
+   * and quiz statistics across all decks.
    */
   async getProgressSummary(): Promise<ProgressSummary> {
-    // 1. Fetch all decks with their cards and quiz attempts
-    const decks = await db.deck.findMany({
-      include: {
-        cards: {
-          select: {
-            id: true,
-            status: true,
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    // Fetch all decks and spaced repetition stats in parallel
+    const [decks, spacedRepetition] = await Promise.all([
+      db.deck.findMany({
+        include: {
+          cards: {
+            select: {
+              id: true,
+              status: true,
+              due: true,
+              state: true,
+            },
+          },
+          quizAttempts: {
+            orderBy: {
+              createdAt: "desc",
+            },
+            select: {
+              id: true,
+              accuracy: true,
+              createdAt: true,
+            },
           },
         },
-        quizAttempts: {
-          orderBy: {
-            createdAt: "desc",
-          },
-          select: {
-            id: true,
-            accuracy: true,
-            createdAt: true,
-          },
+        orderBy: {
+          updatedAt: "desc",
         },
-      },
-      orderBy: {
-        updatedAt: "desc",
-      },
-    });
+      }),
+      fsrsService.getSpacedRepetitionStats(),
+    ]);
 
     let totalCards = 0;
     let newCount = 0;
@@ -74,6 +86,9 @@ export class ProgressService {
       const deckNew = deck.cards.filter((c) => c.status === FlashcardStatus.NEW).length;
       const deckLearning = deck.cards.filter((c) => c.status === FlashcardStatus.LEARNING).length;
       const deckKnown = deck.cards.filter((c) => c.status === FlashcardStatus.KNOWN).length;
+      const deckDueToday = deck.cards.filter(
+        (c) => c.state > 0 && new Date(c.due) <= endOfToday
+      ).length;
 
       const deckMasteryRate =
         deckTotalCards > 0 ? Number(((deckKnown / deckTotalCards) * 100).toFixed(1)) : 0;
@@ -100,6 +115,7 @@ export class ProgressService {
         newCount: deckNew,
         learningCount: deckLearning,
         knownCount: deckKnown,
+        dueTodayCount: deckDueToday,
         masteryRate: deckMasteryRate,
         quizAttemptsCount: attemptsCount,
         lastQuizAccuracy: latestAttempt ? latestAttempt.accuracy : null,
@@ -124,6 +140,7 @@ export class ProgressService {
         totalQuizAttempts,
         overallAccuracy,
       },
+      spacedRepetition,
       decks: deckProgressItems,
     };
   }
