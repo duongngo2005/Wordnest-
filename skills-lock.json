@@ -1,6 +1,24 @@
 {
   "version": 1,
   "skills": {
+    "better-interface": {
+      "source": "jakubkrehel/skills",
+      "sourceType": "github",
+      "skillPath": "skills/better-interface/SKILL.md",
+      "computedHash": "406267c5782510d658a914899db2fc5eb3f5f7d51620cc4c86d7e26b217fdf24"
+    },
+    "designing-frontend-interfaces": {
+      "source": "osmontero/opencode-skills",
+      "sourceType": "github",
+      "skillPath": "skills/designing-frontend-interfaces/SKILL.md",
+      "computedHash": "03932bde6d8523fb0975848b839ad1c4b6d070ff7bb3ac6de60a5302de394bec"
+    },
+    "designing-user-experience": {
+      "source": "osmontero/opencode-skills",
+      "sourceType": "github",
+      "skillPath": "skills/designing-user-experience/SKILL.md",
+      "computedHash": "78db0278c8f026786c1c4f3152958b41ccdda10cc6fc7f61f214124796da56fc"
+    },
     "frontend-design": {
       "source": "anthropics/skills",
       "sourceType": "github",
@@ -18,6 +36,12 @@
       "sourceType": "github",
       "skillPath": "prisma-database-setup/SKILL.md",
       "computedHash": "6a991a2530a6da7131e3fc71c353e8278702d0146b8b6e1d2fdfc2d3d0a21bd2"
+    },
+    "responsive-design": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/ui-design/skills/responsive-design/SKILL.md",
+      "computedHash": "794cc7f1b2f79d398135d19ef3fe32c406dde926b9bdf86ee3fe7b939a0be906"
     },
     "systematic-debugging": {
       "source": "obra/superpowers",

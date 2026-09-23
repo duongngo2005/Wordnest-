@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Menu, Plus, Settings } from "lucide-react";
+import { Menu, Settings } from "lucide-react";
 import { WordNestMascot } from "./Mascot";
 
 export function Header() {
@@ -12,9 +12,6 @@ export function Header() {
         </Link>
 
         <nav aria-label="Điều hướng chính" className="flex items-center gap-1">
-          <Link href="/#add-vocabulary" className="brick-button-primary gap-1.5 px-3 py-2 text-xs sm:text-sm">
-            <Plus className="h-4 w-4" /><span>Thêm từ</span>
-          </Link>
           <details className="relative">
             <summary role="button" aria-label="Thêm tùy chọn" className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-lg text-[#4A4036] hover:bg-[#F1E9DB] focus:outline-none focus:ring-2 focus:ring-[#E06B43]">
               <Menu className="h-5 w-5" />

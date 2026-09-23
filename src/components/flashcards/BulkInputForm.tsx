@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { BookOpen, X } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronUp, X } from "lucide-react";
 import { ManualCardsEditor } from "./ManualCardsEditor";
 
 interface BulkInputFormProps {
@@ -19,8 +19,9 @@ export function BulkInputForm({ folders = [] }: BulkInputFormProps) {
     <section id="add-vocabulary" className="surface-card overflow-hidden">
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-4 p-4 text-left sm:p-5"
+        className="flex w-full items-center justify-between gap-4 p-4 text-left transition-colors hover:bg-[#FFF9EF] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#E06B43] sm:p-5"
         onClick={() => setIsOpen((current) => !current)}
+        aria-label={isOpen ? "Đóng form thêm từ" : "Thêm từ mới"}
         aria-expanded={isOpen}
         aria-controls="home-add-vocabulary"
       >
@@ -28,12 +29,14 @@ export function BulkInputForm({ folders = [] }: BulkInputFormProps) {
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FDE68A] text-[#92400E]">
             <BookOpen className="h-5 w-5" />
           </span>
-          <span>
+            <span>
             <span className="block text-base font-black text-[#221C16]">Thêm từ mới</span>
             <span className="mt-0.5 block text-xs font-medium text-[#6B6258]">Nhập từng thẻ hoặc dán nhiều dòng từ Excel/Google Sheets.</span>
-          </span>
+            </span>
         </span>
-        <span className="brick-button-primary shrink-0 px-3 py-2 text-xs">{isOpen ? "Đóng" : "Thêm từ"}</span>
+        <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F5EEDD] text-[#A64B2B]">
+          {isOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+        </span>
       </button>
 
       {isOpen ? (

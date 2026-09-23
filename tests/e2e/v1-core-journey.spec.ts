@@ -18,7 +18,7 @@ test("manual add → review → typed retry → needs practice → focused pract
   const deckName = `Daily core ${testInfo.testId.slice(-8)}`;
 
   await page.goto("/");
-  await page.locator("#add-vocabulary").getByRole("button", { name: "Thêm từ" }).tap();
+  await page.locator("#add-vocabulary").getByRole("button", { name: "Thêm từ mới", exact: true }).tap();
   await page.getByLabel("Tên bộ từ vựng (tùy chọn)").fill(deckName);
   await page.getByLabel("Word *").fill("allocate");
   await page.getByLabel("Meaning Vietnamese *").fill("phân bổ");

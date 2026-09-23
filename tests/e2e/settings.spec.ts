@@ -8,7 +8,8 @@ test.describe("settings page", () => {
 
     await expect(page.getByRole("heading", { name: "Cài đặt" })).toBeVisible();
     await expect(page.getByLabel("Chọn giọng")).toBeVisible();
-    await expect(page.locator("header nav a")).toHaveCount(4);
+    await expect(page.getByRole("navigation", { name: "Điều hướng chính" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Thêm tùy chọn" })).toBeVisible();
 
     const fasterRate = page.getByRole("radio", { name: "Nhanh 1.15×" });
     await fasterRate.click();

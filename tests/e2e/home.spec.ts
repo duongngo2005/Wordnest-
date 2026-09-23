@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("home page", () => {
-  test("prioritizes the daily learning choice and keeps manual add focused", async ({ page }) => {
+  test("prioritizes the daily learning choice and keeps one clear manual-add entry", async ({ page }) => {
     await page.goto("/");
 
     await expect(page.getByRole("heading", { name: "Hôm nay bạn muốn học gì?" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Xem bộ từ" })).toBeVisible();
-    await page.locator("#add-vocabulary").getByRole("button", { name: "Thêm từ" }).click();
+    await expect(page.getByRole("link", { name: "Thêm từ", exact: true })).toHaveCount(0);
+    await expect(page.getByText("Thêm từ mới", { exact: true })).toHaveCount(1);
+    await page.locator("#add-vocabulary").getByRole("button", { name: "Thêm từ mới", exact: true }).click();
     await expect(page.getByLabel("Word *")).toBeVisible();
     await expect(page.getByRole("button", { name: "Lưu flashcard" })).toBeDisabled();
   });

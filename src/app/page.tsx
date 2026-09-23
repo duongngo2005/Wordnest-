@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { ArrowDown, BookOpen, Plus } from "lucide-react";
+import { ArrowDown, BookOpen } from "lucide-react";
 import { Header } from "@/components/ui/Header";
 import { BulkInputForm } from "@/components/flashcards/BulkInputForm";
 import { FolderLibrary } from "@/components/folders/FolderLibrary";
@@ -26,7 +26,6 @@ export default async function HomePage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="#library" className="brick-button-primary gap-2 px-4 py-3 text-sm"><BookOpen className="h-4 w-4" /> Xem bộ từ</Link>
-            <Link href="#add-vocabulary" className="brick-button-secondary gap-2 px-4 py-3 text-sm"><Plus className="h-4 w-4" /> Thêm từ</Link>
           </div>
         </section>
 
