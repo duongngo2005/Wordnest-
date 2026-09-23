@@ -38,12 +38,12 @@ test("keeps core learning screens reachable across narrow and wide viewports", a
     await page.setViewportSize(viewport);
 
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Hôm nay bạn muốn học gì?" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Thư viện" })).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
     await page.goto(`/decks/${deck.id}`);
     await expect(page.getByRole("link", { name: "Ôn tập" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Thêm từ" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Thêm thẻ" })).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
     await page.goto(`/decks/${deck.id}/study`);

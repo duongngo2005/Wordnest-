@@ -6,6 +6,7 @@ import { Fragment, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, ClipboardCopy, ImageIcon, Loader2, Trash2 } from "lucide-react";
 import { getJsonFlashcardImportPrompt } from "@/lib/flashcards/json-import-prompt";
 import { useToast } from "@/components/ui/ToastProvider";
+import { parseVocabularyInput } from "@/services/vocabulary/parser";
 
 interface PreviewCard {
   term: string;
@@ -69,6 +70,7 @@ export function JsonFlashcardImport({
 }: JsonFlashcardImportProps) {
   const toast = useToast();
   const [rawJson, setRawJson] = useState("");
+  const [rawTerms, setRawTerms] = useState("");
   const [preview, setPreview] = useState<JsonImportPreview | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [imageStates, setImageStates] = useState<Record<number, "loaded" | "failed">>({});
@@ -77,9 +79,10 @@ export function JsonFlashcardImport({
   const [isPromptVisible, setIsPromptVisible] = useState(false);
   const [expandedPreviewRows, setExpandedPreviewRows] = useState<Record<number, boolean>>({});
 
+  const parsedTerms = useMemo(() => parseVocabularyInput(rawTerms, 30), [rawTerms]);
   const prompt = useMemo(
-    () => getJsonFlashcardImportPrompt({ collectionName, deckName }),
-    [collectionName, deckName]
+    () => getJsonFlashcardImportPrompt({ collectionName, deckName, terms: parsedTerms.terms }),
+    [collectionName, deckName, parsedTerms.terms]
   );
   const imageCards = preview?.cards.flatMap((card, index) => card.imageUrl ? [{ card, index }] : []) ?? [];
   const failedImages = imageCards.filter(({ index }) => imageStates[index] === "failed");
@@ -87,9 +90,31 @@ export function JsonFlashcardImport({
   const canImport = Boolean(preview?.valid && pendingImages.length === 0 && failedImages.length === 0 && !isImporting);
 
   const copyPrompt = async () => {
+    if (parsedTerms.error) {
+      setRequestError(parsedTerms.error);
+      return;
+    }
+    if (parsedTerms.terms.length === 0) {
+      setRequestError("Nhập ít nhất một từ để tạo AI Prompt.");
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(prompt);
-      toast.success("Đã sao chép prompt", { description: "Dán prompt vào ChatGPT, Gemini hoặc Claude rồi gửi danh sách từ." });
+      if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        await navigator.clipboard.writeText(prompt);
+      } else {
+        // Fallback for insecure context / HTTP on LAN IP
+        const textArea = document.createElement("textarea");
+        textArea.value = prompt;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        textArea.style.top = "-9999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+      toast.success("Đã sao chép prompt", { description: "Dán vào ChatGPT, Gemini hoặc Claude." });
     } catch {
       toast.error("Không thể sao chép prompt", { description: "Trình duyệt không cho phép truy cập clipboard." });
     }
@@ -180,16 +205,36 @@ export function JsonFlashcardImport({
 
   return (
     <div className="space-y-4">
-      <div className="space-y-3 rounded-xl border-2 border-[#221C16] bg-[#FEF3C7] p-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-xl text-xs font-semibold text-[#6B6258]">
-          Sao chép prompt, dùng chatbot bên ngoài tạo JSON, rồi dán vào đây. WordNest không gọi AI hoặc tự tìm ảnh trong luồng này.
+      <div className="wn-paper-surface space-y-3 bg-[#FEF3C7] p-3">
+        <label htmlFor="json-vocabulary-terms" className="block text-xs font-extrabold text-[#221C16]">
+          Từ vựng
+          <textarea
+            id="json-vocabulary-terms"
+            value={rawTerms}
+            onChange={(event) => {
+              setRawTerms(event.target.value);
+              setRequestError(null);
+            }}
+            rows={3}
+            placeholder={"allocate; resilient; meticulous\ncapacity"}
+            className="wn-field mt-1.5 min-h-24 resize-y leading-6"
+            aria-describedby="json-vocabulary-helper"
+          />
+        </label>
+        <p id="json-vocabulary-helper" className="text-xs font-semibold text-[#6B6258]" aria-live="polite">
+          {parsedTerms.error
+            ? parsedTerms.error
+            : parsedTerms.terms.length
+              ? `${parsedTerms.terms.length}/30 từ${parsedTerms.duplicateCount ? ` · Đã bỏ ${parsedTerms.duplicateCount} từ trùng.` : ""}`
+              : "Dùng dấu ; hoặc xuống dòng"}
         </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-xl text-xs font-semibold text-[#6B6258]">Tạo JSON ở chatbot bên ngoài, rồi dán lại đây.</p>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => setIsPromptVisible((visible) => !visible)} className="brick-button-secondary px-3 py-2 text-xs font-black" aria-expanded={isPromptVisible}>
+            <button type="button" disabled={parsedTerms.terms.length === 0 || Boolean(parsedTerms.error)} onClick={() => setIsPromptVisible((visible) => !visible)} className="brick-button-secondary px-3 py-2 text-xs font-black" aria-expanded={isPromptVisible}>
               {isPromptVisible ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />} {isPromptVisible ? "Ẩn AI Prompt" : "Hiện AI Prompt"}
             </button>
-            <button type="button" onClick={copyPrompt} className="brick-button-secondary px-3 py-2 text-xs font-black">
+            <button type="button" disabled={parsedTerms.terms.length === 0 || Boolean(parsedTerms.error)} onClick={copyPrompt} className="brick-button-secondary px-3 py-2 text-xs font-black">
               <ClipboardCopy className="h-4 w-4" /> Copy AI Prompt
             </button>
           </div>
@@ -209,7 +254,7 @@ export function JsonFlashcardImport({
           onChange={(event) => changeJson(event.target.value)}
           disabled={isValidating || isImporting}
           placeholder={'{\n  "schemaVersion": 1,\n  "cards": []\n}'}
-          className="mt-1.5 w-full resize-y rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-3 font-mono text-xs leading-5 text-[#221C16] shadow-[2px_2px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43] disabled:opacity-60"
+          className="mt-1.5 w-full resize-y rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-3 font-mono text-[16px] sm:text-xs leading-5 text-[#221C16] shadow-[2px_2px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43] disabled:opacity-60"
         />
       </label>
 

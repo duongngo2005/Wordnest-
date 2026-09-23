@@ -8,24 +8,6 @@ export function normalizeTerm(term: string): string {
   return term.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-export interface ManualFlashcardRow {
-  term: string;
-  meaningVi: string;
-}
-
-/** Parses spreadsheet rows in the primary manual-entry format: word<TAB>meaning. */
-export function parseManualFlashcardPaste(input: string): ManualFlashcardRow[] {
-  if (!input || typeof input !== "string") return [];
-
-  return input.split(/\r?\n/).flatMap((line) => {
-    const [term = "", ...meaningParts] = line.split("\t");
-    const meaningVi = meaningParts.join("\t").trim();
-    const trimmedTerm = term.trim();
-
-    return trimmedTerm || meaningVi ? [{ term: trimmedTerm, meaningVi }] : [];
-  });
-}
-
 export interface ParseResult {
   terms: string[];
   normalizedTerms: string[];
@@ -36,10 +18,10 @@ export interface ParseResult {
 }
 
 /**
- * Parses raw user vocabulary input separated by semicolons (;).
+ * Parses raw vocabulary input separated by semicolons (;) or new lines.
  *
  * Rules:
- * 1. Split by ';'
+ * 1. Split by ';' or a line break
  * 2. Trim whitespace
  * 3. Remove empty values
  * 4. Deduplicate case-insensitively
@@ -61,7 +43,7 @@ export function parseVocabularyInput(
     };
   }
 
-  const rawTokens = rawInput.split(";");
+  const rawTokens = rawInput.split(/[;\r\n]+/);
   const seen = new Set<string>();
   const terms: string[] = [];
   const normalizedTerms: string[] = [];

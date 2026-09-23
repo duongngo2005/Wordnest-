@@ -6,6 +6,7 @@ import {
   DEFAULT_SPEECH_PREFERENCES,
   getEnglishSpeechVoices,
   getSpeechPreferences,
+  WORDNEST_SPEECH_VOICES,
   saveSpeechPreferences,
   SPEECH_RATES,
   subscribeToEnglishSpeechVoices,
@@ -45,7 +46,7 @@ export function SpeechSettingsPanel() {
   };
 
   const handleVoiceChange = (voiceURI: string) => {
-    updatePreferences({ ...preferences, voiceURI: voiceURI || null });
+    updatePreferences({ ...preferences, voiceURI });
   };
 
   const handleRateChange = (rate: SpeechRate) => {
@@ -54,6 +55,7 @@ export function SpeechSettingsPanel() {
 
   const handlePreview = () => {
     if (isPlayingPreview) return;
+    setIsPlayingPreview(true);
 
     speakEnglish(
       PREVIEW_TEXT,
@@ -82,8 +84,8 @@ export function SpeechSettingsPanel() {
           </span>
           <div>
             <h2 className="text-base font-black text-[#221C16]">Giọng đọc tiếng Anh</h2>
-            <p className="mt-0.5 text-xs font-semibold leading-relaxed text-[#6B6258]">
-              Áp dụng cho mọi nút Nghe trong WordNest trên thiết bị này.
+            <p className="mt-0.5 text-xs font-bold text-[#6B6258]">
+              Áp dụng trên thiết bị này.
             </p>
           </div>
         </div>
@@ -98,21 +100,31 @@ export function SpeechSettingsPanel() {
             onChange={(event) => handleVoiceChange(event.target.value)}
             className="min-h-11 w-full rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 text-sm font-bold text-[#221C16] shadow-[2px_2px_0px_#221C16] outline-none focus:ring-2 focus:ring-[#E06B43]"
           >
-            <option value="">Tự động chọn giọng tiếng Anh phù hợp</option>
-            {voices.map((voice) => (
-              <option key={voice.voiceURI} value={voice.voiceURI}>
-                {voice.name} ({voice.lang}){voice.localService ? "" : " · trực tuyến"}
-              </option>
-            ))}
+            <optgroup label="Giọng WordNest">
+              {WORDNEST_SPEECH_VOICES.map((voice) => (
+                <option key={voice.id} value={voice.id}>
+                  {voice.label}
+                </option>
+              ))}
+            </optgroup>
+            {voices.length > 0 ? (
+              <optgroup label="Giọng thiết bị">
+                {voices.map((voice) => (
+                  <option key={voice.voiceURI} value={voice.voiceURI}>
+                    {voice.name} ({voice.lang})
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
           </select>
           {voices.length === 0 ? (
-            <p className="flex items-start gap-1.5 text-xs font-semibold leading-relaxed text-[#A16207]">
+            <p className="flex items-start gap-1.5 text-xs font-semibold leading-relaxed text-[#0284C7]">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Thiết bị chưa trả về danh sách giọng. Bạn vẫn có thể dùng chế độ tự động hoặc cài thêm giọng tiếng Anh trong hệ điều hành.
+              Có 4 giọng WordNest. Giọng thiết bị sẽ hiện khi trình duyệt tải xong.
             </p>
           ) : (
-            <p className="text-xs font-semibold text-[#6B6258]">
-              Tìm thấy {voices.length} giọng tiếng Anh trên thiết bị này.
+            <p className="text-xs font-bold text-[#6B6258]">
+              {voices.length} giọng thiết bị có sẵn. Chọn giọng WordNest để phát ổn định trên mọi thiết bị.
             </p>
           )}
         </label>
@@ -131,6 +143,7 @@ export function SpeechSettingsPanel() {
                   type="button"
                   role="radio"
                   aria-checked={isSelected}
+                  aria-label={`${rateLabels[rate]} ${rate}×`}
                   onClick={() => handleRateChange(rate)}
                   className={`min-h-12 rounded-xl border-2 px-3 py-2 text-left text-xs font-black transition-colors focus:outline-none focus:ring-2 focus:ring-[#E06B43] ${
                     isSelected
@@ -154,7 +167,7 @@ export function SpeechSettingsPanel() {
             className="brick-button-primary gap-2 px-4 text-sm disabled:translate-x-0"
           >
             <Volume2 className={`h-4 w-4 ${isPlayingPreview ? "speaking-pulse" : ""}`} />
-            {isPlayingPreview ? "Đang đọc…" : "Nghe thử giọng này"}
+            {isPlayingPreview ? "Đang đọc…" : "Nghe thử"}
           </button>
           <button
             type="button"
@@ -166,9 +179,9 @@ export function SpeechSettingsPanel() {
           </button>
         </div>
 
-        <p className="flex items-start gap-2 rounded-xl border border-[#8DD3C7] bg-[#F0FDFA] p-3 text-xs font-semibold leading-relaxed text-[#166534]">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          Lựa chọn của bạn được lưu ngay trên trình duyệt này. Khi đổi thiết bị hoặc xóa dữ liệu trình duyệt, hãy chọn lại giọng đọc.
+        <p className="flex items-center gap-2 rounded-xl border border-[#8DD3C7] bg-[#F0FDFA] p-3 text-xs font-bold text-[#166534]">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-[#15803D]" />
+          <span>Đã lưu trên thiết bị này.</span>
         </p>
       </div>
     </section>

@@ -1,14 +1,14 @@
 "use client";
+/* eslint-disable @next/next/no-img-element -- user-provided image URLs are not configured for Next/Image. */
 
-import React, { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Edit3, Image as ImageIcon, MoreHorizontal, Search, Trash2, X } from "lucide-react";
 import { FlashcardStatus } from "@/lib/flashcards/status";
 import { PronounceButton } from "./PronounceButton";
-import { StatusBadge } from "./StatusBadge";
-import { Edit3, Trash2, X, Image as ImageIcon, MoreHorizontal, RefreshCw, Search } from "lucide-react";
-import { useToast } from "@/components/ui/ToastProvider";
 import { ImagePickerModal } from "./ImagePickerModal";
 import { SerializedPracticeEvidenceSummary } from "@/services/vocabulary";
 import { CEFR_LEVELS, PART_OF_SPEECH_OPTIONS } from "@/lib/validation/flashcard";
+import { useToast } from "@/components/ui/ToastProvider";
 
 export interface FlashcardData {
   id: string;
@@ -49,619 +49,551 @@ interface FlashcardItemProps {
   onUpdate?: (cardId: string, updated: Partial<FlashcardData>) => Promise<void>;
 }
 
-export function FlashcardItem({
-  card,
-  evidence,
-  onDelete,
-  onUpdate,
-}: FlashcardItemProps) {
+type Draft = Pick<
+  FlashcardData,
+  | "term"
+  | "meaningVi"
+  | "definitionEn"
+  | "ipa"
+  | "partOfSpeech"
+  | "cefr"
+  | "exampleEn"
+  | "exampleVi"
+  | "imageUrl"
+  | "imageSource"
+  | "imageSearchQuery"
+  | "imagePageUrl"
+  | "imageAuthor"
+  | "imageLicense"
+>;
+
+function draftFrom(card: FlashcardData): Draft {
+  return {
+    term: card.term,
+    meaningVi: card.meaningVi,
+    definitionEn: card.definitionEn,
+    ipa: card.ipa,
+    partOfSpeech: card.partOfSpeech,
+    cefr: card.cefr,
+    exampleEn: card.exampleEn,
+    exampleVi: card.exampleVi,
+    imageUrl: card.imageUrl,
+    imageSource: card.imageSource,
+    imageSearchQuery: card.imageSearchQuery,
+    imagePageUrl: card.imagePageUrl ?? null,
+    imageAuthor: card.imageAuthor ?? null,
+    imageLicense: card.imageLicense ?? null,
+  };
+}
+
+export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardItemProps) {
   const toast = useToast();
   const [isEditing, setIsEditing] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isImagePickerOpen, setIsImagePickerOpen] = useState(false);
-
-  // Edit form state
-  const [term, setTerm] = useState(card.term);
-  const [meaningVi, setMeaningVi] = useState(card.meaningVi);
-  const [definitionEn, setDefinitionEn] = useState(card.definitionEn || "");
-  const [ipa, setIpa] = useState(card.ipa || "");
-  const [partOfSpeech, setPartOfSpeech] = useState(card.partOfSpeech || "");
-  const [cefr, setCefr] = useState(card.cefr || "");
-  const [exampleEn, setExampleEn] = useState(card.exampleEn || "");
-  const [exampleVi, setExampleVi] = useState(card.exampleVi || "");
-  const [imageUrl, setImageUrl] = useState(card.imageUrl || "");
-  const [imageSource, setImageSource] = useState(card.imageSource);
-  const [imageSearchQuery, setImageSearchQuery] = useState(card.imageSearchQuery);
-  const [imagePageUrl, setImagePageUrl] = useState(card.imagePageUrl || null);
-  const [imageAuthor, setImageAuthor] = useState(card.imageAuthor || null);
-  const [imageLicense, setImageLicense] = useState(card.imageLicense || null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [isPasting, setIsPasting] = useState(false);
-  const [lastImageUrl, setLastImageUrl] = useState(card.imageUrl);
-  if (card.imageUrl !== lastImageUrl) {
-    setLastImageUrl(card.imageUrl);
-    setImageError(false);
-  }
+  const [draft, setDraft] = useState<Draft>(() => draftFrom(card));
+  const editorRef = useRef<HTMLElement | null>(null);
+  const editorTermRef = useRef<HTMLInputElement | null>(null);
 
-  const handleStartEdit = () => {
-    setTerm(card.term);
-    setMeaningVi(card.meaningVi);
-    setDefinitionEn(card.definitionEn || "");
-    setIpa(card.ipa || "");
-    setPartOfSpeech(card.partOfSpeech || "");
-    setCefr(card.cefr || "");
-    setExampleEn(card.exampleEn || "");
-    setExampleVi(card.exampleVi || "");
-    setImageUrl(card.imageUrl || "");
-    setImageSource(card.imageSource);
-    setImageSearchQuery(card.imageSearchQuery);
-    setImagePageUrl(card.imagePageUrl || null);
-    setImageAuthor(card.imageAuthor || null);
-    setImageLicense(card.imageLicense || null);
+  const evidenceLabel =
+    !evidence || evidence.classification === "NO_EVIDENCE"
+      ? null
+      : evidence.classification === "RECENTLY_SUCCESSFUL"
+      ? "Thực hành tốt"
+      : evidence.classification === "INSUFFICIENT_DATA"
+      ? "Cần thêm dữ liệu"
+      : evidence.explanationVi;
+
+  const updateDraft = <K extends keyof Draft>(key: K, value: Draft[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+
+  const startEdit = () => {
+    setDraft(draftFrom(card));
     setIsEditing(true);
   };
 
-  const handleImagePickerSelect = async (
-    imageData: {
-      imageUrl: string;
-      imageSource?: string | null;
-      imageSearchQuery?: string | null;
-      imagePageUrl?: string | null;
-      imageAuthor?: string | null;
-    },
-    options?: { silentToast?: boolean }
-  ) => {
+  useEffect(() => {
+    if (!isEditing) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const timer = window.setTimeout(() => editorTermRef.current?.focus(), 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsEditing(false);
+      }
+      if (event.key !== "Tab" || !editorRef.current) return;
+      const focusable = editorRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, [isEditing]);
+
+  const selectImage = async (image: {
+    imageUrl: string;
+    imageSource?: string | null;
+    imageSearchQuery?: string | null;
+    imagePageUrl?: string | null;
+    imageAuthor?: string | null;
+  }) => {
+    const media: Partial<FlashcardData> = {
+      imageUrl: image.imageUrl,
+      imageSource: image.imageSource ?? "MANUAL",
+      imageSearchQuery: image.imageSearchQuery ?? null,
+      imagePageUrl: image.imagePageUrl ?? null,
+      imageAuthor: image.imageAuthor ?? null,
+      imageLicense: null,
+    };
     setImageError(false);
-    setImageUrl(imageData.imageUrl);
-    setImageSource(imageData.imageSource || "MANUAL");
-    setImageSearchQuery(imageData.imageSearchQuery || null);
-    setImagePageUrl(imageData.imagePageUrl || null);
-    setImageAuthor(imageData.imageAuthor || null);
-    setImageLicense(null);
-    if (!isEditing && onUpdate) {
-      await onUpdate(card.id, {
-        imageUrl: imageData.imageUrl,
-        imageSource: imageData.imageSource || null,
-        imageSearchQuery: imageData.imageSearchQuery || null,
-        imagePageUrl: imageData.imagePageUrl || null,
-        imageAuthor: imageData.imageAuthor || null,
-        imageLicense: null,
-      });
-      if (!options?.silentToast) {
-        toast.success("Đã cập nhật hình ảnh", {
-          description: `Hình ảnh của từ “${card.term}” đã được thay đổi.`,
-        });
-      }
-    }
-  };
-
-  const handleImagePickerRemove = async () => {
-    setImageUrl("");
-    setImageSource(null);
-    setImageSearchQuery(null);
-    setImagePageUrl(null);
-    setImageAuthor(null);
-    setImageLicense(null);
-    if (!isEditing && onUpdate) {
-      if (card.imageUrl && card.imageUrl.startsWith("/uploads/cards/")) {
-        fetch(`/api/upload/image?url=${encodeURIComponent(card.imageUrl)}`, {
-          method: "DELETE",
-        }).catch((err) => console.warn("Could not delete local file:", err));
-      }
-
-      await onUpdate(card.id, {
-        imageUrl: null,
-        imageSource: null,
-        imageSearchQuery: null,
-        imagePageUrl: null,
-        imageAuthor: null,
-        imageLicense: null,
-      });
-      toast.success("Đã xóa hình ảnh", {
-        description: `Đã gỡ bỏ hình ảnh của thẻ “${card.term}”.`,
-      });
-    }
-  };
-
-  const handleCardPaste = async (e: React.ClipboardEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+    if (isEditing) {
+      setDraft((current) => ({ ...current, ...media }));
       return;
     }
-
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith("image/")) {
-        const file = items[i].getAsFile();
-        if (file) {
-          e.preventDefault();
-          if (isPasting) return;
-          setIsPasting(true);
-          try {
-            const formData = new FormData();
-            formData.append("file", file);
-            const res = await fetch("/api/upload/image", {
-              method: "POST",
-              body: formData,
-            });
-            const data = await res.json();
-            if (res.ok && data.success) {
-              if (card.imageUrl && card.imageUrl.startsWith("/uploads/cards/")) {
-                fetch(`/api/upload/image?url=${encodeURIComponent(card.imageUrl)}`, {
-                  method: "DELETE",
-                }).catch(() => {});
-              }
-              await handleImagePickerSelect(
-                {
-                  imageUrl: data.imageUrl,
-                  imageSource: "MANUAL",
-                },
-                { silentToast: true }
-              );
-              toast.success("Đã dán ảnh từ clipboard", {
-                description: `Đã cập nhật ảnh cho từ “${card.term}”.`,
-              });
-            } else {
-              toast.error("Không thể dán ảnh", {
-                description: data.error || "Vui lòng thử lại.",
-              });
-            }
-          } catch (err) {
-            console.error("Paste image failed:", err);
-            toast.error("Không thể dán ảnh", {
-              description: "Đã xảy ra lỗi khi tải ảnh lên.",
-            });
-          } finally {
-            setIsPasting(false);
-          }
-          return;
-        }
-      }
-    }
-  };
-
-  const handleSaveEdit = async () => {
     if (!onUpdate) return;
-    if (!term.trim() || !meaningVi.trim()) {
-      toast.error("Thiếu thông tin bắt buộc", { description: "Thuật ngữ và nghĩa tiếng Việt không được để trống." });
+    await onUpdate(card.id, media);
+    toast.success("Đã cập nhật hình ảnh");
+  };
+
+  const removeImage = async () => {
+    const media: Partial<FlashcardData> = {
+      imageUrl: null,
+      imageSource: null,
+      imageSearchQuery: null,
+      imagePageUrl: null,
+      imageAuthor: null,
+      imageLicense: null,
+    };
+    if (isEditing) {
+      setDraft((current) => ({ ...current, ...media }));
       return;
     }
+    if (!onUpdate) return;
+    await onUpdate(card.id, media);
+    toast.success("Đã xóa hình ảnh");
+  };
+
+  const save = async () => {
+    if (!draft.term.trim() || !draft.meaningVi.trim() || !onUpdate) return;
     setIsSaving(true);
     try {
-      await onUpdate(card.id, {
-        term,
-        meaningVi,
-        definitionEn: definitionEn || null,
-        ipa: ipa || null,
-        partOfSpeech: partOfSpeech || null,
-        cefr: cefr || null,
-        exampleEn: exampleEn || null,
-        exampleVi: exampleVi || null,
-        imageUrl: imageUrl || null,
-        imageSource: imageUrl ? imageSource || "MANUAL" : null,
-        imageSearchQuery: imageUrl ? imageSearchQuery : null,
-        imagePageUrl: imageUrl ? imagePageUrl : null,
-        imageAuthor: imageUrl ? imageAuthor : null,
-        imageLicense: imageUrl ? imageLicense : null,
-      });
+      await onUpdate(card.id, draft);
       setIsEditing(false);
-      toast.success("Đã lưu thay đổi", { description: `Thẻ “${term}” đã được cập nhật.` });
-    } catch (err) {
-      console.error("Failed to update card:", err);
-      toast.error("Không thể lưu cập nhật", {
-        description: err instanceof Error ? err.message : "Vui lòng thử lại.",
+      toast.success("Đã lưu thẻ");
+    } catch (error) {
+      toast.error("Không thể lưu thẻ", {
+        description: error instanceof Error ? error.message : "Thử lại.",
       });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (confirm(`Bạn có chắc muốn xóa thẻ "${card.term}" không?`)) {
-      setIsDeleting(true);
-      try {
-        await onDelete(card.id);
-        toast.success("Đã xóa thẻ", { description: `Thẻ “${card.term}” đã được xóa.` });
-      } catch (err) {
-        console.error("Failed to delete card:", err);
-        toast.error("Không thể xóa thẻ", { description: "Vui lòng thử lại." });
-        setIsDeleting(false);
-      }
+  const remove = async () => {
+    setIsDeleting(true);
+    try {
+      await onDelete(card.id);
+    } catch {
+      setIsDeleting(false);
+      toast.error("Không thể xóa thẻ", { description: "Thử lại." });
     }
   };
 
   if (isEditing) {
     return (
-      <div className="brick-card p-4 sm:p-5 bg-[#FFFDF9] space-y-3">
-        <div className="flex items-center justify-between border-b-2 border-[#221C16] pb-2">
-          <span className="font-extrabold text-sm text-[#221C16]">
-            Chỉnh sửa thẻ: {card.term}
-          </span>
+      <div className="fixed inset-0 z-50 flex items-end bg-[#221C16]/35 p-0 sm:items-center sm:justify-center sm:p-6">
+      <article
+        ref={editorRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`edit-card-${card.id}`}
+        className="wn-primary-surface flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-b-none bg-[#FFFDF9] sm:rounded-[var(--radius-lg)]"
+      >
+        <div className="flex shrink-0 items-center justify-between border-b-2 border-dashed border-[#DCD3C5] bg-[#FEF3C7] px-4 py-3 sm:px-5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FEF3C7] shadow-[1.5px_1.5px_0px_#221C16]">
+              <Edit3 className="h-4 w-4 text-[#E06B43]" strokeWidth={2.5} />
+            </span>
+            <h3 id={`edit-card-${card.id}`} className="text-base font-black text-[#221C16]">Chỉnh sửa thẻ</h3>
+          </div>
           <button
+            type="button"
             onClick={() => setIsEditing(false)}
-            className="p-1.5 text-[#6B6258] hover:text-[#221C16] rounded-md"
             aria-label="Đóng chỉnh sửa"
+            className="wn-button wn-button-quiet wn-icon-button"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5 text-[#6B6258]" />
           </button>
         </div>
 
-        <section className="space-y-3">
-          <h3 className="text-xs font-black uppercase tracking-wider text-[#6B6258]">Cốt lõi</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-          <div>
-            <label className="block text-xs font-bold text-[#6B6258] mb-1">
-              Thuật ngữ / Cụm từ
-            </label>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+        <section className="wn-form-group">
+          <h4 className="text-sm font-black text-[#221C16]">Cơ bản</h4>
+          <label className="wn-field-label">
+            <span>Từ</span>
             <input
-              type="text"
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-lg border-2 border-[#221C16] text-sm font-bold bg-[#FAF6EE] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
+              ref={editorTermRef}
+              value={draft.term}
+              onChange={(event) => updateDraft("term", event.target.value)}
+              className="wn-field"
             />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-[#6B6258] mb-1">
-              Nghĩa tiếng Việt
-            </label>
+          </label>
+          <label className="wn-field-label">
+            <span>Nghĩa tiếng Việt</span>
             <input
-              type="text"
-              value={meaningVi}
-              onChange={(e) => setMeaningVi(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-lg border-2 border-[#221C16] text-sm font-semibold bg-[#FAF6EE] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
+              value={draft.meaningVi}
+              onChange={(event) => updateDraft("meaningVi", event.target.value)}
+              className="wn-field"
             />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-[#6B6258] mb-1">Từ loại</label>
-            <select value={partOfSpeech} onChange={(e) => setPartOfSpeech(e.target.value)} className="w-full px-2.5 py-1.5 rounded-lg border-2 border-[#221C16] text-sm bg-[#FAF6EE] focus:outline-none focus:ring-2 focus:ring-[#E06B43]">
-              <option value="">Không chọn</option>
-              {partOfSpeech && !PART_OF_SPEECH_OPTIONS.includes(partOfSpeech as typeof PART_OF_SPEECH_OPTIONS[number]) ? <option value={partOfSpeech}>Giá trị hiện có: {partOfSpeech}</option> : null}
-              {PART_OF_SPEECH_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-[#6B6258] mb-1">CEFR</label>
-            <select value={cefr} onChange={(e) => setCefr(e.target.value)} className="w-full px-2.5 py-1.5 rounded-lg border-2 border-[#221C16] text-sm bg-[#FAF6EE] focus:outline-none focus:ring-2 focus:ring-[#E06B43]">
-              <option value="">Không chọn</option>
-              {cefr && !CEFR_LEVELS.includes(cefr as typeof CEFR_LEVELS[number]) ? <option value={cefr}>Giá trị hiện có: {cefr}</option> : null}
-              {CEFR_LEVELS.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </div>
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="wn-field-label">
+              <span>Từ loại</span>
+              <select
+                value={draft.partOfSpeech ?? ""}
+                onChange={(event) => updateDraft("partOfSpeech", event.target.value || null)}
+                className="wn-field"
+              >
+                <option value="">Không chọn</option>
+                {draft.partOfSpeech &&
+                !PART_OF_SPEECH_OPTIONS.includes(
+                  draft.partOfSpeech as (typeof PART_OF_SPEECH_OPTIONS)[number]
+                ) ? (
+                  <option value={draft.partOfSpeech}>{draft.partOfSpeech}</option>
+                ) : null}
+                {PART_OF_SPEECH_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="wn-field-label">
+              <span>CEFR</span>
+              <select
+                value={draft.cefr ?? ""}
+                onChange={(event) => updateDraft("cefr", event.target.value || null)}
+                className="wn-field"
+              >
+                <option value="">Không chọn</option>
+                {draft.cefr &&
+                !CEFR_LEVELS.includes(draft.cefr as (typeof CEFR_LEVELS)[number]) ? (
+                  <option value={draft.cefr}>{draft.cefr}</option>
+                ) : null}
+                {CEFR_LEVELS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </section>
 
-        <section className="space-y-3">
-          <h3 className="text-xs font-black uppercase tracking-wider text-[#6B6258]">Phát âm</h3>
-          <label className="block text-xs font-bold text-[#6B6258]">Phát âm IPA
-            <input type="text" value={ipa} onChange={(e) => setIpa(e.target.value)} className="mt-1 w-full px-2.5 py-1.5 rounded-lg border-2 border-[#221C16] text-sm bg-[#FAF6EE] focus:outline-none focus:ring-2 focus:ring-[#E06B43]" />
+        <section className="wn-form-group">
+          <h4 className="text-sm font-black text-[#221C16]">Phát âm</h4>
+          <label className="wn-field-label">
+            <span>IPA</span>
+            <input
+              value={draft.ipa ?? ""}
+              onChange={(event) => updateDraft("ipa", event.target.value || null)}
+              placeholder="/.../"
+              className="wn-field font-mono"
+            />
           </label>
         </section>
 
-        <section className="space-y-3">
-          <h3 className="text-xs font-black uppercase tracking-wider text-[#6B6258]">Nghĩa & ngữ cảnh</h3>
-          <div>
-            <label className="block text-xs font-bold text-[#6B6258] mb-1">Định nghĩa tiếng Anh</label>
-            <textarea rows={2} value={definitionEn} onChange={(e) => setDefinitionEn(e.target.value)} className="w-full px-2.5 py-1.5 rounded-lg border-2 border-[#221C16] text-sm bg-[#FAF6EE] focus:outline-none focus:ring-2 focus:ring-[#E06B43]" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-          <div>
-            <label className="block text-xs font-bold text-[#6B6258] mb-1">
-              Ví dụ (Tiếng Anh)
-            </label>
+        <section className="wn-form-group">
+          <h4 className="text-sm font-black text-[#221C16]">Ngữ cảnh</h4>
+          <label className="wn-field-label">
+            <span>Định nghĩa tiếng Anh</span>
             <textarea
+              value={draft.definitionEn ?? ""}
+              onChange={(event) => updateDraft("definitionEn", event.target.value || null)}
               rows={2}
-              value={exampleEn}
-              onChange={(e) => setExampleEn(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-lg border-2 border-[#221C16] text-sm bg-[#FAF6EE] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
+              className="wn-field"
             />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-[#6B6258] mb-1">
-              Dịch ví dụ (Tiếng Việt)
-            </label>
+          </label>
+          <label className="wn-field-label">
+            <span>Ví dụ tiếng Anh</span>
             <textarea
+              value={draft.exampleEn ?? ""}
+              onChange={(event) => updateDraft("exampleEn", event.target.value || null)}
               rows={2}
-              value={exampleVi}
-              onChange={(e) => setExampleVi(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-lg border-2 border-[#221C16] text-sm bg-[#FAF6EE] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
+              className="wn-field"
             />
-          </div>
-        </div>
-          {exampleEn.trim() && term.trim() && !exampleEn.toLocaleLowerCase().includes(term.trim().toLocaleLowerCase()) ? <p className="text-[11px] font-medium text-[#6B6258]">Lưu ý: ví dụ không chứa nguyên dạng thuật ngữ. Điều này vẫn có thể đúng nếu câu dùng biến thể như “allocated”.</p> : null}
+          </label>
+          <label className="wn-field-label">
+            <span>Dịch ví dụ</span>
+            <textarea
+              value={draft.exampleVi ?? ""}
+              onChange={(event) => updateDraft("exampleVi", event.target.value || null)}
+              rows={2}
+              className="wn-field"
+            />
+          </label>
         </section>
 
-        <section className="space-y-2">
-          <h3 className="text-xs font-black uppercase tracking-wider text-[#6B6258]">Hình ảnh</h3>
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="block text-xs font-bold text-[#6B6258]">
-              URL Hình ảnh (bỏ trống nếu muốn xóa ảnh)
-            </label>
+        <section className="wn-form-group">
+          <h4 className="text-sm font-black text-[#221C16]">Hình ảnh</h4>
+          {draft.imageUrl ? (
+            <div className="relative overflow-hidden rounded-xl border-2 border-[#221C16]">
+              <img
+                src={draft.imageUrl}
+                alt=""
+                className="max-h-48 w-full object-cover"
+                onError={() => setImageError(true)}
+              />
+            </div>
+          ) : null}
+          {imageError ? (
+            <p className="text-xs font-bold text-[#B91C1C]">Không thể tải ảnh hiện tại.</p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setIsImagePickerOpen(true)}
-              className="text-[11px] font-bold text-[#E06B43] hover:underline flex items-center gap-1"
+              onClick={() => setIsPickerOpen(true)}
+              className="brick-button-secondary px-3 py-1.5 text-xs font-black"
             >
-              <Search className="w-3 h-3" /> Tìm ảnh trên web
+              <Search className="h-4 w-4" />
+              <span>Tìm hoặc tải ảnh</span>
             </button>
+            {draft.imageUrl ? (
+              <button
+                type="button"
+                onClick={removeImage}
+                className="wn-button-quiet text-xs font-bold px-3 py-1.5"
+              >
+                Gỡ ảnh
+              </button>
+            ) : null}
           </div>
-          <input
-            type="text"
-            value={imageUrl}
-            onChange={(e) => {
-              setImageUrl(e.target.value);
-              setImageSource(e.target.value.trim() ? "MANUAL" : null);
-              setImageSearchQuery(null);
-              setImagePageUrl(null);
-              setImageAuthor(null);
-              setImageLicense(null);
-            }}
-            placeholder="https://..."
-            className="w-full px-2.5 py-1.5 rounded-lg border-2 border-[#221C16] text-sm bg-[#FAF6EE] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
-          />
-        </div>
         </section>
 
-        <div className="flex justify-end gap-2 pt-2">
+        </div>
+        <div className="wn-form-actions shrink-0 bg-[#FFFDF9] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5">
+          <button
+            type="button"
+            onClick={save}
+            disabled={isSaving}
+            className="brick-button-primary px-5 py-2 text-sm font-black"
+          >
+            {isSaving ? "Đang lưu..." : "Lưu"}
+          </button>
           <button
             type="button"
             onClick={() => setIsEditing(false)}
-            className="px-3 py-1.5 text-xs font-bold rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] hover:bg-gray-100"
+            className="brick-button-secondary px-4 py-2 text-sm font-bold"
           >
             Hủy
           </button>
-          <button
-            type="button"
-            onClick={handleSaveEdit}
-            disabled={isSaving}
-            className="brick-button-primary px-4 py-1.5 text-xs text-white font-bold"
-          >
-            {isSaving ? "Đang lưu..." : "Lưu thay đổi"}
-          </button>
         </div>
 
-        {isImagePickerOpen && (
+        {isPickerOpen ? (
           <ImagePickerModal
-            isOpen={isImagePickerOpen}
-            onClose={() => setIsImagePickerOpen(false)}
+            isOpen={isPickerOpen}
+            onClose={() => setIsPickerOpen(false)}
             term={card.term}
-            currentImageUrl={imageUrl}
-            initialQuery={card.imageSearchQuery}
-            onSelectImage={handleImagePickerSelect}
-            onRemoveImage={handleImagePickerRemove}
+            currentImageUrl={draft.imageUrl}
+            initialQuery={draft.imageSearchQuery}
+            onSelectImage={selectImage}
+            onRemoveImage={removeImage}
           />
-        )}
+        ) : null}
+      </article>
       </div>
     );
   }
 
   return (
-    <>
-      <article
-        tabIndex={0}
-        onPaste={handleCardPaste}
-        aria-label={`Thẻ từ vựng: ${card.term}`}
-        className="surface-card relative flex flex-col justify-between gap-4 p-4 sm:p-5 focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
-      >
-        {isPasting && (
-          <div className="absolute inset-0 bg-[#FFFDF9]/80 backdrop-blur-xs rounded-2xl flex items-center justify-center z-20">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#FAF6EE] border-2 border-[#221C16] rounded-xl font-bold text-xs shadow-[2px_2px_0px_#221C16]">
-              <RefreshCw className="w-3.5 h-3.5 text-[#E06B43] animate-spin" />
-              <span>Đang dán ảnh từ clipboard...</span>
-            </div>
-          </div>
-        )}
-      <div className="space-y-3">
-        {/* Top bar: CEFR, Part of speech, Status & Actions */}
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {card.cefr && (
-              <span className="brick-badge bg-[#E06B43] text-white border-[#221C16]">
-                {card.cefr}
-              </span>
-            )}
-            {card.partOfSpeech && (
-              <span className="text-xs font-bold italic text-[#6B6258] px-1.5 py-0.5 bg-[#FAF6EE] rounded border border-[#221C16]/20">
-                {card.partOfSpeech}
-              </span>
-            )}
-            {evidence && evidence.classification !== "NO_EVIDENCE" && (
-              <span
-                data-testid={`practice-badge-${card.id}`}
-                className={`text-[10px] font-black px-2 py-0.5 rounded border transition-all ${
-                  evidence.classification === "NEEDS_PRACTICE"
-                    ? "border-[#B45309] bg-[#FEF3C7] text-[#92400E] shadow-[1px_1px_0px_#B45309]"
-                    : evidence.classification === "MIXED"
-                    ? "border-[#0369A1] bg-[#E0F2FE] text-[#0369A1]"
-                    : evidence.classification === "RECENTLY_SUCCESSFUL"
-                    ? "border-[#15803D] bg-[#DCFCE7] text-[#15803D]"
-                    : "border-gray-400 bg-[#F5F5F4] text-gray-600"
-                }`}
-                title={evidence.explanationVi}
-              >
-                {evidence.classification === "NEEDS_PRACTICE"
-                  ? "Cần luyện thêm"
-                  : evidence.classification === "MIXED"
-                  ? "Chưa ổn định"
-                  : evidence.classification === "RECENTLY_SUCCESSFUL"
-                  ? "Thực hành tốt"
-                  : "Cần thêm dữ liệu"}
-              </span>
-            )}
-          </div>
-
-          <details className="relative">
-            <summary aria-label={`Tùy chọn cho ${card.term}`} className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-lg text-[#4A4036] hover:bg-[#F4EFE6]">
-              <MoreHorizontal className="h-5 w-5" />
-            </summary>
-            <div className="absolute right-0 z-10 mt-1 w-44 rounded-xl border border-[#221C16]/15 bg-[#FFFDF9] p-1.5 shadow-lg">
-              <div className="px-2 py-1"><StatusBadge status={card.status} /></div>
-              <button onClick={handleStartEdit} className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm font-semibold hover:bg-[#F6F0E6]">
-                <Edit3 className="h-4 w-4" /> Chỉnh sửa
-              </button>
-              <button onClick={handleDelete} disabled={isDeleting} className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm font-semibold text-red-700 hover:bg-red-50">
-                <Trash2 className="h-4 w-4" /> {isDeleting ? "Đang xóa..." : "Xóa thẻ"}
-              </button>
-            </div>
-          </details>
-        </div>
-
-        {/* Hierarchy 1: Term & Audio & IPA */}
+    <article
+      className="wn-vocabulary-card flex flex-col justify-between overflow-hidden p-4 sm:p-5"
+      aria-label={`Thẻ từ vựng: ${card.term}`}
+    >
+      <div>
+        {/* Top Header of Card: Term, IPA, Audio & Menu */}
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h3 className="break-words text-xl font-black tracking-tight text-[#221C16] sm:text-2xl">
+          <div className="min-w-0">
+            <h3 className="break-all text-xl font-black tracking-tight text-[#221C16] sm:text-2xl">
               {card.term}
             </h3>
-            {card.ipa && (
-              <p className="text-xs sm:text-sm font-mono text-[#6B6258] mt-0.5">
+            {card.ipa ? (
+              <p className="mt-0.5 font-mono text-xs sm:text-sm font-semibold text-[#6B6258]">
                 {card.ipa}
               </p>
-            )}
+            ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
+
+          <div className="flex shrink-0 items-center gap-1">
             <PronounceButton text={card.term} label="Nghe" size="sm" />
+            <details className="relative">
+              <summary
+                aria-label={`Tùy chọn cho ${card.term}`}
+                className="wn-button wn-button-quiet wn-icon-button cursor-pointer list-none"
+              >
+                <MoreHorizontal className="h-5 w-5 text-[#6B6258]" />
+              </summary>
+              <div className="absolute right-0 z-20 mt-1.5 grid w-40 gap-1 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-1.5 shadow-[3px_3px_0px_#221C16]">
+                <button
+                  type="button"
+                  onClick={startEdit}
+                  className="wn-button wn-button-quiet justify-start text-xs font-bold"
+                >
+                  <Edit3 className="h-3.5 w-3.5 text-[#E06B43]" />
+                  <span>Chỉnh sửa</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="wn-button wn-button-quiet wn-button-danger justify-start text-xs font-bold"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Xóa</span>
+                </button>
+              </div>
+            </details>
           </div>
         </div>
 
-        {/* Images are useful context, but should not displace the word and meaning. */}
-        {!imageError && card.imageUrl && (
-          <details className="border-t border-[#221C16]/10 pt-3">
-            <summary className="cursor-pointer text-sm font-semibold text-[#6B6258] hover:text-[#221C16]">Xem ảnh minh họa</summary>
-            <div className="relative mt-3 h-40 w-full overflow-hidden rounded-xl bg-[#F4EFE6] sm:h-48">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={card.imageUrl}
-              alt={card.term}
-              className="w-full h-full object-cover"
-              loading="lazy"
-              onError={() => setImageError(true)}
-            />
+        <div className="mt-3 border-t border-dashed border-[#DCD3C5] pt-3">
+          <p className="text-base sm:text-lg font-black text-[#221C16]">{card.meaningVi}</p>
+        </div>
+
+        {/* Practice Evidence Badge */}
+        {evidenceLabel ? (
+          <p className="mt-2.5 text-xs font-bold text-[#6B6258]">
+            <span
+              data-testid={`practice-badge-${card.id}`}
+              className={`font-black ${
+                evidence?.classification === "NEEDS_PRACTICE"
+                  ? "text-[#B45309]"
+                  : evidence?.classification === "RECENTLY_SUCCESSFUL"
+                  ? "text-[#15803D]"
+                  : "text-[#6B6258]"
+              }`}
+            >
+              {evidenceLabel}
+            </span>
+          </p>
+        ) : null}
+
+        {/* Collapsible Details */}
+        <details className="mt-3 border-t-2 border-dashed border-[#DCD3C5] pt-3 group">
+          <summary className="cursor-pointer text-xs font-black text-[#6B6258] hover:text-[#221C16] select-none list-none flex items-center justify-between">
+            <span>Xem ví dụ và chi tiết</span>
+            <span className="text-[11px] font-bold text-[#E06B43] group-open:rotate-180 transition-transform">
+              ▼
+            </span>
+          </summary>
+
+          <div className="grid gap-3 pt-3 text-xs font-semibold text-[#6B6258]">
+            {card.partOfSpeech || card.cefr ? (
+              <p>{[card.partOfSpeech, card.cefr].filter(Boolean).join(" · ")}</p>
+            ) : null}
+
+            {card.definitionEn ? (
+              <p className="italic text-[#221C16]">
+                {card.definitionEn}
+              </p>
+            ) : null}
+
+            {card.exampleEn ? (
+              <div className="space-y-1 border-l-2 border-[#DCD3C5] pl-3">
+                <p className="font-bold text-[#221C16]">&ldquo;{card.exampleEn}&rdquo;</p>
+                {card.exampleVi ? (
+                  <p className="text-xs text-[#6B6258] font-medium">&rarr; {card.exampleVi}</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {evidence ? (
+              <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                <p>
+                  Trắc nghiệm: {evidence.breakdownByQuestionType.multipleChoice.correct}/
+                  {evidence.breakdownByQuestionType.multipleChoice.attempts}
+                </p>
+                <p>
+                  Gõ từ: {evidence.breakdownByQuestionType.typedRecall.correct}/
+                  {evidence.breakdownByQuestionType.typedRecall.attempts}
+                </p>
+              </div>
+            ) : null}
+
+            {card.imageUrl && !imageError ? (
+              <div className="overflow-hidden rounded-xl border-2 border-[#221C16] shadow-[2px_2px_0px_#221C16]">
+                <img
+                  src={card.imageUrl}
+                  alt={card.term}
+                  className="max-h-52 w-full object-cover"
+                  onError={() => setImageError(true)}
+                />
+              </div>
+            ) : null}
+
             <button
               type="button"
-              onClick={() => setIsImagePickerOpen(true)}
-              className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-lg bg-[#FFFDF9] px-2 py-1 text-[11px] font-bold text-[#221C16] shadow-sm"
-              title="Đổi ảnh minh họa khác"
+              onClick={() => setIsPickerOpen(true)}
+              className="brick-button-secondary w-fit px-3 py-1.5 text-xs font-black"
             >
-              <RefreshCw className="w-3 h-3 text-[#E06B43]" />
-              Đổi ảnh
+              <ImageIcon className="h-3.5 w-3.5 text-[#0284C7]" />
+              <span>{card.imageUrl ? "Đổi ảnh" : "Thêm ảnh"}</span>
             </button>
-            </div>
-          </details>
-        )}
-
-        {/* Hierarchy 2: Vietnamese Meaning */}
-        <div>
-          <div className="mb-0.5 text-[11px] font-bold uppercase tracking-wide text-[#9A4A2E]">
-            Nghĩa tiếng Việt
-          </div>
-          <p className="text-base font-extrabold leading-snug text-[#221C16] sm:text-lg">
-            {card.meaningVi}
-          </p>
-        </div>
-
-        <details className="border-t border-[#221C16]/10 pt-3">
-          <summary className="cursor-pointer text-sm font-semibold text-[#6B6258] hover:text-[#221C16]">Xem ví dụ và chi tiết</summary>
-          <div className="mt-3 space-y-3">
-        {(!card.imageUrl || imageError) ? <button type="button" onClick={() => setIsImagePickerOpen(true)} className="inline-flex min-h-10 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-[#6B6258] hover:bg-[#F4EFE6] hover:text-[#E06B43]">
-          <ImageIcon className="h-4 w-4" /> Thêm ảnh
-        </button> : null}
-        {card.definitionEn ? <p className="text-sm italic text-[#6B6258]">{card.definitionEn}</p> : null}
-        {card.exampleEn ? <div className="space-y-1.5 rounded-lg bg-[#FAF6EE] p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#6B6258]">
-              Ví dụ minh họa
-            </span>
-            <PronounceButton text={card.exampleEn} size="sm" />
-          </div>
-          <p className="text-sm font-semibold text-[#221C16] leading-snug">
-            &ldquo;{card.exampleEn}&rdquo;
-          </p>
-          {card.exampleVi ? <p className="text-xs text-[#6B6258] font-medium leading-snug">&rarr; {card.exampleVi}</p> : null}
-        </div> : null}
-
-        {/* Historical evidence stays available without competing with recall. */}
-        {evidence && evidence.firstPassAttempts > 0 && (
-          <div
-            data-testid={`practice-evidence-${card.id}`}
-            className="pt-2 border-t border-black/10 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-[#6B6258]"
-          >
-            {evidence.breakdownByQuestionType.typedRecall.attempts > 0 && (
-              <span className="flex items-center gap-1">
-                <span className="text-[#221C16]">Gõ từ:</span>
-                <span
-                  className={
-                    evidence.breakdownByQuestionType.typedRecall.incorrect > 0
-                      ? "text-[#DC2626]"
-                      : "text-[#15803D]"
-                  }
-                >
-                  {evidence.breakdownByQuestionType.typedRecall.correct}/
-                  {evidence.breakdownByQuestionType.typedRecall.attempts}
-                </span>
-              </span>
-            )}
-            {evidence.breakdownByQuestionType.storyCloze.attempts > 0 && (
-              <span className="flex items-center gap-1">
-                <span className="text-[#221C16]">Story Cloze:</span>
-                <span
-                  className={
-                    evidence.breakdownByQuestionType.storyCloze.incorrect > 0
-                      ? "text-[#DC2626]"
-                      : "text-[#15803D]"
-                  }
-                >
-                  {evidence.breakdownByQuestionType.storyCloze.correct}/
-                  {evidence.breakdownByQuestionType.storyCloze.attempts}
-                </span>
-              </span>
-            )}
-            {evidence.breakdownByQuestionType.multipleChoice.attempts > 0 && (
-              <span className="flex items-center gap-1">
-                <span className="text-[#221C16]">Trắc nghiệm:</span>
-                <span className="text-[#15803D]">
-                  {evidence.breakdownByQuestionType.multipleChoice.correct}/
-                  {evidence.breakdownByQuestionType.multipleChoice.attempts}
-                </span>
-              </span>
-            )}
-            {evidence.latestFirstPassCorrect !== null && (
-              <span>
-                Lần gần nhất:{" "}
-                <strong
-                  className={
-                    evidence.latestFirstPassCorrect ? "text-[#15803D]" : "text-[#DC2626]"
-                  }
-                >
-                  {evidence.latestFirstPassCorrect ? "đúng" : "chưa đúng"}
-                </strong>
-              </span>
-            )}
-            {evidence.retryAttempts > 0 && (
-              <span className="text-[#2563EB]">
-                Sửa khi luyện lại: {evidence.retryCorrect}/{evidence.retryAttempts}
-              </span>
-            )}
-          </div>
-        )}
           </div>
         </details>
       </div>
-    </article>
 
-    {isImagePickerOpen && (
-      <ImagePickerModal
-        isOpen={isImagePickerOpen}
-        onClose={() => setIsImagePickerOpen(false)}
-        term={card.term}
-        currentImageUrl={card.imageUrl}
-        initialQuery={card.imageSearchQuery}
-        onSelectImage={handleImagePickerSelect}
-        onRemoveImage={handleImagePickerRemove}
-      />
-    )}
-  </>
-);
+      {/* Delete Confirmation */}
+      {confirmDelete ? (
+        <div className="mt-3 rounded-xl border-2 border-[#B91C1C] bg-[#FEE2E2] p-3 text-xs font-bold text-[#991B1B]">
+          <p>Xóa thẻ &ldquo;{card.term}&rdquo;?</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={remove}
+              disabled={isDeleting}
+              className="wn-button-danger brick-button-secondary px-3 py-1 text-xs font-black"
+            >
+              {isDeleting ? "Đang xóa..." : "Xóa"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+              className="brick-button-secondary px-3 py-1 text-xs font-bold"
+            >
+              Hủy
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {isPickerOpen ? (
+        <ImagePickerModal
+          isOpen={isPickerOpen}
+          onClose={() => setIsPickerOpen(false)}
+          term={card.term}
+          currentImageUrl={card.imageUrl}
+          initialQuery={card.imageSearchQuery}
+          onSelectImage={selectImage}
+          onRemoveImage={removeImage}
+        />
+      ) : null}
+    </article>
+  );
 }

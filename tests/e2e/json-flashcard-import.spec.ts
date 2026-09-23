@@ -30,8 +30,8 @@ test("JSON import validates before writing, imports the entire preview, and pres
   });
 
   await page.goto(`/decks/${deck.id}`);
-  await page.getByRole("button", { name: "Thêm từ" }).click();
-  await page.getByRole("tab", { name: "Nhập JSON" }).click();
+  await page.getByRole("button", { name: "Thêm thẻ", exact: true }).click();
+  await page.getByRole("button", { name: /^JSON/ }).click();
   const textarea = page.getByLabel("JSON flashcard");
   await textarea.fill(invalidJson);
   await page.getByRole("button", { name: "Validate & Preview" }).click();
@@ -65,14 +65,14 @@ test("JSON import keeps the textarea when the import request fails", async ({ pa
   });
 
   await page.goto(`/decks/${deck.id}`);
-  await page.getByRole("button", { name: "Thêm từ" }).click();
-  await page.getByRole("tab", { name: "Nhập JSON" }).click();
+  await page.getByRole("button", { name: "Thêm thẻ", exact: true }).click();
+  await page.getByRole("button", { name: /^JSON/ }).click();
   const textarea = page.getByLabel("JSON flashcard");
   await textarea.fill(rawJson);
   await page.getByRole("button", { name: "Validate & Preview" }).click();
   await page.getByRole("button", { name: "Import 1 flashcard" }).click();
 
-  await expect(page.locator("#add-cards-form").getByText("Term was added elsewhere.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Term was added elsewhere.", { exact: true }).first()).toBeVisible();
   await expect(textarea).toHaveValue(rawJson);
   await expect.poll(() => db.flashcard.count({ where: { deckId: deck.id } })).toBe(0);
 });

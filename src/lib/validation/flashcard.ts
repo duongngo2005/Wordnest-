@@ -74,21 +74,6 @@ export const aiBatchFlashcardResponseSchema = z.object({
 export type GeneratedFlashcardItem = z.infer<typeof generatedFlashcardItemSchema>;
 export type AIBatchFlashcardResponse = z.infer<typeof aiBatchFlashcardResponseSchema>;
 
-export const generateDeckRequestSchema = z.object({
-  deckName: z.string().trim().optional(),
-  rawInput: z.string().min(1, "Vui lòng nhập ít nhất một từ hoặc cụm từ"),
-  folderId: z.string().min(1).optional(),
-});
-
-export type GenerateDeckRequest = z.infer<typeof generateDeckRequestSchema>;
-
-export const addCardsToDeckRequestSchema = z.object({
-  rawInput: z
-    .string()
-    .min(1, "Vui lòng nhập ít nhất một từ hoặc cụm từ")
-    .max(10_000, "Danh sách từ vựng quá dài"),
-});
-
 const optionalText = (maxLength: number) =>
   z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
@@ -144,12 +129,19 @@ export const updateFlashcardRequestSchema = z
 
 export type UpdateFlashcardRequest = z.infer<typeof updateFlashcardRequestSchema>;
 
-export const manualDeckRequestSchema = z.object({
-  deckName: optionalText(200),
-  folderId: optionalText(200),
+export const manualCardsRequestSchema = z.object({
   cards: z.array(manualFlashcardItemSchema).min(1).max(30),
 });
 
-export const manualCardsRequestSchema = z.object({
-  cards: z.array(manualFlashcardItemSchema).min(1).max(30),
+/** AI generation is intentionally smaller than direct JSON/manual imports. */
+export const AI_CARD_GENERATION_LIMIT = 12;
+
+export const aiCardGenerationRequestSchema = z.object({
+  action: z.literal("generate"),
+  rawInput: z.string().trim().min(1, "Nhập ít nhất một từ hoặc cụm từ.").max(4_000),
+});
+
+export const aiCardPersistRequestSchema = z.object({
+  action: z.literal("persist"),
+  cards: z.array(manualFlashcardItemSchema).min(1).max(AI_CARD_GENERATION_LIMIT),
 });

@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useSyncExternalStore } from "react";
+import React, { useEffect, useState, useSyncExternalStore } from "react";
 import { Volume2 } from "lucide-react";
 import { speakEnglish, isSpeechSupported } from "@/lib/speech";
+import { useToast } from "@/components/ui/ToastProvider";
 
 interface PronounceButtonProps {
   text: string;
@@ -20,6 +21,13 @@ export function PronounceButton({
   className = "",
 }: PronounceButtonProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const { error } = useToast();
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const timer = setTimeout(() => setIsPlaying(false), 6000);
+    return () => clearTimeout(timer);
+  }, [isPlaying]);
 
   const supported = useSyncExternalStore(
     emptySubscribe,
@@ -34,12 +42,18 @@ export function PronounceButton({
   const handleSpeak = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isPlaying) return;
+    setIsPlaying(true);
 
     speakEnglish(
       text,
       () => setIsPlaying(true),
       () => setIsPlaying(false),
-      () => setIsPlaying(false)
+      () => {
+        setIsPlaying(false);
+        error("Không thể phát âm", {
+          description: "Kiểm tra kết nối và âm lượng rồi thử lại.",
+        });
+      }
     );
   };
 

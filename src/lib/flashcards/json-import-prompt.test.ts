@@ -4,6 +4,7 @@ import { getJsonFlashcardImportPrompt } from "./json-import-prompt";
 const prompt = getJsonFlashcardImportPrompt({
   collectionName: "10 Days Vocabulary",
   deckName: "Day 1",
+  terms: ["allocate", "resilient"],
 });
 
 describe("getJsonFlashcardImportPrompt", () => {
@@ -13,6 +14,11 @@ describe("getJsonFlashcardImportPrompt", () => {
 
   it("injects the current deck name", () => {
     expect(prompt).toContain("Deck: Day 1");
+  });
+
+  it("injects the exact selected vocabulary", () => {
+    expect(prompt).toContain("- allocate");
+    expect(prompt).toContain("- resilient");
   });
 
   it("requires the V1 JSON contract", () => {

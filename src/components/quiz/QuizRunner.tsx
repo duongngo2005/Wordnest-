@@ -528,7 +528,7 @@ export function QuizRunner({
         </div>
 
         {/* Retro Toy-brick Progress Bar */}
-        <div className="h-2.5 w-full overflow-hidden rounded-full bg-[#E5E0D5] p-0.5">
+        <div className="h-3 w-full overflow-hidden rounded-full border-2 border-[#221C16] bg-[#FAF6EE] p-0.5 shadow-inner">
           <div
             className="h-full rounded-full bg-[#E06B43] transition-all duration-300 ease-out"
             style={{ width: `${progressPercent}%` }}
@@ -537,7 +537,7 @@ export function QuizRunner({
       </div>
 
       {/* Main Question Card */}
-      <div className="surface-card space-y-6 p-6 sm:p-8">
+      <div className="brick-card space-y-6 p-5 sm:p-7 bg-[#FFFDF9] shadow-[4px_4px_0px_#221C16]">
         {/* Question Type Tag & Selection Reason */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">

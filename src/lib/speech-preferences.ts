@@ -4,13 +4,23 @@ export const SPEECH_RATES = [0.75, 0.9, 1, 1.15] as const;
 
 export type SpeechRate = (typeof SPEECH_RATES)[number];
 
+export const WORDNEST_SPEECH_VOICES = [
+  { id: "wordnest:en-US", label: "WordNest · Mỹ", locale: "en-US" },
+  { id: "wordnest:en-GB", label: "WordNest · Anh", locale: "en-GB" },
+  { id: "wordnest:en-AU", label: "WordNest · Úc", locale: "en-AU" },
+  { id: "wordnest:en-IN", label: "WordNest · Ấn", locale: "en-IN" },
+] as const;
+
+export type WordNestSpeechVoiceId = (typeof WORDNEST_SPEECH_VOICES)[number]["id"];
+export type WordNestSpeechLocale = (typeof WORDNEST_SPEECH_VOICES)[number]["locale"];
+
 export type SpeechPreferences = {
   voiceURI: string | null;
   rate: SpeechRate;
 };
 
 export const DEFAULT_SPEECH_PREFERENCES: SpeechPreferences = {
-  voiceURI: null,
+  voiceURI: "wordnest:en-US",
   rate: 0.9,
 };
 
@@ -29,6 +39,18 @@ function isPreferencesRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+export function getWordNestSpeechVoice(voiceURI: string | null) {
+  return WORDNEST_SPEECH_VOICES.find((voice) => voice.id === voiceURI);
+}
+
+export function isWordNestSpeechVoice(voiceURI: string | null): voiceURI is WordNestSpeechVoiceId {
+  return Boolean(getWordNestSpeechVoice(voiceURI));
+}
+
+export function getWordNestSpeechLocale(voiceURI: string | null): WordNestSpeechLocale {
+  return getWordNestSpeechVoice(voiceURI)?.locale ?? "en-US";
+}
+
 export function parseSpeechPreferences(value: string | null): SpeechPreferences {
   if (!value) return DEFAULT_SPEECH_PREFERENCES;
 
@@ -37,7 +59,7 @@ export function parseSpeechPreferences(value: string | null): SpeechPreferences 
     if (!isPreferencesRecord(parsed)) return DEFAULT_SPEECH_PREFERENCES;
 
     return {
-      voiceURI: typeof parsed.voiceURI === "string" ? parsed.voiceURI : null,
+      voiceURI: typeof parsed.voiceURI === "string" ? parsed.voiceURI : DEFAULT_SPEECH_PREFERENCES.voiceURI,
       rate: isSpeechRate(parsed.rate) ? parsed.rate : DEFAULT_SPEECH_PREFERENCES.rate,
     };
   } catch {
@@ -114,6 +136,32 @@ export function getEnglishSpeechVoices(): SpeechSynthesisVoice[] {
 export function subscribeToEnglishSpeechVoices(onStoreChange: () => void): () => void {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return () => {};
 
-  window.speechSynthesis.addEventListener("voiceschanged", onStoreChange);
-  return () => window.speechSynthesis.removeEventListener("voiceschanged", onStoreChange);
+  const checkVoices = () => {
+    const prevSig = cachedEnglishVoiceSignature;
+    getEnglishSpeechVoices();
+    if (cachedEnglishVoiceSignature !== prevSig) {
+      onStoreChange();
+    }
+  };
+
+  // Standard voiceschanged event
+  window.speechSynthesis.addEventListener("voiceschanged", checkVoices);
+  if ("onvoiceschanged" in window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = checkVoices;
+  }
+
+  // Active polling to catch asynchronous voice loading on iOS Safari
+  const pollingDelays = [100, 300, 600, 1200, 2500];
+  const timerIds = pollingDelays.map((delay) => setTimeout(checkVoices, delay));
+
+  // Voice detection on user touch/click (often wakes the WebKit speech synthesis daemon)
+  window.addEventListener("touchstart", checkVoices, { passive: true, once: true });
+  window.addEventListener("click", checkVoices, { passive: true, once: true });
+
+  return () => {
+    window.speechSynthesis.removeEventListener("voiceschanged", checkVoices);
+    timerIds.forEach(clearTimeout);
+    window.removeEventListener("touchstart", checkVoices);
+    window.removeEventListener("click", checkVoices);
+  };
 }

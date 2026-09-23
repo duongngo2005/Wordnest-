@@ -7,6 +7,18 @@
       "skillPath": "skills/better-interface/SKILL.md",
       "computedHash": "406267c5782510d658a914899db2fc5eb3f5f7d51620cc4c86d7e26b217fdf24"
     },
+    "building-accessible-interfaces": {
+      "source": "osmontero/opencode-skills",
+      "sourceType": "github",
+      "skillPath": "skills/building-accessible-interfaces/SKILL.md",
+      "computedHash": "f0a9e23166d820551677e7fe9cc7239e519a453ee193cd60c8dde32772bd5dde"
+    },
+    "data-viz": {
+      "source": "aladicf/better-web-ui",
+      "sourceType": "github",
+      "skillPath": "skills/data-viz/SKILL.md",
+      "computedHash": "ac67a00ea5a6dd39df41ca1713d2c63ca2f029d337795ce638dfb146ff071cc9"
+    },
     "designing-frontend-interfaces": {
       "source": "osmontero/opencode-skills",
       "sourceType": "github",
@@ -43,6 +55,12 @@
       "skillPath": "plugins/ui-design/skills/responsive-design/SKILL.md",
       "computedHash": "794cc7f1b2f79d398135d19ef3fe32c406dde926b9bdf86ee3fe7b939a0be906"
     },
+    "reviewing-interface-quality": {
+      "source": "osmontero/opencode-skills",
+      "sourceType": "github",
+      "skillPath": "skills/reviewing-interface-quality/SKILL.md",
+      "computedHash": "ec2148c26668b534e3537224901832036eed9d737a7467b53229306ac271b982"
+    },
     "systematic-debugging": {
       "source": "obra/superpowers",
       "sourceType": "github",
@@ -54,6 +72,12 @@
       "sourceType": "github",
       "skillPath": "skills/typescript-clean-code/SKILL.md",
       "computedHash": "1d33058fbbaf385267453957de42a8b6403f1c8826c2a8d60d99b86bccefdabb"
+    },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/ui-ux-pro-max/SKILL.md",
+      "computedHash": "9edb4e9ad51fdad1033c7b6225b8da490e6740699d4712e6d532a442bc8f0501"
     },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",

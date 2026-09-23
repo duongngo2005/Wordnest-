@@ -1,4 +1,4 @@
-const CACHE_NAME = "wordnest-cache-v1";
+const CACHE_NAME = "wordnest-cache-v3";
 const STATIC_ASSETS = [
   "/",
   "/manifest.webmanifest",
@@ -19,17 +19,22 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
+    (async () => {
+      const staleCacheNames = (await caches.keys()).filter(
+        (key) => key.startsWith("wordnest-cache-") && key !== CACHE_NAME
       );
-    })
+
+      await Promise.all(staleCacheNames.map((key) => caches.delete(key)));
+      await self.clients.claim();
+
+      // v1 cached non-hashed Next dev chunks. Refresh only clients migrated
+      // from that stale cache so they receive the current interactive bundle.
+      if (staleCacheNames.length > 0) {
+        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        await Promise.all(clients.map((client) => client.navigate(client.url)));
+      }
+    })()
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
@@ -42,7 +47,6 @@ self.addEventListener("fetch", (event) => {
 
   // Stale-while-revalidate for static assets, network-first for pages
   if (
-    url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
     url.pathname.endsWith(".svg") ||
     url.pathname.endsWith(".png")

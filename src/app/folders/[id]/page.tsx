@@ -15,9 +15,9 @@ export default async function FolderPage({ params }: FolderPageProps) {
   if (!folder) notFound();
 
   return (
-    <div className="min-h-screen bg-[#FAF6EE] selection:bg-[#FDE68A] selection:text-[#221C16]">
+    <div className="app-shell">
       <Header />
-      <main className="px-4 py-6 sm:py-8"><FolderDetailView folder={folder} /></main>
+      <main className="page-container wn-page"><FolderDetailView folder={folder} /></main>
     </div>
   );
 }

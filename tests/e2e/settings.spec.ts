@@ -7,9 +7,14 @@ test.describe("settings page", () => {
     await page.goto("/settings");
 
     await expect(page.getByRole("heading", { name: "Cài đặt" })).toBeVisible();
-    await expect(page.getByLabel("Chọn giọng")).toBeVisible();
+    const voiceSelector = page.getByLabel("Chọn giọng");
+    await expect(voiceSelector).toBeVisible();
+    await expect(voiceSelector).toContainText("WordNest · Mỹ");
+    await expect(voiceSelector).toContainText("WordNest · Anh");
+    await expect(voiceSelector).toContainText("WordNest · Úc");
+    await expect(voiceSelector).toContainText("WordNest · Ấn");
     await expect(page.getByRole("navigation", { name: "Điều hướng chính" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Thêm tùy chọn" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Tiến độ" })).toBeVisible();
 
     const fasterRate = page.getByRole("radio", { name: "Nhanh 1.15×" });
     await fasterRate.click();

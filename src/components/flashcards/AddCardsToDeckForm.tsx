@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Braces, PenLine, X } from "lucide-react";
-import { ManualCardsEditor } from "./ManualCardsEditor";
+import { Braces, PenLine, Sparkles, X } from "lucide-react";
+import { AiCardsToDeckForm } from "./AiCardsToDeckForm";
 import { JsonFlashcardImport } from "./JsonFlashcardImport";
+import { ManualCardsEditor } from "./ManualCardsEditor";
 
 interface AddCardsToDeckFormProps {
   deckId: string;
@@ -13,6 +14,8 @@ interface AddCardsToDeckFormProps {
   onCardsCreated: () => void;
 }
 
+type CreationMode = "manual" | "ai" | "json";
+
 export function AddCardsToDeckForm({
   deckId,
   deckName,
@@ -20,40 +23,79 @@ export function AddCardsToDeckForm({
   onClose,
   onCardsCreated,
 }: AddCardsToDeckFormProps) {
-  const [creationMode, setCreationMode] = useState<"manual" | "json">("manual");
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [mode, setMode] = useState<CreationMode>("manual");
+  const methods: Array<{ id: CreationMode; label: string; description: string; icon: typeof PenLine }> = [
+    { id: "manual", label: "Thủ công", description: "Một thẻ", icon: PenLine },
+    { id: "ai", label: "AI", description: "Tạo tự động", icon: Sparkles },
+    { id: "json", label: "JSON", description: "AI bên ngoài", icon: Braces },
+  ];
 
   return (
-    <section className="mt-5 border-t border-[#221C16]/12 pt-5" aria-label="Thêm flashcard">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-black text-[#221C16]">Thêm vào {deckName}</h2>
-          <p className="mt-1 text-xs font-medium text-[#6B6258]">Tạo thẻ thủ công trước; dữ liệu nâng cao chỉ mở khi bạn cần.</p>
+    <section
+      className="wn-primary-surface overflow-hidden"
+      aria-label="Thêm thẻ"
+    >
+      {/* Header bar */}
+      <div className="flex items-center justify-between border-b-2 border-[#221C16] bg-[#FEF3C7] px-4 py-2.5 sm:px-5">
+        <h2 className="text-base font-black text-[#221C16]">Thêm thẻ mới</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Đóng thêm thẻ"
+          className="wn-button wn-button-quiet wn-icon-button h-11 w-11 rounded-lg"
+        >
+          <X className="h-5 w-5 text-[#221C16]" />
+        </button>
+      </div>
+
+      <div className="p-4 sm:p-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" aria-label="Cách thêm thẻ">
+          {methods.map((method) => {
+            const Icon = method.icon;
+            const selected = mode === method.id;
+            return (
+              <button
+                key={method.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => setMode(method.id)}
+                className={`wn-method-card ${method.id === "json" ? "col-span-2 sm:col-span-1" : ""}`}
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#221C16] bg-[#FFFDF9] text-[#E06B43]">
+                  <Icon className="h-4 w-4" strokeWidth={2.5} />
+                </span>
+                <span>
+                  <span className="block text-sm font-black text-[#221C16]">{method.label}</span>
+                  <span className="mt-0.5 block text-xs font-bold text-[#6B6258]">{method.description}</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
-        <button type="button" onClick={onClose} className="rounded-lg p-2 text-[#6B6258] hover:bg-[#F4EFE6]" aria-label="Đóng form thêm flashcard">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
 
-      <div className="mt-4 flex gap-2" role="tablist" aria-label="Phương thức thêm flashcard">
-        <button type="button" role="tab" aria-selected={creationMode === "manual"} onClick={() => setCreationMode("manual")} className={`rounded-lg px-3 py-2 text-xs font-black ${creationMode === "manual" ? "bg-[#221C16] text-white" : "bg-[#F5EEDD] text-[#4A4036]"}`}>
-          <PenLine className="mr-1 inline h-4 w-4" /> Tạo thủ công
-        </button>
-        <button type="button" role="tab" aria-selected={creationMode === "json"} onClick={() => { setCreationMode("json"); setIsAdvancedOpen(true); }} className={`rounded-lg px-3 py-2 text-xs font-black ${creationMode === "json" ? "bg-[#315F9E] text-white" : "bg-[#F5EEDD] text-[#4A4036]"}`}>
-          <Braces className="mr-1 inline h-4 w-4" /> Nhập JSON
-        </button>
+        {/* Selected Mode Body */}
+        <div className="mt-4">
+          {mode === "manual" ? (
+            <ManualCardsEditor deckId={deckId} onSaved={onCardsCreated} />
+          ) : null}
+          {mode === "ai" ? (
+            <AiCardsToDeckForm
+              deckId={deckId}
+              onSaved={onCardsCreated}
+              onChooseManual={() => setMode("manual")}
+              onChooseJson={() => setMode("json")}
+            />
+          ) : null}
+          {mode === "json" ? (
+            <JsonFlashcardImport
+              deckId={deckId}
+              deckName={deckName}
+              collectionName={collectionName}
+              onSaved={onCardsCreated}
+            />
+          ) : null}
+        </div>
       </div>
-
-      {creationMode === "manual" ? (
-        <div className="mt-4"><ManualCardsEditor deckId={deckId} onSaved={onCardsCreated} /></div>
-      ) : (
-        <details className="mt-4 rounded-xl border border-[#221C16]/14 bg-[#FAF6EE]" open={isAdvancedOpen} onToggle={(event) => setIsAdvancedOpen(event.currentTarget.open)}>
-          <summary className="cursor-pointer px-3 py-3 text-sm font-black text-[#221C16]">Nhập JSON từ chatbot bên ngoài</summary>
-          <div className="border-t border-[#221C16]/12 p-3 sm:p-4">
-            <JsonFlashcardImport deckId={deckId} deckName={deckName} collectionName={collectionName} onSaved={onCardsCreated} />
-          </div>
-        </details>
-      )}
     </section>
   );
 }

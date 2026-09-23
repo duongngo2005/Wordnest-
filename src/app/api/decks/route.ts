@@ -1,23 +1,20 @@
 import { NextResponse } from "next/server";
 import { InvalidJsonBodyError, readJsonBody } from "@/lib/http/json";
 import { ResourceNotFoundError } from "@/lib/http/errors";
-import { aiErrorResponse } from "@/lib/http/ai-error";
-import { generateDeckRequestSchema } from "@/lib/validation/flashcard";
+import { createDeckSchema } from "@/lib/validation/folder";
 import { deckService } from "@/services/vocabulary";
-import { AIError } from "@/services/ai/ai-core";
 
 export async function POST(request: Request) {
   try {
     const body = await readJsonBody(request);
-    const validation = generateDeckRequestSchema.safeParse(body);
+    const validation = createDeckSchema.safeParse(body);
 
     if (!validation.success) {
       const errorMsg = validation.error.issues?.[0]?.message || "Dữ liệu không hợp lệ";
       return NextResponse.json({ success: false, error: errorMsg }, { status: 400 });
     }
 
-    const { rawInput, deckName, folderId } = validation.data;
-    const deck = await deckService.createDeckWithCards(rawInput, deckName, folderId);
+    const deck = await deckService.createDeck(validation.data);
 
     return NextResponse.json({ success: true, deck }, { status: 201 });
   } catch (error) {
@@ -27,11 +24,8 @@ export async function POST(request: Request) {
     if (error instanceof ResourceNotFoundError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 404 });
     }
-    if (error instanceof AIError) {
-      return aiErrorResponse(error);
-    }
     console.error("Error creating deck:", error);
-    const message = error instanceof Error ? error.message : "Đã có lỗi xảy ra khi tạo bộ từ vựng";
+    const message = error instanceof Error ? error.message : "Không thể tạo bộ từ.";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

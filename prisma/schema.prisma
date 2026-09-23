@@ -112,29 +112,6 @@ model ReviewLog {
   @@map("review_logs")
 }
 
-enum DocumentProcessingStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
-}
-
-model DocumentJob {
-  id              String                   @id @default(cuid())
-  filename        String
-  fileType        String
-  status          DocumentProcessingStatus @default(PENDING)
-  totalChunks     Int                      @default(0)
-  processedChunks Int                      @default(0)
-  wordCount       Int                      @default(0)
-  error           String?                  @db.Text
-  resultData      Json?
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
-
-  @@map("document_jobs")
-}
-
 model Story {
   id          String   @id @default(cuid())
   deckId      String

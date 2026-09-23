@@ -4,15 +4,15 @@ import { db } from "@/lib/db";
 import { ResourceNotFoundError } from "@/lib/http/errors";
 import { normalizeTerm, parseVocabularyInput } from "./parser";
 import { aiService } from "@/services/ai";
-import { imageSearchService } from "@/services/images";
 import { FlashcardStatus, Prisma } from "@prisma/client";
 import {
-  AUTO_IMAGE_MIN_SCORE,
+  AI_CARD_GENERATION_LIMIT,
   CEFR_LEVELS,
   isSupportedPartOfSpeech,
   ManualFlashcardItem,
   UpdateFlashcardRequest,
 } from "@/lib/validation/flashcard";
+import type { CreateDeckInput } from "@/lib/validation/folder";
 import {
   JsonFlashcard,
   parseJsonFlashcardImport,
@@ -70,138 +70,22 @@ export interface DeckOption {
 }
 
 export class DeckService {
-  /**
-   * Creates a new Deck and generates AI flashcards with images in one end-to-end operation.
-   */
-  async createDeckWithCards(rawInput: string, deckName?: string, folderId?: string) {
-    const parseResult = parseVocabularyInput(rawInput);
-
-    if (parseResult.error) {
-      throw new Error(parseResult.error);
-    }
-
-    if (parseResult.terms.length === 0) {
-      throw new Error("Không tìm thấy từ vựng hợp lệ. Vui lòng kiểm tra lại danh sách từ.");
-    }
-
-    const trimmedDeckName = deckName?.trim() || "My Vocabulary";
-
+  /** Creates an empty destination for learner-authored flashcards. */
+  async createDeck(input: CreateDeckInput) {
+    const folderId = input.folderId ?? null;
     if (folderId) {
       const folder = await db.folder.findUnique({ where: { id: folderId }, select: { id: true } });
-      if (!folder) throw new ResourceNotFoundError("Không tìm thấy learning collection.");
+      if (!folder) throw new ResourceNotFoundError("Không tìm thấy bộ sưu tập.");
     }
 
-    // 1. Generate flashcards via AI in a single batch
-    const generatedCards = await aiService.generateFlashcards(parseResult.terms);
-
-    // 2. Fetch images sequentially to deduplicate within the same batch and respect AUTO_IMAGE_MIN_SCORE
-    const usedImageUrls = new Set<string>();
-    const cardsWithImages: (typeof generatedCards[number] & {
-      imageUrl: string | null;
-      imageSource: string | null;
-      imageSearchQuery: string | null;
-      imagePageUrl: string | null;
-      imageAuthor: string | null;
-      imageLicense: string | null;
-    })[] = [];
-
-    for (const card of generatedCards) {
-      let imageUrl: string | null = null;
-      let imageSource: string | null = null;
-      let imageSearchQuery: string | null = card.imageSearchQuery;
-      let imagePageUrl: string | null = null;
-      let imageAuthor: string | null = null;
-      let imageLicense: string | null = null;
-
-      const isVisual =
-        card.visualScore !== undefined
-          ? card.visualScore >= AUTO_IMAGE_MIN_SCORE
-          : Boolean(card.imageUseful);
-      const shouldSearch = isVisual && Boolean(card.imageSearchQuery);
-
-      if (shouldSearch && card.imageSearchQuery) {
-        try {
-          const imgResult = await imageSearchService.searchImageForVocabulary(
-            card.term,
-            card.imageSearchQuery,
-            { usedUrls: usedImageUrls }
-          );
-          if (imgResult.imageUrl && !usedImageUrls.has(imgResult.imageUrl)) {
-            imageUrl = imgResult.imageUrl;
-            imageSource = "AUTO";
-            imageSearchQuery = imgResult.imageSearchQuery;
-            imagePageUrl = imgResult.imagePageUrl || null;
-            imageAuthor = imgResult.imageAuthor || null;
-            imageLicense = imgResult.imageLicense || null;
-            usedImageUrls.add(imgResult.imageUrl);
-          }
-        } catch (err) {
-          console.warn(`Failed fetching image for "${card.term}":`, err);
-        }
-      }
-
-      cardsWithImages.push({
-        ...card,
-        imageUrl,
-        imageSource,
-        imageSearchQuery,
-        imagePageUrl,
-        imageAuthor,
-        imageLicense,
-      });
-    }
-
-    // 3. Persist to MySQL database in a transaction
-    const newDeck = await db.$transaction(async (tx) => {
-      const createdDeck = await tx.deck.create({
-        data: {
-          name: trimmedDeckName,
-          description: `Bộ thẻ gồm ${cardsWithImages.length} từ vựng được tạo tự động.`,
-          folderId: folderId ?? null,
-          position: await this.getNextFolderDeckPosition(tx, folderId),
-        },
-      });
-
-      // Prepare card insertion data, ensuring normalizedTerm uniqueness per deck
-      const seenNormalized = new Set<string>();
-      const validCardData: Prisma.FlashcardCreateManyInput[] = [];
-
-      for (const card of cardsWithImages) {
-        const normalized = normalizeTerm(card.term);
-        if (seenNormalized.has(normalized)) continue;
-        seenNormalized.add(normalized);
-
-        validCardData.push({
-          deckId: createdDeck.id,
-          term: card.term,
-          normalizedTerm: normalized,
-          meaningVi: card.meaningVi,
-          definitionEn: card.definitionEn,
-          ipa: card.ipa,
-          partOfSpeech: card.partOfSpeech,
-          cefr: card.cefr,
-          exampleEn: card.exampleEn,
-          exampleVi: card.exampleVi,
-          imageUrl: card.imageUrl,
-          imageSource: card.imageSource,
-          imageSearchQuery: card.imageSearchQuery,
-          imagePageUrl: card.imagePageUrl,
-          imageAuthor: card.imageAuthor,
-          imageLicense: card.imageLicense,
-          status: FlashcardStatus.NEW,
-          state: 0,
-          due: new Date(),
-        });
-      }
-
-      await tx.flashcard.createMany({
-        data: validCardData,
-      });
-
-      return createdDeck;
+    return db.deck.create({
+      data: {
+        name: input.name.trim(),
+        description: input.description ?? null,
+        folderId,
+        position: await this.getNextFolderDeckPosition(db, folderId ?? undefined),
+      },
     });
-
-    return this.getDeckById(newDeck.id);
   }
 
   /**
@@ -447,197 +331,6 @@ export class DeckService {
     });
   }
 
-  /**
-   * Shared AI-assisted card creation for a new or existing deck.
-   * It is retained for compatibility, but has no primary product entry point.
-   */
-  async createCardsFromImport(options: {
-    deckId?: string;
-    deckName?: string;
-    folderId?: string;
-    items: {
-      term: string;
-      meaning?: string;
-      cefr?: string;
-      originalSentence?: string;
-    }[];
-  }) {
-    const { deckId, deckName, folderId, items } = options;
-
-    if (!items || items.length === 0) {
-      throw new Error("Vui lòng chọn ít nhất một từ vựng để tạo thẻ ghi nhớ.");
-    }
-
-    // Determine target deck
-    let targetDeckId: string;
-    let targetDeckName: string;
-
-    if (deckId) {
-      const existingDeck = await db.deck.findUnique({
-        where: { id: deckId },
-        include: { cards: { select: { normalizedTerm: true } } },
-      });
-      if (!existingDeck) {
-        throw new ResourceNotFoundError("Không tìm thấy bộ thẻ đã chọn.");
-      }
-      targetDeckId = existingDeck.id;
-      targetDeckName = existingDeck.name;
-    } else {
-      const trimmedName = deckName?.trim() || "Từ vựng từ tài liệu";
-      if (folderId) {
-        const folder = await db.folder.findUnique({ where: { id: folderId }, select: { id: true } });
-        if (!folder) throw new ResourceNotFoundError("Không tìm thấy learning collection.");
-      }
-      const createdDeck = await db.deck.create({
-        data: {
-          name: trimmedName,
-          description: `Được tạo tự động từ tài liệu với ${items.length} từ vựng.`,
-          folderId: folderId ?? null,
-          position: await this.getNextFolderDeckPosition(db, folderId),
-        },
-      });
-      targetDeckId = createdDeck.id;
-      targetDeckName = createdDeck.name;
-    }
-
-    // Get existing normalized terms in target deck to prevent duplicates
-    const existingCards = await db.flashcard.findMany({
-      where: { deckId: targetDeckId },
-      select: { normalizedTerm: true },
-    });
-    const existingTermSet = new Set(existingCards.map((c) => c.normalizedTerm));
-
-    // Deduplicate incoming items
-    const uniqueItems: typeof items = [];
-    const seenIncoming = new Set<string>();
-
-    for (const item of items) {
-      const norm = normalizeTerm(item.term);
-      if (!norm || seenIncoming.has(norm) || existingTermSet.has(norm)) {
-        continue;
-      }
-      seenIncoming.add(norm);
-      uniqueItems.push(item);
-    }
-
-    if (uniqueItems.length === 0) {
-      return {
-        deckId: targetDeckId,
-        deckName: targetDeckName,
-        cardsCreated: 0,
-        message: "Tất cả các từ vựng này đã tồn tại trong bộ thẻ.",
-      };
-    }
-
-    // 1. Generate flashcards via AI
-    const termsToGen = uniqueItems.map((u) => u.term);
-    const generated = await aiService.generateFlashcards(termsToGen);
-
-    // Map item metadata (meaning, originalSentence, cefr) to enrich generated cards
-    const enrichedCards = generated.map((gen) => {
-      const originalItem = uniqueItems.find(
-        (u) => normalizeTerm(u.term) === normalizeTerm(gen.term)
-      );
-
-      return {
-        ...gen,
-        meaningVi: originalItem?.meaning || gen.meaningVi,
-        cefr: originalItem?.cefr || gen.cefr,
-        exampleEn: originalItem?.originalSentence || gen.exampleEn,
-      };
-    });
-
-    // 2. Fetch images sequentially to deduplicate within the same batch and respect AUTO_IMAGE_MIN_SCORE
-    const usedImageUrls = new Set<string>();
-    const cardsWithImages: (typeof enrichedCards[number] & {
-      imageUrl: string | null;
-      imageSource: string | null;
-      imageSearchQuery: string | null;
-      imagePageUrl: string | null;
-      imageAuthor: string | null;
-      imageLicense: string | null;
-    })[] = [];
-
-    for (const card of enrichedCards) {
-      let imageUrl: string | null = null;
-      let imageSource: string | null = null;
-      let imageSearchQuery: string | null = card.imageSearchQuery;
-      let imagePageUrl: string | null = null;
-      let imageAuthor: string | null = null;
-      let imageLicense: string | null = null;
-
-      const isVisual =
-        card.visualScore !== undefined
-          ? card.visualScore >= AUTO_IMAGE_MIN_SCORE
-          : Boolean(card.imageUseful);
-      const shouldSearch = isVisual && Boolean(card.imageSearchQuery);
-
-      if (shouldSearch && card.imageSearchQuery) {
-        try {
-          const imgResult = await imageSearchService.searchImageForVocabulary(
-            card.term,
-            card.imageSearchQuery,
-            { usedUrls: usedImageUrls }
-          );
-          if (imgResult.imageUrl && !usedImageUrls.has(imgResult.imageUrl)) {
-            imageUrl = imgResult.imageUrl;
-            imageSource = "AUTO";
-            imageSearchQuery = imgResult.imageSearchQuery;
-            imagePageUrl = imgResult.imagePageUrl || null;
-            imageAuthor = imgResult.imageAuthor || null;
-            imageLicense = imgResult.imageLicense || null;
-            usedImageUrls.add(imgResult.imageUrl);
-          }
-        } catch (err) {
-          console.warn(`Failed fetching image for "${card.term}":`, err);
-        }
-      }
-
-      cardsWithImages.push({
-        ...card,
-        imageUrl,
-        imageSource,
-        imageSearchQuery,
-        imagePageUrl,
-        imageAuthor,
-        imageLicense,
-      });
-    }
-
-    // 3. Persist to DB
-    const validCardData: Prisma.FlashcardCreateManyInput[] = cardsWithImages.map((card) => ({
-      deckId: targetDeckId,
-      term: card.term,
-      normalizedTerm: normalizeTerm(card.term),
-      meaningVi: card.meaningVi,
-      definitionEn: card.definitionEn,
-      ipa: card.ipa,
-      partOfSpeech: card.partOfSpeech,
-      cefr: card.cefr,
-      exampleEn: card.exampleEn,
-      exampleVi: card.exampleVi,
-      imageUrl: card.imageUrl,
-      imageSource: card.imageSource,
-      imageSearchQuery: card.imageSearchQuery,
-      imagePageUrl: card.imagePageUrl,
-      imageAuthor: card.imageAuthor,
-      imageLicense: card.imageLicense,
-      status: FlashcardStatus.NEW,
-      state: 0,
-      due: new Date(),
-    }));
-
-    await db.flashcard.createMany({
-      data: validCardData,
-    });
-
-    return {
-      deckId: targetDeckId,
-      deckName: targetDeckName,
-      cardsCreated: validCardData.length,
-    };
-  }
-
   /** Creates a deck and its user-authored cards without invoking AI or image search. */
   async createManualDeckWithCards(options: {
     deckName?: string;
@@ -696,6 +389,88 @@ export class DeckService {
           : {}),
       };
     });
+  }
+
+  /**
+   * Commits an accepted AI preview as one strict transaction. Unlike manual
+   * entry, a stale preview is rejected as a whole instead of quietly adding
+   * only a subset after another tab has created a duplicate.
+   */
+  async persistAiCardDrafts(deckId: string, cards: ManualFlashcardItem[]) {
+    const uniqueCards = this.getUniqueManualCards(cards);
+    if (uniqueCards.length !== cards.length) {
+      throw new CardValidationError("Bản xem trước có thẻ trùng hoặc thiếu nội dung. Hãy tạo lại.");
+    }
+
+    return db.$transaction(async (tx) => {
+      const deck = await tx.deck.findUnique({
+        where: { id: deckId },
+        select: { id: true, name: true, cards: { select: { normalizedTerm: true } } },
+      });
+      if (!deck) throw new ResourceNotFoundError("Không tìm thấy bộ thẻ đã chọn.");
+
+      const existingTerms = new Set(deck.cards.map((card) => card.normalizedTerm));
+      if (uniqueCards.some((card) => existingTerms.has(normalizeTerm(card.term)))) {
+        throw new CardValidationError("Một thẻ trong bản xem trước đã có trong bộ từ. Hãy tạo lại.");
+      }
+
+      const cardsCreated = await this.persistManualCards(tx, deck.id, uniqueCards);
+      if (cardsCreated !== uniqueCards.length) {
+        throw new CardValidationError("Không thể lưu trọn vẹn bản xem trước. Hãy tạo lại.");
+      }
+      return { deckId: deck.id, deckName: deck.name, cardsCreated };
+    });
+  }
+
+  /**
+   * Generates a reviewable lexical draft for an existing deck. This does not
+   * write Flashcards, does not search images, and is safe to retry.
+   */
+  async generateAiCardDrafts(deckId: string, rawInput: string) {
+    const parsed = parseVocabularyInput(rawInput, AI_CARD_GENERATION_LIMIT);
+    if (parsed.error) throw new CardValidationError(parsed.error);
+    if (parsed.terms.length === 0) {
+      throw new CardValidationError("Nhập ít nhất một từ hoặc cụm từ.");
+    }
+
+    const deck = await db.deck.findUnique({
+      where: { id: deckId },
+      select: { id: true, cards: { select: { normalizedTerm: true } } },
+    });
+    if (!deck) throw new ResourceNotFoundError("Không tìm thấy bộ thẻ đã chọn.");
+
+    const existingTerms = new Set(deck.cards.map((card) => card.normalizedTerm));
+    const termsToGenerate = parsed.terms.filter((term) => !existingTerms.has(normalizeTerm(term)));
+    const skippedExistingTerms = parsed.terms.filter((term) => existingTerms.has(normalizeTerm(term)));
+
+    if (termsToGenerate.length === 0) {
+      throw new CardValidationError("Các từ này đã có trong bộ từ.");
+    }
+
+    const generated = await aiService.generateFlashcards(termsToGenerate);
+    if (generated.length !== termsToGenerate.length) {
+      throw new CardValidationError("AI trả về thiếu thẻ. Hãy thử lại.");
+    }
+
+    const cards: ManualFlashcardItem[] = generated.map((card, index) => ({
+      term: termsToGenerate[index],
+      meaningVi: card.meaningVi,
+      definitionEn: card.definitionEn,
+      ipa: card.ipa ?? undefined,
+      partOfSpeech:
+        card.partOfSpeech && isSupportedPartOfSpeech(card.partOfSpeech)
+          ? card.partOfSpeech
+          : undefined,
+      cefr: card.cefr ?? undefined,
+      exampleEn: card.exampleEn,
+      exampleVi: card.exampleVi,
+    }));
+
+    return {
+      cards,
+      skippedExistingTerms,
+      duplicateInputCount: parsed.duplicateCount,
+    };
   }
 
   /** Validates a JSON import against the destination deck without changing data. */

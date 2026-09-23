@@ -10,14 +10,16 @@ export const metadata: Metadata = {
 
 export default function SettingsPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-[#FAF6EE] selection:bg-[#FDE68A] selection:text-[#221C16]">
+    <div className="app-shell">
       <Header />
       <main className="mx-auto w-full max-w-3xl flex-1 space-y-6 px-4 py-6 sm:py-8">
         <section className="brick-card flex items-center justify-between gap-4 overflow-hidden bg-[#FFFDF9] p-4 sm:p-6">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-[#221C16] sm:text-3xl">Cài đặt</h1>
-            <p className="mt-1 max-w-lg text-xs font-semibold leading-relaxed text-[#6B6258] sm:text-sm">
-              Điều chỉnh cách WordNest đọc từ và câu tiếng Anh để phù hợp với nhịp học của bạn.
+            <h1 className="text-2xl font-black tracking-tight text-[#221C16] sm:text-3xl">
+              Cài đặt
+            </h1>
+            <p className="mt-1 text-xs font-bold text-[#6B6258] sm:text-sm">
+              Giọng đọc và tốc độ
             </p>
           </div>
           <WordNestMascot mood="reading" size={72} />

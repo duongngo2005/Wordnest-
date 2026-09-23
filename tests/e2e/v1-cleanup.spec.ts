@@ -65,17 +65,17 @@ test("keeps the daily mobile path prominent and advanced reinforcement reachable
   await page.goto(`/decks/${deckId}`);
 
   await expect(page.getByRole("link", { name: "Ôn tập" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Luyện", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Thêm từ" })).toBeVisible();
-  await expect(page.getByText("Thêm tuỳ chọn")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Truyện đã lưu" })).toBeHidden();
+  await expect(page.getByRole("link", { name: "Luyện tập", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Thêm thẻ" })).toBeVisible();
+  await expect(page.getByLabel("Thêm tùy chọn")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Story" })).toBeHidden();
   await expectNoHorizontalOverflow(page);
 
-  await page.getByText("Thêm tuỳ chọn").tap();
-  await expect(page.getByRole("link", { name: "Truyện đã lưu" })).toBeVisible();
+  await page.getByLabel("Thêm tùy chọn").tap();
+  await expect(page.getByRole("link", { name: "Story" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Thêm từ" }).tap();
-  await expect(page.getByLabel("Word *")).toBeVisible();
+  await page.getByRole("button", { name: "Thêm thẻ" }).tap();
+  await expect(page.getByLabel("Từ", { exact: true })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
   await page.goto(`/decks/${deckId}/study`);

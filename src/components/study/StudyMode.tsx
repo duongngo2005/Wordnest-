@@ -9,6 +9,7 @@ import {
   previewNextReviews,
   ReviewSchedulePreview,
 } from "@/lib/fsrs";
+import { generateUUID } from "@/lib/uuid";
 import {
   ArrowLeft,
   RotateCcw,
@@ -116,9 +117,10 @@ export function StudyMode({
 
       const cardId = currentCard.id;
       const retry = failedReview?.cardId === cardId ? failedReview : null;
-      const reviewEventId = retry?.reviewEventId ?? crypto.randomUUID();
+      const reviewEventId = retry?.reviewEventId ?? generateUUID();
       const expectedSchedulerVersion = retry?.expectedSchedulerVersion ?? currentCard.schedulerVersion ?? 0;
       const appliedRating = retry?.rating ?? rating;
+
       try {
         const updatedCard = await submitReviewOnServer(
           cardId,
@@ -354,9 +356,9 @@ export function StudyMode({
         </div>
 
         {/* Visual Progress Bar */}
-        <div className="h-2 w-full overflow-hidden rounded-full bg-[#E5E0D5]">
+        <div className="h-3 w-full overflow-hidden rounded-full border-2 border-[#221C16] bg-[#FAF6EE] p-0.5 shadow-inner">
           <div
-            className="h-full bg-[#E06B43] transition-all duration-300"
+            className="h-full rounded-full bg-[#E06B43] transition-all duration-300"
             style={{ width: `${((currentIndex + 1) / totalCards) * 100}%` }}
           />
         </div>
@@ -376,7 +378,7 @@ export function StudyMode({
       </div>
 
       {/* Main Flashcard in Study Mode */}
-      <div className="surface-card flex min-h-[380px] flex-col justify-between p-6 sm:min-h-[440px] sm:p-8">
+      <div className="brick-card flex min-h-[380px] flex-col justify-between bg-[#FFFDF9] p-5 sm:min-h-[440px] sm:p-7 shadow-[4px_4px_0px_#221C16]">
         {/* Front of Card (Always Visible) */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -419,7 +421,7 @@ export function StudyMode({
           {isAnswerRevealed ? (
             <div className="space-y-4 border-t border-[#221C16]/12 pt-4 animate-in fade-in duration-200">
               {/* Vietnamese Meaning */}
-              <div className="rounded-xl bg-[#FAF6EE] p-3.5">
+              <div className="rounded-xl border border-[#DCD3C5] bg-[#FAF6EE] p-3.5">
                 <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#E06B43] mb-0.5">
                   Nghĩa tiếng Việt
                 </div>
@@ -430,7 +432,7 @@ export function StudyMode({
               </div>
 
               {/* Example Sentence */}
-              {currentCard.exampleEn ? <div className="space-y-1.5 rounded-xl bg-[#FAF6EE] p-3.5">
+              {currentCard.exampleEn ? <div className="space-y-1.5 rounded-xl border border-[#DCD3C5] bg-[#FAF6EE] p-3.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#6B6258]">
                     Ví dụ minh họa
@@ -444,8 +446,8 @@ export function StudyMode({
               </div> : null}
             </div>
           ) : (
-            <div className="py-6 text-center text-xs text-[#6B6258] italic">
-              Nhấn &ldquo;Hiện đáp án&rdquo; hoặc phím Space để kiểm tra nghĩa và câu ví dụ
+            <div className="py-6 text-center text-xs text-[#6B6258] font-bold">
+              Nhấn &ldquo;Hiện đáp án&rdquo; hoặc phím Space
             </div>
           )}
         </div>

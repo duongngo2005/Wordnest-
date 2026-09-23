@@ -32,6 +32,12 @@ export const createDeckInFolderSchema = z.object({
   description: z.string().trim().max(1_000).optional().transform((value) => value || undefined),
 });
 
+export const createDeckSchema = createDeckInFolderSchema.extend({
+  folderId: z.string().min(1).nullable().optional(),
+});
+
+export type CreateDeckInput = z.infer<typeof createDeckSchema>;
+
 export const moveDeckSchema = z.object({
   folderId: z.string().min(1).nullable(),
 });

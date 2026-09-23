@@ -6,7 +6,7 @@ WordNest is a personal English vocabulary app. Its v1 daily loop is intentionall
 
 ## Core v1
 
-- Create cards manually (term + Vietnamese meaning is enough) or paste a batch.
+- Create cards manually (term + Vietnamese meaning is enough), with optional AI generation or strict JSON import inside a Deck.
 - Review cards on the scheduled-review queue.
 - Practice with multiple choice and typed Vietnamese → English recall, then retry mistakes.
 - Use **Cần luyện thêm** and **Luyện tập trung** as transparent, read-only views of recent practice evidence.
@@ -16,7 +16,7 @@ WordNest is a personal English vocabulary app. Its v1 daily loop is intentionall
 
 ## Optional / advanced tools
 
-JSON import remains available under **More**; CSV export is a secondary data-portability action. AI card generation, Story creation, contextual translation, Story Cloze, Free Practice and the detailed Progress view are parked outside the daily loop. Document import, CSV import and the external Story bridge are retired. Existing Stories and their historical practice evidence remain readable. Manual creation, editing, review and practice work without an AI provider.
+AI generation is an optional Deck-level convenience; manual entry and JSON import work without any provider credentials. CSV export stays in a Deck’s utility menu. Story creation, contextual translation, Story Cloze and Free Practice remain optional, while Progress is a first-class product destination. Document import, CSV import and the external Story bridge are retired. Existing Stories and their historical practice evidence remain readable.
 
 ## Development
 

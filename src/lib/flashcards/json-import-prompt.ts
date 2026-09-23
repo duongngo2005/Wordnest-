@@ -1,8 +1,13 @@
 export function getJsonFlashcardImportPrompt(context: {
   collectionName: string | null | undefined;
   deckName: string;
+  terms?: string[];
 }): string {
   const collectionName = context.collectionName?.trim() || "Không thuộc Collection";
+  const terms = context.terms?.filter(Boolean) ?? [];
+  const vocabularyBlock = terms.length > 0
+    ? terms.map((term) => `- ${term}`).join("\n")
+    : "- (Chưa có từ vựng)";
 
   return `Bạn tạo flashcard tiếng Anh cho WordNest.
 
@@ -12,7 +17,10 @@ Context hiện tại:
 
 Tên Collection và Deck chỉ là metadata tham khảo; không được dùng chúng để suy đoán domain, nghĩa hoặc ngữ cảnh sử dụng.
 
-Tôi sẽ gửi danh sách từ bằng dấu ; hoặc xuống dòng, và có thể kèm context cho từng từ. Chuyển TOÀN BỘ danh sách đó thành đúng một JSON hợp lệ. Chỉ trả JSON thuần: không markdown, không code fence, không giải thích, không có bất kỳ text nào trước hoặc sau JSON.
+Danh sách từ cần chuyển thành flashcard. Giữ nguyên từng term, không bỏ sót, không thêm term mới:
+${vocabularyBlock}
+
+Chuyển TOÀN BỘ danh sách trên thành đúng một JSON hợp lệ. Chỉ trả JSON thuần: không markdown, không code fence, không giải thích, không có bất kỳ text nào trước hoặc sau JSON.
 
 JSON contract (schemaVersion phải là 1):
 {

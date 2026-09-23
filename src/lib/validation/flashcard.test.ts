@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   aiBatchFlashcardResponseSchema,
   generatedFlashcardItemSchema,
-  generateDeckRequestSchema,
   manualFlashcardItemSchema,
   updateFlashcardRequestSchema,
 } from "./flashcard";
@@ -91,16 +90,6 @@ describe("Flashcard Zod Validation", () => {
     if (parsed.success) {
       expect(parsed.data.flashcards.length).toBe(1);
     }
-  });
-
-  it("validates deck generation request input", () => {
-    expect(generateDeckRequestSchema.safeParse({ rawInput: "" }).success).toBe(false);
-    expect(
-      generateDeckRequestSchema.safeParse({
-        deckName: "Tech Vocabulary",
-        rawInput: "cloud computing; kubernetes",
-      }).success
-    ).toBe(true);
   });
 
   it("accepts a manual flashcard with only a word and Vietnamese meaning", () => {

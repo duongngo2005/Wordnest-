@@ -3,7 +3,7 @@ import { progressService } from "@/services/vocabulary";
 
 export async function GET() {
   try {
-    const summary = await progressService.getProgressSummary();
+    const summary = await progressService.getGlobalAnalytics();
     return NextResponse.json({
       success: true,
       data: summary,

@@ -1,53 +1,17 @@
-import { describe, it, expect, afterAll, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { db } from "@/lib/db";
 import { deckService } from "./deck-service";
 import { FlashcardStatus } from "@prisma/client";
 import { aiService } from "@/services/ai";
-import { imageSearchService } from "@/services/images";
 import { AIQuotaExceededError } from "@/services/ai/ai-core";
+import type { GeneratedFlashcardItem } from "@/lib/validation/flashcard";
 import { DuplicateFlashcardTermError } from "./deck-service";
 
 describe("DeckService Integration with MySQL", () => {
-  let testDeckId: string | null = null;
-
-  afterAll(async () => {
-    if (testDeckId) {
-      await db.deck.deleteMany({
-        where: { id: testDeckId },
-      });
-    }
-  });
-
-  it("creates a deck with cards and persists to database", async () => {
-    const rawInput = "apple; resilient; take responsibility; reluctant";
-    const deck = await deckService.createDeckWithCards(rawInput, "Test Suite Deck");
-
-    expect(deck).toBeDefined();
-    expect(deck?.name).toBe("Test Suite Deck");
-    expect(deck?.cards.length).toBe(4);
-    expect(deck?.stats.totalCards).toBe(4);
-    expect(deck?.stats.newCount).toBe(4);
-    expect(deck?.stats.learningCount).toBe(0);
-    expect(deck?.stats.knownCount).toBe(0);
-
-    testDeckId = deck!.id;
-
-    // Verify cards have IPA, examples, and meanings
-    const appleCard = deck!.cards.find((c) => c.normalizedTerm === "apple");
-    expect(appleCard).toBeDefined();
-    expect(appleCard?.meaningVi).toContain("táo");
-    expect(appleCard?.status).toBe(FlashcardStatus.NEW);
-
-    const resilientCard = deck!.cards.find((c) => c.normalizedTerm === "resilient");
-    expect(resilientCard).toBeDefined();
-    expect(resilientCard?.cefr).toBe("B2");
-  });
-
   it("creates a minimal manual deck without calling the AI service", async () => {
     const generateFlashcards = vi
       .spyOn(aiService, "generateFlashcards")
       .mockRejectedValue(new Error("AI keys are unavailable"));
-    const searchImage = vi.spyOn(imageSearchService, "searchImageForVocabulary");
     const deck = await deckService.createManualDeckWithCards({
       deckName: "Manual cards",
       cards: [{ term: "troubleshoot", meaningVi: "xử lý sự cố" }],
@@ -55,7 +19,6 @@ describe("DeckService Integration with MySQL", () => {
 
     try {
       expect(generateFlashcards).not.toHaveBeenCalled();
-      expect(searchImage).not.toHaveBeenCalled();
       expect(deck?.cards).toHaveLength(1);
       expect(deck?.cards[0]).toMatchObject({
         term: "troubleshoot",
@@ -67,7 +30,6 @@ describe("DeckService Integration with MySQL", () => {
       });
     } finally {
       generateFlashcards.mockRestore();
-      searchImage.mockRestore();
       if (deck) await db.deck.delete({ where: { id: deck.id } });
     }
   });
@@ -103,10 +65,76 @@ describe("DeckService Integration with MySQL", () => {
     }
   });
 
-  it("imports every valid JSON card atomically without invoking AI or image search", async () => {
+  it("creates AI drafts without writing cards or searching images, then persists only after confirmation", async () => {
+    const deck = await db.deck.create({ data: { name: "AI draft preview" } });
+    const generated: GeneratedFlashcardItem = {
+      term: "allocate",
+      meaningVi: "phân bổ",
+      definitionEn: "to distribute something for a purpose",
+      ipa: "/ˈæl.ə.keɪt/",
+      partOfSpeech: "verb",
+      cefr: "B2",
+      exampleEn: "The team allocated resources carefully.",
+      exampleVi: "Nhóm đã phân bổ nguồn lực cẩn thận.",
+      visualScore: 20,
+      imageSearchQuery: null,
+      imageUseful: false,
+    };
+    const generateFlashcards = vi.spyOn(aiService, "generateFlashcards").mockResolvedValue([generated]);
+
+    try {
+      const draft = await deckService.generateAiCardDrafts(deck.id, "allocate");
+      expect(draft.cards).toHaveLength(1);
+      expect(draft.cards[0]).toMatchObject({ term: "allocate", meaningVi: "phân bổ" });
+      expect(await db.flashcard.count({ where: { deckId: deck.id } })).toBe(0);
+
+      await expect(deckService.persistAiCardDrafts(deck.id, draft.cards)).resolves.toMatchObject({ cardsCreated: 1 });
+      const saved = await db.flashcard.findFirstOrThrow({ where: { deckId: deck.id } });
+      expect(saved.imageUrl).toBeNull();
+      expect(saved.imageSource).toBeNull();
+    } finally {
+      generateFlashcards.mockRestore();
+      await db.deck.delete({ where: { id: deck.id } });
+    }
+  });
+
+  it("leaves an AI destination deck unchanged when generation fails", async () => {
+    const deck = await db.deck.create({ data: { name: "AI failure is safe" } });
+    const generateFlashcards = vi
+      .spyOn(aiService, "generateFlashcards")
+      .mockRejectedValue(new AIQuotaExceededError());
+
+    try {
+      await expect(deckService.generateAiCardDrafts(deck.id, "deploy; maintain")).rejects.toThrow(AIQuotaExceededError);
+      expect(await db.flashcard.count({ where: { deckId: deck.id } })).toBe(0);
+    } finally {
+      generateFlashcards.mockRestore();
+      await db.deck.delete({ where: { id: deck.id } });
+    }
+  });
+
+  it("rejects a stale AI preview as a whole instead of writing a partial batch", async () => {
+    const deck = await db.deck.create({ data: { name: "AI stale preview" } });
+    await deckService.createManualCards(deck.id, [{ term: "allocate", meaningVi: "phân bổ" }]);
+
+    try {
+      await expect(
+        deckService.persistAiCardDrafts(deck.id, [
+          { term: "allocate", meaningVi: "phân bổ" },
+          { term: "resilient", meaningVi: "kiên cường" },
+        ])
+      ).rejects.toThrow("đã có trong bộ từ");
+      expect(await db.flashcard.findMany({ where: { deckId: deck.id }, orderBy: { term: "asc" } })).toMatchObject([
+        { term: "allocate" },
+      ]);
+    } finally {
+      await db.deck.delete({ where: { id: deck.id } });
+    }
+  });
+
+  it("imports every valid JSON card atomically without invoking AI", async () => {
     const deck = await db.deck.create({ data: { name: "JSON import" } });
     const generateFlashcards = vi.spyOn(aiService, "generateFlashcards");
-    const searchImage = vi.spyOn(imageSearchService, "searchImageForVocabulary");
     const rawJson = JSON.stringify({
       schemaVersion: 1,
       cards: [
@@ -124,10 +152,8 @@ describe("DeckService Integration with MySQL", () => {
       expect(cards[0]).toMatchObject({ imageUrl: "https://images.example.com/apple.jpg", imageSource: "MANUAL" });
       expect(cards[1]).toMatchObject({ imageUrl: null, imageSource: null, status: FlashcardStatus.NEW });
       expect(generateFlashcards).not.toHaveBeenCalled();
-      expect(searchImage).not.toHaveBeenCalled();
     } finally {
       generateFlashcards.mockRestore();
-      searchImage.mockRestore();
       await db.deck.delete({ where: { id: deck.id } });
     }
   });
@@ -189,23 +215,6 @@ describe("DeckService Integration with MySQL", () => {
       expect(await db.flashcard.count({ where: { deckId: deck.id } })).toBe(0);
     } finally {
       await db.deck.delete({ where: { id: deck.id } });
-    }
-  });
-
-  it("does not create an empty deck when AI creation fails", async () => {
-    const failedDeckName = `Failed AI deck ${crypto.randomUUID()}`;
-    expect(await db.deck.count({ where: { name: failedDeckName } })).toBe(0);
-    const generateFlashcards = vi
-      .spyOn(aiService, "generateFlashcards")
-      .mockRejectedValue(new AIQuotaExceededError());
-
-    try {
-      await expect(deckService.createDeckWithCards("deploy; maintain", failedDeckName)).rejects.toThrow(
-        AIQuotaExceededError
-      );
-      expect(await db.deck.count({ where: { name: failedDeckName } })).toBe(0);
-    } finally {
-      generateFlashcards.mockRestore();
     }
   });
 

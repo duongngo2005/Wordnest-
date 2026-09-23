@@ -74,9 +74,9 @@ test.describe("learning collections", () => {
     const deckName = `${folderName} Day 01`;
 
     await page.goto("/");
-    await page.getByRole("button", { name: "Tạo collection", exact: true }).first().click();
-    await page.getByLabel("Tên learning collection").fill(folderName);
-    await page.getByRole("button", { name: "Tạo collection", exact: true }).last().click();
+    await page.getByRole("button", { name: "Bộ sưu tập", exact: true }).click();
+    await page.getByLabel("Tên bộ sưu tập").fill(folderName);
+    await page.getByRole("button", { name: "Lưu", exact: true }).click();
     await expect(page.getByRole("link", { name: new RegExp(folderName) })).toBeVisible();
 
     await expect.poll(async () => {
@@ -86,9 +86,8 @@ test.describe("learning collections", () => {
     folderIds.push(createdFolder.id);
 
     await page.getByLabel(`Mở ${folderName}`).click();
-    await page.getByRole("button", { name: `Quản lý ${folderName}` }).click();
-    await page.getByLabel(`Tạo bộ thẻ trong ${folderName}`).click();
-    await page.getByPlaceholder("Ví dụ: Ngày 01").fill(deckName);
+    await page.getByRole("button", { name: `Tạo bộ từ trong ${folderName}` }).click();
+    await page.getByLabel("Tên bộ từ").fill(deckName);
     await page.getByRole("button", { name: "Tạo", exact: true }).click();
     await expect(page).toHaveURL(/\/decks\/[a-z0-9]+$/);
 
@@ -132,19 +131,11 @@ test.describe("learning collections", () => {
     await expect(page.getByRole("heading", { name: folder.name })).toBeVisible();
     // Both the due and future Review cards are in the scheduler-derived
     // KNOWN/Review projection; only the third card is New.
-    await expect(page.getByText("2/3").first()).toBeVisible();
-    await expect(page.getByText("1/2").first()).toBeVisible();
-    await expect(page.getByText("1", { exact: true }).first()).toBeVisible();
-
-    await page.getByRole("link", { name: `Tiếp tục: ${activeDeck.name}` }).click();
+    await expect(page.getByText(activeDeck.name, { exact: true })).toBeVisible();
+    await page.getByRole("link", { name: "Ôn tập" }).click();
     await expect(page).toHaveURL(new RegExp(`/decks/${activeDeck.id}/study$`));
 
-    await page.goto(`/folders/${folder.id}`);
-    await page.getByRole("link", { name: "Ôn 1 thẻ đến hạn" }).click();
-    await expect(page).toHaveURL(new RegExp(`/folders/${folder.id}/review$`));
     await expect(page.getByRole("heading", { name: dueTerm })).toBeVisible();
-    await page.getByRole("link", { name: "Quay lại collection" }).click();
-    await expect(page).toHaveURL(new RegExp(`/folders/${folder.id}$`));
   });
 
   test("moves, reorders, and safely deletes collections", async ({ page }, testInfo) => {
@@ -158,23 +149,23 @@ test.describe("learning collections", () => {
 
     await page.goto("/");
     await page.getByLabel(`Mở ${source.name}`).click();
-    await page.getByRole("button", { name: `Quản lý ${movableDeck.name}`, exact: true }).click();
+    await page.getByLabel(`Tùy chọn cho ${movableDeck.name}`, { exact: true }).click();
     await page
-      .getByLabel(`Chuyển ${movableDeck.name} tới collection khác`)
+      .getByLabel(`Chuyển ${movableDeck.name} tới bộ sưu tập`)
       .selectOption(destination.id);
     await expect.poll(async () => (await db.deck.findUniqueOrThrow({ where: { id: movableDeck.id } })).folderId).toBe(destination.id);
 
     await page.getByLabel(`Mở ${destination.name}`).click();
-    await page.getByRole("button", { name: `Quản lý ${secondDestinationDeck.name}`, exact: true }).click();
-    await page.getByLabel(`Đưa ${secondDestinationDeck.name} lên`).click();
+    await page.getByLabel(`Tùy chọn cho ${secondDestinationDeck.name}`, { exact: true }).click();
+    await page.getByRole("button", { name: "Lên", exact: true }).click();
     await expect.poll(async () => {
       const decks = await db.deck.findMany({ where: { folderId: destination.id }, orderBy: { position: "asc" }, select: { id: true } });
       return decks.map((deck) => deck.id);
     }).toEqual([secondDestinationDeck.id, firstDestinationDeck.id, movableDeck.id]);
 
     page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: `Quản lý ${source.name}`, exact: true }).click();
-    await page.getByRole("button", { name: "Xóa collection" }).click();
+    await page.getByLabel(`Tùy chọn cho ${source.name}`, { exact: true }).click();
+    await page.getByRole("button", { name: "Xóa", exact: true }).click();
     await expect.poll(async () => db.folder.findUnique({ where: { id: source.id } })).toBeNull();
     const retainedDeck = await db.deck.findUniqueOrThrow({ where: { id: safeDeck.id }, include: { cards: true } });
     expect(retainedDeck.folderId).toBeNull();

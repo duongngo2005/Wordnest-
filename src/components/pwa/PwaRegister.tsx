@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { Share2, PlusSquare, X } from "lucide-react";
 
 const subscribeToNothing = () => () => {};
+const WORDNEST_CACHE_PREFIX = "wordnest-cache-";
 
 function shouldShowIosPrompt() {
   const userAgent = window.navigator.userAgent.toLowerCase();
@@ -30,10 +31,31 @@ export function PwaRegister() {
   const showIosPrompt = canShowIosPrompt && !isDismissed;
 
   useEffect(() => {
-    // 1. Register Service Worker if supported
-    if ("serviceWorker" in navigator && window.location.protocol.startsWith("http")) {
+    if (!("serviceWorker" in navigator) || !window.location.protocol.startsWith("http")) {
+      return;
+    }
+
+    if (process.env.NODE_ENV === "development") {
+      void (async () => {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        const cacheNames = "caches" in window ? await caches.keys() : [];
+        const wordNestCacheNames = cacheNames.filter((name) => name.startsWith(WORDNEST_CACHE_PREFIX));
+
+        await Promise.all(registrations.map((registration) => registration.unregister()));
+        await Promise.all(wordNestCacheNames.map((name) => caches.delete(name)));
+
+        if (registrations.length > 0 || wordNestCacheNames.length > 0) {
+          window.location.reload();
+        }
+      })();
+      return;
+    }
+
+    // Service workers are a production-only concern. Caching dev chunks can keep
+    // a LAN or tunnel tab on stale client code after a local change.
+    if ("serviceWorker" in navigator) {
       navigator.serviceWorker
-        .register("/sw.js")
+        .register("/sw.js", { updateViaCache: "none" })
         .then((reg) => {
           console.log("[PWA] ServiceWorker registered with scope:", reg.scope);
         })
