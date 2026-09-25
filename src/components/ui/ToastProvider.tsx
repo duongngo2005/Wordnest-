@@ -1,165 +1,160 @@
 "use client";
 
-import {
-  CheckCircle2,
-  CircleAlert,
-  Info,
-  X,
-} from "lucide-react";
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { CheckCircle2, CircleAlert, Info, X } from "lucide-react";
+import { Toaster, toast as sonnerToast } from "sonner";
+import { playUISound } from "@/lib/ui-sound";
 
-type ToastKind = "success" | "error" | "info";
+export type ToastKind = "success" | "error" | "info";
 
-type ToastOptions = {
+export type ToastOptions = {
   description?: string;
   duration?: number;
 };
 
-type ToastItem = ToastOptions & {
-  id: number;
-  kind: ToastKind;
-  title: string;
-};
-
-type ToastContextValue = {
-  success: (title: string, options?: ToastOptions) => number;
-  error: (title: string, options?: ToastOptions) => number;
-  info: (title: string, options?: ToastOptions) => number;
-  dismiss: (id: number) => void;
+export type ToastContextValue = {
+  success: (title: string, options?: ToastOptions) => string | number;
+  error: (title: string, options?: ToastOptions) => string | number;
+  info: (title: string, options?: ToastOptions) => string | number;
+  dismiss: (id?: string | number) => void;
 };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
-const MAX_VISIBLE_TOASTS = 4;
-const DEFAULT_DURATION = 4_800;
 
-const toastStyles: Record<
-  ToastKind,
-  { Icon: typeof CheckCircle2; icon: string; accent: string; label: string }
-> = {
-  success: {
-    Icon: CheckCircle2,
-    icon: "bg-[#DCFCE7] text-[#15803D]",
-    accent: "bg-[#16A34A]",
-    label: "Thành công",
+/**
+ * WordNest unified toast triggers with tactile audio feedback
+ */
+export const wnToast = {
+  success: (title: string, options?: ToastOptions) => {
+    playUISound("success");
+    return sonnerToast.success(title, {
+      description: options?.description,
+      duration: options?.duration ?? 4000,
+    });
   },
-  error: {
-    Icon: CircleAlert,
-    icon: "bg-[#FEE2E2] text-[#B91C1C]",
-    accent: "bg-[#DC2626]",
-    label: "Có lỗi",
+  error: (title: string, options?: ToastOptions) => {
+    playUISound("error");
+    return sonnerToast.error(title, {
+      description: options?.description,
+      duration: options?.duration ?? 5000,
+    });
   },
-  info: {
-    Icon: Info,
-    icon: "bg-[#FEF3C7] text-[#B45309]",
-    accent: "bg-[#E06B43]",
-    label: "Thông báo",
+  info: (title: string, options?: ToastOptions) => {
+    playUISound("softTap");
+    return sonnerToast.info(title, {
+      description: options?.description,
+      duration: options?.duration ?? 4000,
+    });
+  },
+  dismiss: (id?: string | number) => {
+    sonnerToast.dismiss(id);
   },
 };
 
 export function ToastProvider({ children }: Readonly<{ children: React.ReactNode }>) {
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const nextId = useRef(0);
-  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
-
-  const dismiss = useCallback((id: number) => {
-    const timer = timers.current.get(id);
-    if (timer) {
-      clearTimeout(timer);
-      timers.current.delete(id);
-    }
-    setToasts((current) => current.filter((toast) => toast.id !== id));
+  const success = useCallback((title: string, options?: ToastOptions) => {
+    return wnToast.success(title, options);
   }, []);
 
-  const show = useCallback(
-    (kind: ToastKind, title: string, options: ToastOptions = {}) => {
-      const id = ++nextId.current;
-      const toast: ToastItem = {
-        id,
-        kind,
-        title,
-        description: options.description,
-        duration: options.duration,
-      };
+  const error = useCallback((title: string, options?: ToastOptions) => {
+    return wnToast.error(title, options);
+  }, []);
 
-      setToasts((current) => [...current, toast].slice(-MAX_VISIBLE_TOASTS));
+  const info = useCallback((title: string, options?: ToastOptions) => {
+    return wnToast.info(title, options);
+  }, []);
 
-      const duration = options.duration ?? DEFAULT_DURATION;
-      if (duration > 0) {
-        timers.current.set(id, setTimeout(() => dismiss(id), duration));
-      }
-      return id;
-    },
-    [dismiss]
-  );
-
-  useEffect(() => {
-    const activeTimers = timers.current;
-    return () => {
-      activeTimers.forEach((timer) => clearTimeout(timer));
-      activeTimers.clear();
-    };
+  const dismiss = useCallback((id?: string | number) => {
+    wnToast.dismiss(id);
   }, []);
 
   const value = useMemo<ToastContextValue>(
     () => ({
-      success: (title, options) => show("success", title, options),
-      error: (title, options) => show("error", title, options),
-      info: (title, options) => show("info", title, options),
+      success,
+      error,
+      info,
       dismiss,
     }),
-    [dismiss, show]
+    [success, error, info, dismiss]
   );
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node instanceof HTMLElement) {
+            const toasts = node.matches("[data-sonner-toast]")
+              ? [node]
+              : Array.from(node.querySelectorAll<HTMLElement>("[data-sonner-toast]"));
+            for (const toast of toasts) {
+              if (!toast.hasAttribute("role")) {
+                const type = toast.getAttribute("data-type");
+                toast.setAttribute("role", type === "error" ? "alert" : "status");
+              }
+            }
+          }
+        }
+      }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div
-        className="pointer-events-none fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-[100] flex max-w-md flex-col gap-2 sm:inset-x-auto sm:right-5 sm:top-[calc(env(safe-area-inset-top)+1rem)] sm:bottom-auto sm:w-[min(24rem,calc(100vw-2rem))]"
-        aria-label="Thông báo"
-      >
-        {toasts.map((toast) => {
-          const style = toastStyles[toast.kind];
-          const Icon = style.Icon;
-
-          return (
-            <div
-              key={toast.id}
-              className="toast-enter pointer-events-auto relative overflow-hidden rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-3.5 pr-11 shadow-[4px_4px_0px_#221C16]"
-              role={toast.kind === "error" ? "alert" : "status"}
+      <Toaster
+        position="top-right"
+        gap={8}
+        visibleToasts={4}
+        closeButton={true}
+        mobileOffset={{
+          bottom: "calc(env(safe-area-inset-bottom) + 1rem)",
+          left: "0.75rem",
+          right: "0.75rem",
+        }}
+        icons={{
+          success: (
+            <span
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#DCFCE7] text-[#15803D] shadow-[1px_1px_0px_#221C16]"
+              aria-hidden="true"
             >
-              <span className={`absolute inset-y-0 left-0 w-1.5 ${style.accent}`} aria-hidden="true" />
-              <div className="flex items-start gap-3 pl-1">
-                <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#221C16] ${style.icon}`} aria-hidden="true">
-                  <Icon className="h-4 w-4" strokeWidth={2.75} />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-black leading-tight text-[#221C16]">{toast.title}</p>
-                  {toast.description && (
-                    <p className="mt-1 text-xs font-semibold leading-relaxed text-[#6B6258]">{toast.description}</p>
-                  )}
-                  <span className="sr-only">{style.label}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => dismiss(toast.id)}
-                className="absolute right-2 top-2 rounded-lg p-1.5 text-[#6B6258] transition-colors hover:bg-[#EAE3D2] hover:text-[#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
-                aria-label={`Đóng thông báo: ${toast.title}`}
-              >
-                <X className="h-4 w-4" strokeWidth={2.5} />
-              </button>
-            </div>
-          );
-        })}
-      </div>
+              <CheckCircle2 className="h-4 w-4" strokeWidth={2.75} />
+            </span>
+          ),
+          error: (
+            <span
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FEE2E2] text-[#B91C1C] shadow-[1px_1px_0px_#221C16]"
+              aria-hidden="true"
+            >
+              <CircleAlert className="h-4 w-4" strokeWidth={2.75} />
+            </span>
+          ),
+          info: (
+            <span
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FEF3C7] text-[#B45309] shadow-[1px_1px_0px_#221C16]"
+              aria-hidden="true"
+            >
+              <Info className="h-4 w-4" strokeWidth={2.75} />
+            </span>
+          ),
+          close: <X className="h-3.5 w-3.5" strokeWidth={2.5} />,
+        }}
+        toastOptions={{
+          unstyled: false,
+          className: "wn-sonner-toast",
+          classNames: {
+            toast:
+              "wn-toast-card relative flex items-start gap-3 rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-3.5 shadow-[4px_4px_0px_#221C16] text-[#221C16]",
+            title: "text-sm font-black leading-tight text-[#221C16]",
+            description: "mt-1 text-xs font-semibold leading-relaxed text-[#6B6258]",
+            closeButton:
+              "border-2 border-[#221C16] bg-[#FAF6EE] text-[#6B6258] hover:bg-[#EAE3D2] hover:text-[#221C16] active:translate-y-0.5",
+          },
+        }}
+      />
     </ToastContext.Provider>
   );
 }

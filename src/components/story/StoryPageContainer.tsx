@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookOpen, Plus, Sparkles, Trash2 } from "lucide-react";
 import { StoryGeneratorModal, type DeckStoryWord } from "./StoryGeneratorModal";
 import { StoryReader, type StoryData } from "./StoryReader";
+import { playUISound } from "@/lib/ui-sound";
 
 interface StoryPageContainerProps {
   deck: { id: string; name: string };
@@ -20,7 +21,21 @@ export function StoryPageContainer({ deck, initialStories, deckWords }: StoryPag
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const [isReadingMode, setIsReadingMode] = useState(false);
   const activeStory = stories.find((story) => story.id === activeStoryId) ?? stories[0] ?? null;
+
+  useEffect(() => {
+    if (isReadingMode) document.documentElement.dataset.storyReadingMode = "true";
+    else delete document.documentElement.dataset.storyReadingMode;
+    return () => {
+      delete document.documentElement.dataset.storyReadingMode;
+    };
+  }, [isReadingMode]);
+
+  const setReadingMode = (nextReadingMode: boolean) => {
+    if (nextReadingMode !== isReadingMode) playUISound("paperFlip");
+    setIsReadingMode(nextReadingMode);
+  };
 
   const addStory = (story: StoryData) => {
     setStories((current) => [story, ...current.filter((item) => item.id !== story.id)]);
@@ -54,14 +69,14 @@ export function StoryPageContainer({ deck, initialStories, deckWords }: StoryPag
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className={`mx-auto space-y-5 ${isReadingMode ? "max-w-6xl" : "max-w-5xl"}`}>
+      {!isReadingMode ? <div className="flex flex-wrap items-center justify-between gap-3">
         <Link href={`/decks/${deck.id}`} className="inline-flex w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-transform active:translate-y-0.5">
           <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
           <span>Về bộ từ</span>
         </Link>
         <button type="button" onClick={() => setIsGeneratorOpen(true)} className="wn-button wn-button-primary text-sm"><Sparkles className="h-4 w-4" />Tạo truyện</button>
-      </div>
+      </div> : null}
 
       <p
         aria-live="polite"
@@ -71,7 +86,7 @@ export function StoryPageContainer({ deck, initialStories, deckWords }: StoryPag
         {status}
       </p>
 
-      {stories.length > 1 ? (
+      {!isReadingMode && stories.length > 1 ? (
         <nav aria-label="Chọn truyện đã lưu" className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5">
           {stories.map((story) => {
             const isActive = story.id === activeStory?.id;
@@ -97,12 +112,15 @@ export function StoryPageContainer({ deck, initialStories, deckWords }: StoryPag
 
       {activeStory ? (
         <StoryReader
+          key={`${activeStory.id}-${isGeneratorOpen ? "generator-open" : "generator-closed"}`}
           story={activeStory}
           deckWords={deckWords}
           onDelete={() => {
             setStoryPendingDelete(activeStory);
             setDeleteError(null);
           }}
+          readingMode={isReadingMode}
+          onReadingModeChange={setReadingMode}
           storyActionNotice={
             storyPendingDelete?.id === activeStory.id ? (
               <section

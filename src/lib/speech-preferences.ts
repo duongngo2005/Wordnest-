@@ -4,15 +4,7 @@ export const SPEECH_RATES = [0.75, 0.9, 1, 1.15] as const;
 
 export type SpeechRate = (typeof SPEECH_RATES)[number];
 
-export const WORDNEST_SPEECH_VOICES = [
-  { id: "wordnest:en-US", label: "WordNest · Mỹ", locale: "en-US" },
-  { id: "wordnest:en-GB", label: "WordNest · Anh", locale: "en-GB" },
-  { id: "wordnest:en-AU", label: "WordNest · Úc", locale: "en-AU" },
-  { id: "wordnest:en-IN", label: "WordNest · Ấn", locale: "en-IN" },
-] as const;
-
-export type WordNestSpeechVoiceId = (typeof WORDNEST_SPEECH_VOICES)[number]["id"];
-export type WordNestSpeechLocale = (typeof WORDNEST_SPEECH_VOICES)[number]["locale"];
+import { isCloudTtsVoiceId, type CloudTtsVoiceId } from "./tts/voice-catalog";
 
 export type SpeechPreferences = {
   voiceURI: string | null;
@@ -20,9 +12,16 @@ export type SpeechPreferences = {
 };
 
 export const DEFAULT_SPEECH_PREFERENCES: SpeechPreferences = {
-  voiceURI: "wordnest:en-US",
+  voiceURI: null,
   rate: 0.9,
 };
+
+const RETIRED_WORDNEST_VOICE_IDS = new Set([
+  "wordnest:en-US",
+  "wordnest:en-GB",
+  "wordnest:en-AU",
+  "wordnest:en-IN",
+]);
 
 const SPEECH_PREFERENCES_CHANGED_EVENT = "wordnest:speech-preferences-changed";
 
@@ -39,16 +38,8 @@ function isPreferencesRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export function getWordNestSpeechVoice(voiceURI: string | null) {
-  return WORDNEST_SPEECH_VOICES.find((voice) => voice.id === voiceURI);
-}
-
-export function isWordNestSpeechVoice(voiceURI: string | null): voiceURI is WordNestSpeechVoiceId {
-  return Boolean(getWordNestSpeechVoice(voiceURI));
-}
-
-export function getWordNestSpeechLocale(voiceURI: string | null): WordNestSpeechLocale {
-  return getWordNestSpeechVoice(voiceURI)?.locale ?? "en-US";
+export function isCloudSpeechVoice(voiceURI: string | null): voiceURI is CloudTtsVoiceId {
+  return isCloudTtsVoiceId(voiceURI);
 }
 
 export function parseSpeechPreferences(value: string | null): SpeechPreferences {
@@ -59,12 +50,17 @@ export function parseSpeechPreferences(value: string | null): SpeechPreferences 
     if (!isPreferencesRecord(parsed)) return DEFAULT_SPEECH_PREFERENCES;
 
     return {
-      voiceURI: typeof parsed.voiceURI === "string" ? parsed.voiceURI : DEFAULT_SPEECH_PREFERENCES.voiceURI,
+      voiceURI: getStoredVoiceUri(parsed.voiceURI),
       rate: isSpeechRate(parsed.rate) ? parsed.rate : DEFAULT_SPEECH_PREFERENCES.rate,
     };
   } catch {
     return DEFAULT_SPEECH_PREFERENCES;
   }
+}
+
+function getStoredVoiceUri(value: unknown): string | null {
+  if (typeof value !== "string") return DEFAULT_SPEECH_PREFERENCES.voiceURI;
+  return RETIRED_WORDNEST_VOICE_IDS.has(value) ? null : value;
 }
 
 export function getSpeechPreferences(): SpeechPreferences {

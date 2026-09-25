@@ -19,6 +19,7 @@
 
 # production
 /build
+/.wordnest-cache/
 
 # misc
 .DS_Store

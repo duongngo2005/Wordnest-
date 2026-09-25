@@ -2,30 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Pause, Play, Square, Volume2 } from "lucide-react";
-import { configureEnglishUtterance, isSpeechSynthesisSupported } from "@/lib/speech";
+import { isSpeechSupported, pauseSpeech, resumeSpeech, speakEnglish, stopSpeech } from "@/lib/speech";
 import { splitStoryIntoNarrationChunks } from "@/lib/story/story-narration";
 
 type NarrationStatus = "idle" | "playing" | "paused";
 
 const emptySubscribe = () => () => {};
 
-export function StoryNarrationControls({ content }: { content: string }) {
+export function StoryNarrationControls({ content, compact = false }: { content: string; compact?: boolean }) {
   const chunks = useMemo(() => splitStoryIntoNarrationChunks(content), [content]);
   const [status, setStatus] = useState<NarrationStatus>("idle");
-  const [currentChunk, setCurrentChunk] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const sessionRef = useRef(0);
-  const speechSupported = useSyncExternalStore(
-    emptySubscribe,
-    () => isSpeechSynthesisSupported(),
-    () => true
-  );
+  const speechSupported = useSyncExternalStore(emptySubscribe, isSpeechSupported, () => true);
 
   const stopNarration = useCallback(() => {
     sessionRef.current += 1;
-    if (isSpeechSynthesisSupported()) window.speechSynthesis.cancel();
+    stopSpeech();
     setStatus("idle");
-    setCurrentChunk(0);
   }, []);
 
   useEffect(() => stopNarration, [stopNarration, content]);
@@ -35,39 +29,38 @@ export function StoryNarrationControls({ content }: { content: string }) {
 
     const session = sessionRef.current + 1;
     sessionRef.current = session;
-    window.speechSynthesis.cancel();
-    setError(null);
-    setCurrentChunk(0);
+    stopSpeech();
+    setMessage(null);
     setStatus("playing");
 
     const speakChunk = (chunkIndex: number) => {
       if (sessionRef.current !== session) return;
 
-      const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex]);
-      configureEnglishUtterance(utterance);
-      utterance.onstart = () => {
-        if (sessionRef.current !== session) return;
-        setCurrentChunk(chunkIndex);
-        setStatus("playing");
-      };
-      utterance.onend = () => {
-        if (sessionRef.current !== session) return;
-        if (chunkIndex + 1 < chunks.length) {
-          speakChunk(chunkIndex + 1);
-          return;
+      speakEnglish(
+        chunks[chunkIndex],
+        () => {
+          if (sessionRef.current !== session) return;
+          setStatus("playing");
+        },
+        () => {
+          if (sessionRef.current !== session) return;
+          if (chunkIndex + 1 < chunks.length) {
+            speakChunk(chunkIndex + 1);
+            return;
+          }
+          setStatus("idle");
+        },
+        () => {
+          if (sessionRef.current !== session) return;
+          setMessage("Không thể đọc bài này. Hãy thử lại.");
+          setStatus("idle");
+        },
+        {
+          onCloudFallback: () => {
+            if (sessionRef.current === session) setMessage("Đang dùng giọng hệ thống.");
+          },
         }
-        setStatus("idle");
-        setCurrentChunk(0);
-      };
-      utterance.onerror = (event) => {
-        if (sessionRef.current !== session) return;
-        if (event.error !== "canceled" && event.error !== "interrupted") {
-          setError("Không thể đọc bài này trên thiết bị hiện tại.");
-        }
-        setStatus("idle");
-        setCurrentChunk(0);
-      };
-      window.speechSynthesis.speak(utterance);
+      );
     };
 
     speakChunk(0);
@@ -75,13 +68,11 @@ export function StoryNarrationControls({ content }: { content: string }) {
 
   const togglePlayback = () => {
     if (status === "playing") {
-      window.speechSynthesis.pause();
-      setStatus("paused");
+      if (pauseSpeech()) setStatus("paused");
       return;
     }
     if (status === "paused") {
-      window.speechSynthesis.resume();
-      setStatus("playing");
+      if (resumeSpeech()) setStatus("playing");
       return;
     }
     startNarration();
@@ -90,30 +81,42 @@ export function StoryNarrationControls({ content }: { content: string }) {
   if (!speechSupported || chunks.length === 0) return null;
 
   const isActive = status !== "idle";
-  const primaryLabel = status === "playing" ? "Tạm dừng" : status === "paused" ? "Tiếp tục" : "Đọc toàn bộ";
+  const primaryLabel = status === "playing" ? "Tạm dừng" : status === "paused" ? "Tiếp tục" : "Đọc";
+
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={togglePlayback}
+        className="wn-story-icon-control"
+        aria-label={primaryLabel}
+        title={primaryLabel}
+      >
+        {status === "playing" ? <Pause className="h-4 w-4" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
+      </button>
+    );
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2" aria-live="polite">
       <button
         type="button"
         onClick={togglePlayback}
-        className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border-2 border-[#221C16] bg-[#E06B43] px-3 py-1.5 text-xs font-black text-white shadow-[2px_2px_0px_#221C16] transition-transform hover:-translate-y-0.5 active:translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
-        aria-label={primaryLabel}
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border-2 border-[#221C16] bg-[#E06B43] px-3 py-1.5 text-xs font-black text-white shadow-[2px_2px_0px_#221C16] transition-transform hover:-translate-y-0.5 active:translate-y-0.5"
       >
-        {status === "playing" ? <Pause className="h-3.5 w-3.5" /> : status === "paused" ? <Play className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+        {status === "playing" ? <Pause className="h-3.5 w-3.5" aria-hidden="true" /> : status === "paused" ? <Play className="h-3.5 w-3.5" aria-hidden="true" /> : <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />}
         {primaryLabel}
       </button>
       {isActive ? (
         <button
           type="button"
           onClick={stopNarration}
-          className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-bold text-[#221C16] hover:bg-[#FEF3C7] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-bold text-[#221C16] hover:bg-[#FEF3C7]"
         >
-          <Square className="h-3.5 w-3.5" /> Dừng
+          <Square className="h-3.5 w-3.5" aria-hidden="true" /> Dừng
         </button>
       ) : null}
-      {isActive ? <span className="text-xs font-bold text-[#6B6258]">Đoạn {currentChunk + 1}/{chunks.length}</span> : null}
-      {error ? <span className="text-xs font-bold text-[#991B1B]">{error}</span> : null}
+      {message ? <span className="text-xs font-bold text-[#6B6258]">{message}</span> : null}
     </div>
   );
 }

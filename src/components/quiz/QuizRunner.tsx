@@ -6,6 +6,8 @@ import { QuizQuestion, QuizQuestionExplanation, QuizSubmissionResult } from "@/s
 import { QuizResults, AnswerRecord } from "./QuizResults";
 import { PronounceButton } from "../flashcards/PronounceButton";
 import { WordNestMascot } from "../ui/Mascot";
+import { playUISound } from "@/lib/ui-sound";
+import { wnToast } from "@/components/ui/ToastProvider";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -18,6 +20,7 @@ import {
   BookOpen,
   RotateCcw,
   Target,
+  Loader2,
 } from "lucide-react";
 
 interface QuizRunnerProps {
@@ -66,6 +69,8 @@ export function QuizRunner({
 
   const questionShownAtRef = useRef<number | null>(null);
   const typedInputRef = useRef<HTMLInputElement | null>(null);
+  const firstChoiceRef = useRef<HTMLButtonElement | null>(null);
+  const hasPresentedQuestionRef = useRef(false);
 
   const activeQuestions = isRetrying ? retryQuestions : questions;
   const activeIndex = isRetrying ? currentRetryIndex : currentIndex;
@@ -76,11 +81,18 @@ export function QuizRunner({
 
   useEffect(() => {
     questionShownAtRef.current = Date.now();
-    if (isTypedQuestion) {
-      setTimeout(() => {
+    const shouldMoveFocus = hasPresentedQuestionRef.current;
+    hasPresentedQuestionRef.current = true;
+
+    const focusTimer = window.setTimeout(() => {
+      if (isTypedQuestion) {
         typedInputRef.current?.focus();
-      }, 50);
-    }
+      } else if (shouldMoveFocus) {
+        firstChoiceRef.current?.focus();
+      }
+    }, 50);
+
+    return () => window.clearTimeout(focusTimer);
   }, [activeIndex, sessionId, isTypedQuestion, isRetrying]);
 
   const handleSelectOption = useCallback(
@@ -93,6 +105,12 @@ export function QuizRunner({
       const correct =
         option.trim().toLowerCase() === currentQuestion.correctAnswer.trim().toLowerCase();
       setIsCorrect(correct);
+
+      if (correct) {
+        playUISound("success");
+      } else {
+        playUISound("error");
+      }
 
       const newRecord: AnswerRecord = {
         question: currentQuestion,
@@ -156,6 +174,12 @@ export function QuizRunner({
       setIsCorrect(checkResult.correct);
       setIsAnswerChecked(true);
 
+      if (checkResult.correct) {
+        playUISound("success");
+      } else {
+        playUISound("error");
+      }
+
       const newRecord: AnswerRecord = {
         question: currentQuestion,
         userAnswer: typedAnswer,
@@ -172,7 +196,9 @@ export function QuizRunner({
       }
     } catch (err) {
       console.error("Failed to check typed answer:", err);
-      setSubmissionError(err instanceof Error ? err.message : "Không thể kiểm tra câu trả lời.");
+      const msg = err instanceof Error ? err.message : "Không thể kiểm tra câu trả lời.";
+      setSubmissionError(msg);
+      wnToast.error(msg);
     } finally {
       setIsCheckingTyped(false);
     }
@@ -216,9 +242,9 @@ export function QuizRunner({
         setIsFinished(true);
       } catch (err) {
         console.error("Failed to submit quiz results:", err);
-        setSubmissionError(
-          err instanceof Error ? err.message : "Không thể lưu kết quả quiz. Vui lòng thử lại."
-        );
+        const msg = err instanceof Error ? err.message : "Không thể lưu kết quả quiz. Vui lòng thử lại.";
+        setSubmissionError(msg);
+        wnToast.error(msg);
       } finally {
         setIsSubmitting(false);
       }
@@ -345,6 +371,20 @@ export function QuizRunner({
     }
   };
 
+  const handleStartRetry = () => {
+    playUISound("paperFlip");
+    const wrongList = records.filter((r) => !r.isCorrect).map((r) => r.question);
+    setRetryQuestions(wrongList);
+    setCurrentRetryIndex(0);
+    setIsRetrying(true);
+    setIsAnswerChecked(false);
+    setSelectedOption(null);
+    setTypedAnswer("");
+    setCheckedTypedData(null);
+    setIsCorrect(null);
+    setSubmissionError(null);
+  };
+
   const handleRestart = async () => {
     setIsSubmitting(true);
     try {
@@ -459,12 +499,13 @@ export function QuizRunner({
           </Link>
 
           {/* Mode Switcher */}
-          <div className="inline-flex rounded-lg border border-[#221C16]/18 bg-[#FAF6EE] p-0.5">
+          <div className="flex flex-wrap justify-end rounded-lg border border-[#221C16]/18 bg-[#FAF6EE] p-0.5">
             <button
               type="button"
               onClick={() => handleSwitchMode("multiple_choice")}
               disabled={isSubmitting || isCheckingTyped || isRetrying}
-              className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
+              aria-pressed={currentMode === "multiple_choice"}
+              className={`inline-flex min-h-[44px] items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
                 currentMode === "multiple_choice"
                   ? "bg-[#221C16] text-white shadow-sm"
                   : "text-[#6B6258] hover:text-[#221C16]"
@@ -477,7 +518,8 @@ export function QuizRunner({
               type="button"
               onClick={() => handleSwitchMode("typed")}
               disabled={isSubmitting || isCheckingTyped || isRetrying}
-              className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
+              aria-pressed={currentMode === "typed"}
+              className={`inline-flex min-h-[44px] items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
                 currentMode === "typed"
                   ? "bg-[#E06B43] text-white shadow-sm"
                   : "text-[#6B6258] hover:text-[#221C16]"
@@ -491,7 +533,8 @@ export function QuizRunner({
                 type="button"
                 onClick={() => handleSwitchMode("story_cloze")}
                 disabled={isSubmitting || isCheckingTyped || isRetrying}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
+                aria-pressed={currentMode === "story_cloze"}
+                className={`inline-flex min-h-[44px] items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
                   currentMode === "story_cloze"
                     ? "bg-[#2563EB] text-white shadow-sm"
                     : "text-[#6B6258] hover:text-[#221C16]"
@@ -506,7 +549,8 @@ export function QuizRunner({
               type="button"
               onClick={() => handleSwitchMode("focused_practice")}
               disabled={isSubmitting || isCheckingTyped || isRetrying}
-              className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
+              aria-pressed={currentMode === "focused_practice"}
+              className={`inline-flex min-h-[44px] items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
                 currentMode === "focused_practice"
                   ? "bg-[#D97706] text-white shadow-sm"
                   : "text-[#6B6258] hover:text-[#221C16]"
@@ -582,7 +626,15 @@ export function QuizRunner({
         {/* Question Body: Typed vs Multiple Choice */}
         {isTypedQuestion ? (
           <form onSubmit={handleSubmitTypedAnswer} className="space-y-4 pt-2">
-            <div className="space-y-2">
+            <div
+              className={`space-y-2 transition-all ${
+                isAnswerChecked && !isCorrect
+                  ? "wn-shake-subtle"
+                  : isAnswerChecked && isCorrect
+                  ? "wn-lift-correct"
+                  : ""
+              }`}
+            >
               <label
                 htmlFor="typed-recall-input"
                 className="block text-xs font-extrabold uppercase text-[#6B6258] tracking-wider text-center"
@@ -608,8 +660,21 @@ export function QuizRunner({
                     ? "Nhập dạng từ thích hợp trong ngữ cảnh..."
                     : "Ví dụ: allocate..."
                 }
-                className="w-full text-center px-4 py-3.5 rounded-xl border-2 border-[#221C16] text-lg sm:text-xl font-bold text-[#221C16] bg-white placeholder-[#9CA3AF] shadow-[3px_3px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43] disabled:bg-[#FAF6EE] disabled:opacity-90"
+                className={`w-full text-center px-4 py-3.5 rounded-xl border-2 text-base sm:text-xl font-bold placeholder-[#9CA3AF] shadow-[3px_3px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43] min-h-[48px] transition-colors ${
+                  isAnswerChecked
+                    ? isCorrect
+                      ? "bg-[#F0FDF4] border-[#16A34A] text-[#166534]"
+                      : "bg-[#FEF2F2] border-[#DC2626] text-[#991B1B]"
+                    : "bg-white border-[#221C16] text-[#221C16]"
+                } disabled:opacity-95`}
               />
+              <p
+                aria-live="polite"
+                aria-atomic="true"
+                className={submissionError && !isAnswerChecked ? "text-xs font-bold text-[#B91C1C]" : "wn-sr-only"}
+              >
+                {submissionError && !isAnswerChecked ? submissionError : ""}
+              </p>
             </div>
 
             {!isAnswerChecked && (
@@ -617,10 +682,19 @@ export function QuizRunner({
                 <button
                   type="submit"
                   disabled={isCheckingTyped || typedAnswer.trim().length === 0}
-                  className="brick-button-primary w-full sm:w-auto px-6 py-3 text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16] disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="brick-button-primary w-full sm:w-auto min-h-[44px] px-6 py-3 text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <span>{isCheckingTyped ? "Đang kiểm tra..." : "Kiểm tra"}</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {isCheckingTyped ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Đang kiểm tra...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Kiểm tra</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             )}
@@ -636,28 +710,30 @@ export function QuizRunner({
 
               // Styling logic depending on checked state
               let buttonStyle =
-                "bg-[#FFFDF9] text-[#221C16] border-[#221C16] hover:bg-[#FAF6EE] shadow-[3px_3px_0px_#221C16]";
+                "bg-[#FFFDF9] text-[#221C16] border-[#221C16] hover:bg-[#FAF6EE] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[4px_4px_0px_#221C16] active:translate-x-[1px] active:translate-y-[1px] shadow-[3px_3px_0px_#221C16]";
 
               if (isAnswerChecked) {
                 if (isAnswerOptionCorrect) {
                   buttonStyle =
-                    "bg-[#DCFCE7] text-[#15803D] border-[#15803D] font-black shadow-[3px_3px_0px_#15803D]";
+                    "bg-[#DCFCE7] text-[#15803D] border-[#15803D] font-black shadow-[3px_3px_0px_#15803D] wn-lift-correct";
                 } else if (isSelected) {
                   buttonStyle =
-                    "bg-[#FEE2E2] text-[#B91C1C] border-[#B91C1C] font-black line-through shadow-[3px_3px_0px_#B91C1C]";
+                    "bg-[#FEE2E2] text-[#B91C1C] border-[#B91C1C] font-black line-through shadow-[3px_3px_0px_#B91C1C] wn-shake-subtle";
                 } else {
                   buttonStyle =
-                    "bg-[#F9FAFB] text-[#9CA3AF] border-gray-300 opacity-60";
+                    "bg-[#F9FAFB] text-[#9CA3AF] border-gray-300 opacity-50";
                 }
               }
 
               return (
                 <button
                   key={`${currentQuestion.id}_opt_${idx}`}
+                  ref={idx === 0 ? firstChoiceRef : undefined}
+                  type="button"
                   disabled={isAnswerChecked}
                   onClick={() => handleSelectOption(option)}
                   aria-label={`Đáp án ${letter}: ${option}`}
-                  className={`w-full text-left p-4 rounded-xl border-2 transition-all flex items-center justify-between gap-3 text-sm sm:text-base font-bold active:translate-y-0.5 active:shadow-[1px_1px_0px_#221C16] ${buttonStyle}`}
+                  className={`w-full text-left p-4 rounded-xl border-2 transition-all flex items-center justify-between gap-3 text-sm sm:text-base font-bold min-h-[48px] select-none ${buttonStyle}`}
                 >
                   <div className="flex items-center gap-3">
                     <span
@@ -672,15 +748,22 @@ export function QuizRunner({
                     <span className="leading-snug">{option}</span>
                   </div>
 
-                  {isAnswerChecked && (
-                    <div className="shrink-0">
-                      {isAnswerOptionCorrect ? (
-                        <CheckCircle2 className="w-5 h-5 text-[#15803D]" />
-                      ) : isSelected ? (
-                        <XCircle className="w-5 h-5 text-[#B91C1C]" />
-                      ) : null}
-                    </div>
-                  )}
+                  <div className="shrink-0 flex items-center gap-2">
+                    {!isAnswerChecked && (
+                      <span className="hidden sm:inline text-[11px] font-mono font-bold text-[#8C8275] opacity-60">
+                        [{idx + 1}]
+                      </span>
+                    )}
+                    {isAnswerChecked && (
+                      <>
+                        {isAnswerOptionCorrect ? (
+                          <CheckCircle2 className="w-5 h-5 text-[#15803D]" />
+                        ) : isSelected ? (
+                          <XCircle className="w-5 h-5 text-[#B91C1C]" />
+                        ) : null}
+                      </>
+                    )}
+                  </div>
                 </button>
               );
             })}
@@ -690,8 +773,11 @@ export function QuizRunner({
         {/* Explanation & Next Step Banner (Appears after answer is checked) */}
         {isAnswerChecked && (
           <div className="space-y-4 pt-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <p className="wn-sr-only" aria-live="polite" aria-atomic="true">
+              {isCorrect ? "Trả lời đúng." : `Trả lời chưa đúng. Đáp án: ${expectedAnswer}.`}
+            </p>
             <div
-              className={`p-4 rounded-xl border-2 space-y-2 ${
+              className={`p-4 sm:p-5 rounded-xl border-2 space-y-3 shadow-[2px_2px_0px_#221C16] ${
                 isCorrect
                   ? "bg-[#F0FDF4] border-[#16A34A] text-[#166534]"
                   : "bg-[#FEF2F2] border-[#DC2626] text-[#991B1B]"
@@ -703,7 +789,7 @@ export function QuizRunner({
                     <>
                       <CheckCircle2 className="w-5 h-5 text-[#16A34A] shrink-0" />
                       <div className="space-y-0.5">
-                        <span className="text-sm font-black block">Chính xác! Giỏi lắm!</span>
+                        <span className="text-sm sm:text-base font-black block">Chính xác! Giỏi lắm!</span>
                         {currentQuestion.type === "story_cloze" && exp?.term && (
                           <span className="text-xs font-bold text-[#15803D] block">
                             {exp.term} → {expectedAnswer}
@@ -714,15 +800,15 @@ export function QuizRunner({
                   ) : (
                     <>
                       <XCircle className="w-5 h-5 text-[#DC2626] shrink-0" />
-                      <div className="space-y-0.5">
-                        <span className="text-sm font-black block">Chưa chính xác.</span>
+                      <div className="space-y-1">
+                        <span className="text-sm sm:text-base font-black block">Chưa chính xác.</span>
                         {isTypedQuestion && (
                           <span className="text-xs font-semibold text-[#7F1D1D] block">
-                            Your answer: <strong className="line-through">{typedAnswer.trim()}</strong>
+                            Bạn trả lời: <strong className="line-through">{typedAnswer.trim()}</strong>
                           </span>
                         )}
                         <span className="text-xs font-bold text-[#7F1D1D] block">
-                          Đáp án đúng: <strong className="underline decoration-2">{expectedAnswer}</strong>
+                          Đáp án: <strong className="underline decoration-2">{expectedAnswer}</strong>
                         </span>
                         {exp && exp.term && (
                           <span className="text-xs font-semibold text-[#6B6258] block">
@@ -745,7 +831,7 @@ export function QuizRunner({
 
               {/* Full card explanation preview */}
               {exp && (
-                <div className="bg-white/80 p-3 rounded-lg border border-current/20 text-xs text-[#221C16] space-y-1">
+                <div className="bg-white/85 p-3.5 rounded-lg border border-[#DCD3C5] text-xs text-[#221C16] space-y-1 shadow-[1px_1px_0px_#221C16]">
                   <p>
                     <strong className="text-[#E06B43]">{exp.term}</strong>
                     {exp.ipa && <span className="font-mono text-[#6B6258] ml-1.5">{exp.ipa}</span>}
@@ -758,29 +844,25 @@ export function QuizRunner({
               )}
             </div>
 
-            {/* Next Question CTA button */}
-            <div className="flex justify-end">
-              <div className="w-full sm:w-auto space-y-2">
-                {submissionError && (
-                  <p role="alert" className="text-xs font-bold text-[#B91C1C] text-right">
-                    {submissionError}
+            {/* Next Question / Retry Transition */}
+            <div className="space-y-2">
+              {submissionError && (
+                <p role="alert" className="text-xs font-bold text-[#B91C1C] text-right">
+                  {submissionError}
+                </p>
+              )}
+              {!isRetrying && currentIndex + 1 === questions.length && records.some((r) => !r.isCorrect) ? (
+                <div className="rounded-xl border-2 border-[#D97706] bg-[#FEF3C7] p-4 text-center space-y-2 shadow-[2px_2px_0px_#D97706]">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-[#92400E]">
+                    <RotateCcw className="w-4 h-4 text-[#D97706]" />
+                    <span>Luyện lại {records.filter((r) => !r.isCorrect).length} câu chưa đúng</span>
+                  </div>
+                  <p className="text-xs font-semibold text-[#78350F]">
+                    Các câu làm sai ở lượt đầu sẽ được thử lại một lần để củng cố ghi nhớ.
                   </p>
-                )}
-                {!isRetrying && currentIndex + 1 === questions.length && records.some((r) => !r.isCorrect) ? (
-                  <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <div className="pt-1 flex flex-col sm:flex-row items-center justify-center gap-2">
                     <button
-                      onClick={() => {
-                        const wrongList = records.filter((r) => !r.isCorrect).map((r) => r.question);
-                        setRetryQuestions(wrongList);
-                        setCurrentRetryIndex(0);
-                        setIsRetrying(true);
-                        setIsAnswerChecked(false);
-                        setSelectedOption(null);
-                        setTypedAnswer("");
-                        setCheckedTypedData(null);
-                        setIsCorrect(null);
-                        setSubmissionError(null);
-                      }}
+                      onClick={handleStartRetry}
                       disabled={isSubmitting}
                       className="brick-button-primary px-5 py-3 text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16] w-full sm:w-auto"
                     >
@@ -797,11 +879,13 @@ export function QuizRunner({
                       <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
-                ) : (
+                </div>
+              ) : (
+                <div className="flex justify-end">
                   <button
                     onClick={handleNextQuestion}
                     disabled={isSubmitting}
-                    className="brick-button-primary px-6 py-3 text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16] w-full"
+                    className="brick-button-primary px-6 py-3.5 text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16] w-full sm:w-auto min-h-[44px]"
                   >
                     <span>
                       {isRetrying
@@ -810,8 +894,8 @@ export function QuizRunner({
                     </span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         )}

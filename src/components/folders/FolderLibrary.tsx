@@ -50,7 +50,7 @@ function DeckRow({
   const summary = isDue ? `${deck.dueTodayCount} thẻ cần ôn` : `${deck.totalCards} thẻ`;
 
   return (
-    <li className="wn-tile relative flex min-w-0 flex-col justify-between gap-4 p-3.5 overflow-visible focus-within:z-30">
+    <li className="wn-tile relative flex min-w-0 flex-col justify-between gap-4 p-3.5 overflow-visible rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] border-t-[3px] border-t-[#E06B43] shadow-[2px_2px_0px_#221C16] transition-transform hover:-translate-y-0.5 focus-within:z-30">
       <Link
         href={`/decks/${deck.id}`}
         className="group flex min-w-0 items-start gap-3 rounded-lg p-0.5 transition-transform active:translate-x-0.5"
@@ -83,13 +83,17 @@ function DeckRow({
         <details className="relative wn-menu-details">
           <summary
             aria-label={`Tùy chọn cho ${deck.name}`}
-            className="wn-icon-button flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
+            className="wn-icon-button relative z-50 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
           >
             <MoreHorizontal className="h-4 w-4 text-[#6B6258]" aria-hidden="true" />
           </summary>
           <div
             className="fixed inset-0 z-40 cursor-default"
             onClick={(e) => {
+              e.stopPropagation();
+              e.currentTarget.closest("details")?.removeAttribute("open");
+            }}
+            onPointerDown={(e) => {
               e.stopPropagation();
               e.currentTarget.closest("details")?.removeAttribute("open");
             }}
@@ -492,7 +496,7 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
             <article
               key={folder.id}
               data-collection-card={folder.id}
-              className="wn-primary-surface relative overflow-visible bg-[#FFFDF9] focus-within:z-30"
+              className="wn-primary-surface relative scroll-mt-20 overflow-visible rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] border-t-4 border-t-[#D97706] shadow-[3px_3px_0px_#221C16] transition-all hover:shadow-[4px_4px_0px_#221C16] focus-within:z-30"
             >
               {/* Mobile preserves the compact, expandable collection card with warm binder styling. */}
               <div className="lg:hidden">
@@ -553,13 +557,17 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
                   <details className="relative wn-menu-details">
                     <summary
                       aria-label={`Tùy chọn cho ${folder.name}`}
-                      className="wn-icon-button flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
+                      className="wn-icon-button relative z-50 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
                     >
                       <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
                     </summary>
                     <div
                       className="fixed inset-0 z-40 cursor-default"
                       onClick={(e) => {
+                        e.stopPropagation();
+                        e.currentTarget.closest("details")?.removeAttribute("open");
+                      }}
+                      onPointerDown={(e) => {
                         e.stopPropagation();
                         e.currentTarget.closest("details")?.removeAttribute("open");
                       }}
@@ -643,14 +651,18 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
                     </button>
                     <details className="relative wn-menu-details">
                       <summary
-                        aria-label={`Tùy chọn cho ${folder.name}`}
-                        className="wn-icon-button flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
+                        aria-label={`Tùy chọn bộ sưu tập ${folder.name}`}
+                        className="wn-icon-button relative z-50 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
                       >
                         <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
                       </summary>
                       <div
                         className="fixed inset-0 z-40 cursor-default"
                         onClick={(e) => {
+                          e.stopPropagation();
+                          e.currentTarget.closest("details")?.removeAttribute("open");
+                        }}
+                        onPointerDown={(e) => {
                           e.stopPropagation();
                           e.currentTarget.closest("details")?.removeAttribute("open");
                         }}

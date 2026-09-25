@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import { Header } from "@/components/ui/Header";
 import { WordNestMascot } from "@/components/ui/Mascot";
 import { SpeechSettingsPanel } from "@/components/settings/SpeechSettingsPanel";
+import { SoundSettingsPanel } from "@/components/settings/SoundSettingsPanel";
 
 export const metadata: Metadata = {
   title: "Cài đặt | WordNest",
-  description: "Tùy chỉnh giọng đọc và tốc độ phát âm tiếng Anh trên WordNest.",
+  description: "Tùy chỉnh giọng đọc, âm thanh và tương tác trên WordNest.",
 };
 
 export default function SettingsPage() {
@@ -19,12 +20,13 @@ export default function SettingsPage() {
               Cài đặt
             </h1>
             <p className="mt-1 text-xs font-bold text-[#6B6258] sm:text-sm">
-              Giọng đọc và tốc độ
+              Giọng đọc và âm thanh tương tác
             </p>
           </div>
           <WordNestMascot mood="reading" size={72} />
         </section>
 
+        <SoundSettingsPanel />
         <SpeechSettingsPanel />
       </main>
     </div>

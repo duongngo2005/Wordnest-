@@ -1,10 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   AlertCircle,
+  BookMarked,
   Check,
+  ChevronRight,
   Loader2,
+  Maximize2,
+  Minimize2,
   MoreHorizontal,
   Plus,
   Trash2,
@@ -12,6 +26,7 @@ import {
 } from "lucide-react";
 import { PronounceButton } from "../flashcards/PronounceButton";
 import { extractSentenceContainingUsageWithBoundary } from "@/lib/story/story-context";
+import { panelVariants } from "@/lib/motion-tokens";
 import type { ContextualTranslationResponse } from "@/lib/validation/story";
 import type { StoryVocabulary, StoryVocabularyUsage } from "@/lib/story/story-vocabulary";
 import { StoryNarrationControls } from "./StoryNarrationControls";
@@ -36,6 +51,9 @@ type TranslationPanel = {
   translation?: ContextualTranslationResponse;
   deckWord?: DeckStoryWord;
   contextualMeaning?: string;
+  sentence?: string;
+  trailIndex?: number;
+  trailTotal?: number;
   loading?: boolean;
   error?: string;
 };
@@ -46,38 +64,101 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function useMobileStorySheet() {
+  return useSyncExternalStore(
+    (notify) => {
+      const media = window.matchMedia("(max-width: 639px)");
+      media.addEventListener("change", notify);
+      return () => media.removeEventListener("change", notify);
+    },
+    () => window.matchMedia("(max-width: 639px)").matches,
+    () => false
+  );
+}
+
+function useBottomSheetDrag(onClose: () => void) {
+  const startYRef = useRef<number | null>(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const reset = useCallback(() => {
+    startYRef.current = null;
+    setDragOffset(0);
+    setIsDragging(false);
+  }, []);
+
+  const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    startYRef.current = event.clientY;
+    setIsDragging(true);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthetic pointer events in tests do not always own a browser pointer.
+    }
+  }, []);
+
+  const onPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (startYRef.current === null) return;
+    setDragOffset(Math.max(0, event.clientY - startYRef.current));
+  }, []);
+
+  const onPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (startYRef.current === null) return;
+    const offset = Math.max(0, event.clientY - startYRef.current);
+    if (offset >= 88) {
+      onClose();
+      return;
+    }
+    reset();
+  }, [onClose, reset]);
+
+  return {
+    dragOffset,
+    isDragging,
+    dragHandleProps: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: reset },
+  };
+}
+
 function TargetText({
   paragraph,
   usage,
+  activeUsageIndex,
   onClick,
 }: {
   paragraph: string;
   usage: StoryVocabularyUsage[];
-  onClick: (item: StoryVocabularyUsage) => void;
+  activeUsageIndex: number | null;
+  onClick: (item: StoryVocabularyUsage, usageIndex: number, trigger: HTMLButtonElement) => void;
 }) {
   const usableUsage = usage
-    .filter((item) => item.usedAs.trim())
-    .toSorted((first, second) => second.usedAs.length - first.usedAs.length);
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.usedAs.trim())
+    .toSorted((first, second) => second.item.usedAs.length - first.item.usedAs.length);
   if (usableUsage.length === 0) return paragraph;
 
-  const usageBySurface = new Map(usableUsage.map((item) => [normalize(item.usedAs), item]));
-  const pattern = usableUsage.map((item) => escapeRegExp(item.usedAs.trim())).join("|");
+  const usageBySurface = new Map(usableUsage.map((entry) => [normalize(entry.item.usedAs), entry]));
+  const pattern = usableUsage.map(({ item }) => escapeRegExp(item.usedAs.trim())).join("|");
   const parts = paragraph.split(new RegExp(`(\\b(?:${pattern})\\b)`, "gi"));
 
   return parts.map((part, index) => {
-    const matchingUsage = usageBySurface.get(normalize(part));
-    if (!matchingUsage) return part;
+    const matching = usageBySurface.get(normalize(part));
+    if (!matching) return part;
+    const isActive = activeUsageIndex === matching.index;
+    const formIsDifferent = normalize(matching.item.term) !== normalize(matching.item.usedAs);
     return (
       <button
-        key={`${matchingUsage.term}-${index}`}
+        key={`${matching.item.term}-${index}`}
         type="button"
+        data-story-target-index={matching.index}
         onClick={(event) => {
           event.stopPropagation();
-          onClick(matchingUsage);
+          if (window.getSelection()?.toString().trim()) return;
+          onClick(matching.item, matching.index, event.currentTarget);
         }}
         onDoubleClick={(event) => event.stopPropagation()}
-        className="wn-story-highlight"
-        aria-label={`Xem nghĩa của ${matchingUsage.usedAs}`}
+        className={`wn-story-highlight ${isActive ? "wn-story-highlight--active" : ""}`}
+        aria-pressed={isActive}
+        aria-label={formIsDifferent ? `Xem nghĩa của ${matching.item.usedAs}, dạng của ${matching.item.term}` : `Xem nghĩa của ${matching.item.usedAs}`}
       >
         {part}
       </button>
@@ -85,28 +166,23 @@ function TargetText({
   });
 }
 
-function TranslationDetails({
+function VocabularyNoteContent({
   panel,
   deckId,
   onClose,
+  closeButtonRef,
 }: {
   panel: TranslationPanel;
   deckId: string;
   onClose: () => void;
+  closeButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }) {
   const translation = panel.translation;
   const meaning = translation?.meaningVi || panel.contextualMeaning || panel.deckWord?.meaningVi;
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [cardAdded, setCardAdded] = useState(false);
   const [addCardError, setAddCardError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  const formIsDifferent = panel.canonicalTerm && normalize(panel.canonicalTerm) !== normalize(panel.selectedText);
 
   const handleAddCard = async () => {
     if (!translation) return;
@@ -129,497 +205,303 @@ function TranslationDetails({
         }),
       });
       const data = await response.json();
-      if (!response.ok && !data.alreadyExists) {
-        throw new Error(data.error || "Không thể thêm từ này vào deck.");
-      }
+      if (!response.ok && !data.alreadyExists) throw new Error(data.error || "Không thể thêm từ này vào deck.");
       setCardAdded(true);
-    } catch (err) {
-      setAddCardError(err instanceof Error ? err.message : "Không thể thêm từ vào deck.");
+    } catch (error) {
+      setAddCardError(error instanceof Error ? error.message : "Không thể thêm từ vào deck.");
     } finally {
       setIsAddingCard(false);
     }
   };
 
-  const isFormDifferentFromCanonical =
-    panel.canonicalTerm &&
-    normalize(panel.canonicalTerm) !== normalize(panel.selectedText);
+  const ipa = panel.deckWord?.ipa || translation?.ipa;
+  const partOfSpeech = panel.deckWord?.partOfSpeech || translation?.partOfSpeech;
 
   return (
-    <>
-      {/* Mobile tap-away backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] sm:hidden"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <aside
-        className="wn-vocab-slip fixed inset-x-3 bottom-3 z-50 sm:bottom-6 sm:inset-x-auto sm:right-6 sm:w-[420px] max-w-[calc(100vw-1.5rem)] max-h-[82vh] overflow-y-auto p-4 sm:p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] animate-in slide-in-from-bottom-3 duration-200"
-        aria-live="polite"
-        aria-label="Nghĩa từ trong truyện"
-      >
-        {/* Mobile drag handle */}
-        <div className="mx-auto mb-2.5 h-1 w-10 rounded-full bg-[#DCD3C5] sm:hidden" />
-
-        <div className="flex items-start justify-between gap-3 border-b border-[#221C16]/10 pb-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`rounded-md border border-[#221C16] px-2 py-0.5 text-[10px] sm:text-xs font-black uppercase tracking-wider ${
-                  panel.source === "deck"
-                    ? "bg-[#FEF3C7] text-[#8A5817]"
-                    : "bg-[#DDF5F1] text-[#0F766E]"
-                }`}
-              >
-                {panel.source === "deck" ? "Từ trong deck" : "Dịch theo ngữ cảnh AI"}
-              </span>
-              {panel.translation?.cefr || panel.deckWord?.cefr ? (
-                <span className="rounded-md border border-[#221C16]/20 bg-[#FAF6EE] px-1.5 py-0.5 text-[10px] font-bold text-[#6B6258]">
-                  {panel.translation?.cefr || panel.deckWord?.cefr}
-                </span>
-              ) : null}
-            </div>
-
-            <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3">
-              <div>
-                <h2 className="min-w-0 break-words text-xl font-black tracking-tight text-[#221C16] sm:text-2xl">
-                  {panel.selectedText}
-                </h2>
-                {isFormDifferentFromCanonical ? (
-                  <p className="mt-0.5 text-xs font-semibold text-[#8C8275]">
-                    Từ gốc: <strong className="text-[#221C16]">{panel.canonicalTerm}</strong>
-                  </p>
-                ) : null}
-              </div>
-              <PronounceButton
-                text={panel.selectedText}
-                size="sm"
-                variant="story"
-                label="Phát âm"
-                className="shrink-0"
-              />
-              {panel.deckWord?.ipa || translation?.ipa || panel.deckWord?.partOfSpeech || translation?.partOfSpeech ? (
-                <div className="col-span-2 mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                  {panel.deckWord?.ipa || translation?.ipa ? (
-                    <span className="font-mono text-xs font-bold text-[#8C8275]">
-                      {translation?.ipa || panel.deckWord?.ipa}
-                    </span>
-                  ) : null}
-                  {panel.deckWord?.partOfSpeech || translation?.partOfSpeech ? (
-                    <span className="italic text-xs font-bold text-[#6B6258]">
-                      ({translation?.partOfSpeech || panel.deckWord?.partOfSpeech})
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FAF6EE] text-[#221C16] shadow-[1.5px_1.5px_0_#221C16] hover:bg-[#FEE2E2] active:translate-y-0.5"
-            aria-label="Đóng bảng nghĩa"
-          >
-            <X className="h-4 w-4 stroke-[2.5]" />
+    <div className="wn-vocab-note-content">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-[#221C16]/12 pb-3">
+        <div className="min-w-0">
+          {panel.trailIndex !== undefined && panel.trailTotal ? <p className="wn-story-kicker">Từ trong bài · {panel.trailIndex + 1} / {panel.trailTotal}</p> : null}
+          <h2 id="story-vocabulary-note-title" className="mt-1 break-words font-[family-name:var(--font-story-display)] text-[1.7rem] font-semibold leading-none tracking-[-0.025em] text-[#221C16] sm:text-[2rem]">
+            {panel.selectedText}
+          </h2>
+          {formIsDifferent ? <p className="mt-1 text-xs font-semibold text-[#756A5D]">Dạng của: <strong className="text-[#221C16]">{panel.canonicalTerm}</strong></p> : null}
+          {ipa || partOfSpeech ? <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#756A5D]">{ipa ? <span className="font-mono font-semibold">{ipa}</span> : null}{partOfSpeech ? <span className="italic">{partOfSpeech}</span> : null}</p> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <PronounceButton text={panel.selectedText} size="sm" variant="story" label="Phát âm" className="min-h-11" />
+          <button ref={closeButtonRef} type="button" onClick={onClose} className="wn-story-icon-control" aria-label="Đóng bảng nghĩa">
+            <X className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />
           </button>
         </div>
+      </div>
 
-        {panel.loading ? (
-          <div className="flex items-center gap-3 py-6 text-sm font-bold text-[#0F766E]">
-            <Loader2 className="h-5 w-5 animate-spin text-[#0D9488]" />
-            <span>Đang phân tích ngữ cảnh và dịch nghĩa từ này…</span>
-          </div>
-        ) : null}
+      {panel.loading ? <div className="flex items-center gap-3 py-7 text-sm font-semibold text-[#5D594F]" aria-live="polite"><Loader2 className="h-5 w-5 animate-spin text-[#B96A25]" aria-hidden="true" /><span>Đang tra nghĩa theo ngữ cảnh…</span></div> : null}
+      {panel.error ? <div role="alert" className="mt-4 flex items-start gap-2 border-l-2 border-[#B91C1C] bg-[#FFF0EC] px-3 py-3 text-sm font-semibold text-[#8E2B1E]"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><p>{panel.error}</p></div> : null}
 
-        {panel.error ? (
-          <div
-            role="alert"
-            className="mt-3 flex items-start gap-2 rounded-xl border-2 border-[#B91C1C] bg-[#FEE2E2] p-3 text-sm font-bold text-[#991B1B]"
-          >
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-[#B91C1C]" />
-            <div>{panel.error}</div>
-          </div>
-        ) : null}
-
-        {!panel.loading && !panel.error ? (
-          <div className="mt-3 space-y-3 text-sm text-[#221C16]">
-            {/* Nghĩa chính */}
-            <div className="rounded-xl border border-[#221C16]/15 bg-[#FAF6EE] p-3.5">
-              <span className="block text-[10px] font-black uppercase tracking-wider text-[#6B6258]">
-                Nghĩa tiếng Việt
-              </span>
-              <p className="mt-0.5 text-base sm:text-lg font-black text-[#C85630]">
-                {meaning || "Chưa có nghĩa cho từ này."}
-              </p>
-              {translation?.contextualMeaningVi && translation.contextualMeaningVi !== meaning ? (
-                <p className="mt-1 text-xs font-bold text-[#8A5817]">
-                  <span className="font-black">Trong câu:</span> {translation.contextualMeaningVi}
-                </p>
-              ) : null}
+      {!panel.loading && !panel.error ? (
+        <div className="mt-4 space-y-4 text-sm text-[#302820]">
+          <section className="wn-vocab-meaning-slip" aria-label="Nghĩa trong ngữ cảnh">
+            <p className="wn-story-kicker">Nghĩa trong câu</p>
+            <p className="mt-1 text-base font-semibold leading-relaxed text-[#9E4D20]">{meaning || "Chưa có nghĩa cho từ này."}</p>
+            {translation?.contextualMeaningVi && translation.contextualMeaningVi !== meaning ? <p className="mt-2 text-xs leading-relaxed text-[#6A5848]">{translation.contextualMeaningVi}</p> : null}
+          </section>
+          {panel.sentence ? <blockquote className="border-l border-dashed border-[#C9BFAE] pl-3 text-sm italic leading-6 text-[#5D5247]">“{panel.sentence}”</blockquote> : null}
+          {panel.source === "ai" && translation?.definitionVi ? <p className="text-xs leading-6 text-[#5D5247]"><span className="font-bold text-[#302820]">Ghi chú:</span> {translation.definitionVi}</p> : null}
+          {panel.source === "ai" && translation ? (
+            <div className="flex items-center justify-between gap-3 border-t border-dashed border-[#C9BFAE] pt-3">
+              <p className="text-xs leading-5 text-[#756A5D]">{cardAdded ? "Đã lưu vào bộ từ." : "Lưu từ mới này để ôn bằng flashcard?"}</p>
+              <button type="button" onClick={handleAddCard} disabled={isAddingCard || cardAdded} aria-busy={isAddingCard} className="wn-button wn-button-secondary shrink-0 px-3 py-2 text-xs">
+                {cardAdded ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
+                {cardAdded ? "Đã lưu" : isAddingCard ? "Đang lưu…" : "Lưu vào deck"}
+              </button>
             </div>
+          ) : null}
+          {addCardError ? <p role="alert" className="text-xs font-semibold text-[#A63222]">{addCardError}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
-            {/* Giải thích chi tiết */}
-            {translation?.definitionVi ? (
-              <p className="text-xs leading-relaxed text-[#4A4036]">
-                <span className="font-black text-[#221C16]">Giải thích:</span> {translation.definitionVi}
-              </p>
-            ) : null}
+function MobileVocabularySheet({ panel, deckId, onClose }: { panel: TranslationPanel; deckId: string; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const { dragOffset, isDragging, dragHandleProps } = useBottomSheetDrag(onClose);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (!dialog.open) dialog.showModal();
+    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (dialog.open) dialog.close();
+    };
+  }, []);
 
-            {/* Định nghĩa tiếng Anh */}
-            {panel.deckWord?.definitionEn || translation?.definitionEn ? (
-              <p className="text-xs leading-relaxed text-[#4A4036]">
-                <span className="font-black text-[#221C16]">Định nghĩa (EN):</span>{" "}
-                {translation?.definitionEn || panel.deckWord?.definitionEn}
-              </p>
-            ) : null}
+  return (
+    <dialog ref={dialogRef} className="wn-vocab-sheet" aria-label="Nghĩa từ trong truyện" onCancel={(event) => { event.preventDefault(); onClose(); }} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className={`wn-vocab-sheet__surface ${isDragging ? "wn-vocab-sheet__surface--dragging" : ""}`} style={dragOffset ? { transform: `translateY(${dragOffset}px)` } : undefined}>
+        <div className="wn-vocab-sheet__drag-area" aria-hidden="true" {...dragHandleProps}><div className="wn-vocab-sheet__handle" /></div>
+        <VocabularyNoteContent key={panel.selectedText} panel={panel} deckId={deckId} onClose={onClose} closeButtonRef={closeButtonRef} />
+      </div>
+    </dialog>
+  );
+}
 
-            {/* Ví dụ & Câu dịch */}
-            {translation?.exampleEn ? (
-              <div className="border-t border-[#221C16]/10 pt-2.5 space-y-1">
-                <p className="text-xs italic text-[#4A4036]">
-                  &ldquo;{translation.exampleEn}&rdquo;
-                </p>
-                {translation.exampleVi ? (
-                  <p className="text-xs font-bold text-[#6B6258]">&rarr; {translation.exampleVi}</p>
-                ) : null}
-              </div>
-            ) : null}
+function VocabularyDetails({ panel, deckId, onClose }: { panel: TranslationPanel; deckId: string; onClose: () => void }) {
+  const isMobile = useMobileStorySheet();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (isMobile) return;
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleKeyDown);
+    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => { window.removeEventListener("keydown", handleKeyDown); window.cancelAnimationFrame(frame); };
+  }, [isMobile, onClose]);
+  if (isMobile) return <MobileVocabularySheet panel={panel} deckId={deckId} onClose={onClose} />;
+  return (
+    <motion.aside className="wn-vocab-slip fixed bottom-6 right-6 z-50 max-h-[min(43rem,calc(100dvh-3rem))] w-[25rem] max-w-[calc(100vw-3rem)] overflow-y-auto p-5" aria-label="Nghĩa từ trong truyện" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { duration: 0.18 } }} exit={{ opacity: 0, transition: { duration: 0.1 } }}>
+      <VocabularyNoteContent key={panel.selectedText} panel={panel} deckId={deckId} onClose={onClose} closeButtonRef={closeButtonRef} />
+    </motion.aside>
+  );
+}
 
-            {/* Nút thêm từ vào deck nếu dịch bằng AI */}
-            {panel.source === "ai" && translation ? (
-              <div className="pt-2 border-t border-[#221C16]/10 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-bold text-[#8C8275]">
-                  {cardAdded ? "Đã lưu vào bộ từ" : "Lưu từ này để ôn tập flashcard?"}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleAddCard}
-                  disabled={isAddingCard || cardAdded}
-                  className={`inline-flex items-center gap-1.5 rounded-lg border-2 border-[#221C16] px-3 py-1.5 text-xs font-black shadow-[1.5px_1.5px_0_#221C16] transition-transform active:translate-y-0.5 ${
-                    cardAdded
-                      ? "bg-[#DDF5F1] text-[#0F766E]"
-                      : "bg-[#FEF3C7] text-[#8A5817] hover:bg-[#FDE68A]"
-                  }`}
-                >
-                  {cardAdded ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 stroke-[2.5]" />
-                      <span>Đã lưu vào deck</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
-                      <span>{isAddingCard ? "Đang lưu..." : "Lưu vào deck"}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            ) : null}
+function MobileVocabularyTrail({ usage, selectedIndex, onSelect, onClose }: { usage: StoryVocabularyUsage[]; selectedIndex: number | null; onSelect: (item: StoryVocabularyUsage, index: number) => void; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const { dragOffset, isDragging, dragHandleProps } = useBottomSheetDrag(onClose);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (!dialog.open) dialog.showModal();
+    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => { window.cancelAnimationFrame(frame); if (dialog.open) dialog.close(); };
+  }, []);
+  return (
+    <dialog ref={dialogRef} className="wn-vocab-sheet" aria-labelledby="story-vocabulary-trail-title" onCancel={(event) => { event.preventDefault(); onClose(); }} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className={`wn-vocab-sheet__surface ${isDragging ? "wn-vocab-sheet__surface--dragging" : ""}`} style={dragOffset ? { transform: `translateY(${dragOffset}px)` } : undefined}>
+        <div className="wn-vocab-sheet__drag-area" aria-hidden="true" {...dragHandleProps}><div className="wn-vocab-sheet__handle" /></div>
+        <div className="flex items-start justify-between gap-3 border-b border-[#221C16]/12 pb-3">
+          <div><p className="wn-story-kicker">Vocabulary trail</p><h2 id="story-vocabulary-trail-title" className="mt-1 font-[family-name:var(--font-story-display)] text-2xl font-semibold tracking-tight text-[#221C16]">Từ trong bài · {usage.length}</h2></div>
+          <button ref={closeButtonRef} type="button" onClick={onClose} className="wn-story-icon-control" aria-label="Đóng danh sách từ trong bài"><X className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} /></button>
+        </div>
+        <ol className="mt-3 divide-y divide-dashed divide-[#D8CEBE]">
+          {usage.map((item, index) => <li key={`${item.term}-${item.usedAs}-${index}`}><button type="button" className={`wn-vocab-trail-row ${selectedIndex === index ? "wn-vocab-trail-row--active" : ""}`} onClick={() => onSelect(item, index)}><span className="min-w-0 text-left"><strong>{item.usedAs}</strong>{normalize(item.term) !== normalize(item.usedAs) ? <small>Dạng của {item.term}</small> : null}</span><ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" /></button></li>)}
+        </ol>
+      </div>
+    </dialog>
+  );
+}
 
-            {addCardError ? (
-              <p className="text-xs font-bold text-[#B91C1C]">{addCardError}</p>
-            ) : null}
-          </div>
-        ) : null}
-      </aside>
-    </>
+function OverflowMenu({ title, onDelete }: { title: string; onDelete?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePress = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setOpen(false); };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    window.addEventListener("pointerdown", closeOnOutsidePress);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => { window.removeEventListener("pointerdown", closeOnOutsidePress); window.removeEventListener("keydown", closeOnEscape); };
+  }, [open]);
+  return (
+    <div ref={menuRef} className="relative shrink-0">
+      <button type="button" onClick={() => setOpen((current) => !current)} className="wn-story-icon-control" aria-label="Tùy chọn truyện" aria-expanded={open}><MoreHorizontal className="h-4 w-4" aria-hidden="true" /></button>
+      <AnimatePresence>{open ? <motion.div className="wn-story-overflow" initial={panelVariants.hidden} animate={panelVariants.visible} exit={panelVariants.exit}>
+        <PronounceButton text={title} size="sm" variant="story" label="Đọc tiêu đề" className="w-full justify-start" />
+        {onDelete ? <button type="button" onClick={() => { setOpen(false); onDelete(); }} className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold"><Trash2 className="h-3.5 w-3.5" aria-hidden="true" />Xóa truyện</button> : null}
+      </motion.div> : null}</AnimatePresence>
+    </div>
   );
 }
 
 export function StoryReader({
   story,
   deckWords,
-  storyActions,
   storyActionNotice,
   onDelete,
+  readingMode = false,
+  onReadingModeChange,
 }: {
   story: StoryData;
   deckWords: DeckStoryWord[];
   storyActions?: ReactNode;
   storyActionNotice?: ReactNode;
   onDelete?: () => void;
+  readingMode?: boolean;
+  onReadingModeChange?: (readingMode: boolean) => void;
 }) {
-  const paragraphs = story.content.split(/\n\n+/).filter(Boolean);
+  const paragraphs = useMemo(() => story.content.split(/\n\n+/).filter(Boolean), [story.content]);
   const requestId = useRef(0);
+  const lastTriggerRef = useRef<HTMLElement | null>(null);
   const [panel, setPanel] = useState<TranslationPanel | null>(null);
+  const [trailOpen, setTrailOpen] = useState(false);
+  const [mobileTrailOpen, setMobileTrailOpen] = useState(false);
+  const reduceMotion = useReducedMotion();
+  const isMobile = useMobileStorySheet();
+  const selectedUsageIndex = panel?.trailIndex ?? null;
+  const deckWordsByTerm = useMemo(() => new Map(deckWords.map((word) => [normalize(word.term), word])), [deckWords]);
+  const contextualTranslations = useMemo(() => new Map(story.vocabulary.contextualTranslations.map((item) => [`${normalize(item.term)}\u0000${normalize(item.usedAs)}`, item.meaningVi])), [story.vocabulary.contextualTranslations]);
+  const sentenceForUsage = useCallback((usage: StoryVocabularyUsage) => extractSentenceContainingUsageWithBoundary(story.content, usage.usedAs) || undefined, [story.content]);
 
-  const deckWordsByTerm = useMemo(
-    () => new Map(deckWords.map((word) => [normalize(word.term), word])),
-    [deckWords]
-  );
-
-  const contextualTranslations = useMemo(
-    () =>
-      new Map(
-        story.vocabulary.contextualTranslations.map((item) => [
-          `${normalize(item.term)}\u0000${normalize(item.usedAs)}`,
-          item.meaningVi,
-        ])
-      ),
-    [story.vocabulary.contextualTranslations]
-  );
-
-  // 1. Xem nghĩa từ mục tiêu trong deck
-  const showDeckTranslation = (usage: StoryVocabularyUsage) => {
+  const showDeckTranslation = useCallback((usage: StoryVocabularyUsage, usageIndex?: number, trigger?: HTMLElement) => {
+    if (trigger) lastTriggerRef.current = trigger;
     const deckWord = deckWordsByTerm.get(normalize(usage.term));
-    setPanel({
-      selectedText: usage.usedAs,
-      canonicalTerm: usage.term,
-      source: "deck",
-      deckWord,
-      contextualMeaning:
-        contextualTranslations.get(`${normalize(usage.term)}\u0000${normalize(usage.usedAs)}`) ||
-        deckWord?.meaningVi,
-    });
-  };
+    setPanel({ selectedText: usage.usedAs, canonicalTerm: usage.term, source: "deck", deckWord, sentence: sentenceForUsage(usage), trailIndex: usageIndex, trailTotal: usageIndex === undefined ? undefined : story.vocabulary.usage.length, contextualMeaning: contextualTranslations.get(`${normalize(usage.term)}\u0000${normalize(usage.usedAs)}`) || deckWord?.meaningVi });
+  }, [contextualTranslations, deckWordsByTerm, sentenceForUsage, story.vocabulary.usage.length]);
 
-  // 2. Dịch bất kỳ từ hoặc cụm từ nào
+  const closeVocabulary = useCallback(() => {
+    setPanel(null);
+    setMobileTrailOpen(false);
+    window.requestAnimationFrame(() => lastTriggerRef.current?.focus());
+  }, []);
+  const scrollToUsage = useCallback((usageIndex: number) => {
+    const target = document.querySelector<HTMLElement>(`[data-story-target-index="${usageIndex}"]`);
+    target?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+  }, [reduceMotion]);
+  const selectTrailUsage = useCallback((usage: StoryVocabularyUsage, usageIndex: number) => {
+    setTrailOpen(false);
+    setMobileTrailOpen(false);
+    scrollToUsage(usageIndex);
+    showDeckTranslation(usage, usageIndex);
+  }, [scrollToUsage, showDeckTranslation]);
+
   const translateWordOrPhrase = async (rawText: string) => {
     const cleanText = rawText.replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, "").trim();
     if (!cleanText || cleanText.length > 150 || !/[a-zA-Z]/.test(cleanText)) return;
-
-    // Kiểm tra xem có trùng từ nào trong deck không
     const matchingDeckWord = deckWordsByTerm.get(normalize(cleanText));
     if (matchingDeckWord) {
-      setPanel({
-        selectedText: cleanText,
-        canonicalTerm: matchingDeckWord.term,
-        source: "deck",
-        deckWord: matchingDeckWord,
-        contextualMeaning:
-          contextualTranslations.get(
-            `${normalize(matchingDeckWord.term)}\u0000${normalize(cleanText)}`
-          ) || matchingDeckWord.meaningVi,
-      });
+      setPanel({ selectedText: cleanText, canonicalTerm: matchingDeckWord.term, source: "deck", deckWord: matchingDeckWord, sentence: extractSentenceContainingUsageWithBoundary(story.content, cleanText) || undefined, contextualMeaning: contextualTranslations.get(`${normalize(matchingDeckWord.term)}\u0000${normalize(cleanText)}`) || matchingDeckWord.meaningVi });
       return;
     }
-
-    // Tìm câu ngữ cảnh linh hoạt
     let surroundingSentence = extractSentenceContainingUsageWithBoundary(story.content, cleanText);
     if (!surroundingSentence) {
-      const sentences = story.content
-        .split(/(?<=[.!?])\s+|\n+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-      surroundingSentence =
-        sentences.find((sentence) =>
-          sentence.toLowerCase().includes(cleanText.toLowerCase())
-        ) || "";
+      const sentences = story.content.split(/(?<=[.!?])\s+|\n+/).map((sentence) => sentence.trim()).filter(Boolean);
+      surroundingSentence = sentences.find((sentence) => sentence.toLowerCase().includes(cleanText.toLowerCase())) || "";
     }
-    if (!surroundingSentence) {
-      const para = paragraphs.find((p) => p.toLowerCase().includes(cleanText.toLowerCase()));
-      surroundingSentence = para || cleanText;
-    }
-
-    const context =
-      paragraphs.find((p) => p.toLowerCase().includes(cleanText.toLowerCase())) ||
-      surroundingSentence;
-
+    if (!surroundingSentence) surroundingSentence = paragraphs.find((paragraph) => paragraph.toLowerCase().includes(cleanText.toLowerCase())) || cleanText;
+    const context = paragraphs.find((paragraph) => paragraph.toLowerCase().includes(cleanText.toLowerCase())) || surroundingSentence;
     const currentRequest = requestId.current + 1;
     requestId.current = currentRequest;
-    setPanel({ selectedText: cleanText, canonicalTerm: null, source: "ai", loading: true });
-
+    setPanel({ selectedText: cleanText, canonicalTerm: null, source: "ai", sentence: surroundingSentence, loading: true });
     try {
-      const response = await fetch("/api/stories/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          storyId: story.id,
-          deckId: story.deckId,
-          selectedText: cleanText,
-          surroundingSentence,
-          context,
-        }),
-      });
+      const response = await fetch("/api/stories/translate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storyId: story.id, deckId: story.deckId, selectedText: cleanText, surroundingSentence, context }) });
       const data = await response.json().catch(() => null);
-      if (!response.ok || !data?.translation) {
-        throw new Error(data?.error || "Không thể dịch từ này lúc này.");
-      }
+      if (!response.ok || !data?.translation) throw new Error(data?.error || "Không thể dịch từ này lúc này.");
       if (requestId.current !== currentRequest) return;
-      setPanel({
-        selectedText: cleanText,
-        canonicalTerm: null,
-        source: "ai",
-        translation: data.translation,
-      });
+      setPanel({ selectedText: cleanText, canonicalTerm: null, source: "ai", sentence: surroundingSentence, translation: data.translation });
     } catch (error) {
       if (requestId.current !== currentRequest) return;
-      setPanel({
-        selectedText: cleanText,
-        canonicalTerm: null,
-        source: "ai",
-        error: error instanceof Error ? error.message : "Không thể dịch từ này lúc này.",
-      });
+      setPanel({ selectedText: cleanText, canonicalTerm: null, source: "ai", sentence: surroundingSentence, error: error instanceof Error ? error.message : "Không thể dịch từ này lúc này." });
     }
   };
 
-  // 3. Xử lý khi click vào bất kỳ từ nào trong đoạn văn
-  const handleContentClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === "BUTTON" || target.closest("button")) return;
-
-    // A. Bôi đen text
-    const selection = window.getSelection();
-    const selectedStr = selection?.toString().trim();
-    if (selectedStr && selectedStr.length > 0 && selectedStr.length <= 100 && /[a-zA-Z]/.test(selectedStr)) {
-      translateWordOrPhrase(selectedStr);
-      return;
-    }
-
-    // B. Trích xuất từ tại vị trí click
+  const handleContentClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button")) return;
+    const selectedText = window.getSelection()?.toString().trim();
+    if (selectedText && selectedText.length <= 100 && /[a-zA-Z]/.test(selectedText)) { void translateWordOrPhrase(selectedText); return; }
     let range: Range | null = null;
-    if (document.caretRangeFromPoint) {
-      range = document.caretRangeFromPoint(e.clientX, e.clientY);
-    } else if (
-      (
-        document as unknown as {
-          caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
-        }
-      ).caretPositionFromPoint
-    ) {
-      const pos = (
-        document as unknown as {
-          caretPositionFromPoint: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
-        }
-      ).caretPositionFromPoint(e.clientX, e.clientY);
-      if (pos && pos.offsetNode) {
-        range = document.createRange();
-        range.setStart(pos.offsetNode, pos.offset);
-        range.collapse(true);
-      }
+    if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(event.clientX, event.clientY);
+    else if (document.caretPositionFromPoint) {
+      const position = document.caretPositionFromPoint(event.clientX, event.clientY);
+      if (position?.offsetNode) { range = document.createRange(); range.setStart(position.offsetNode, position.offset); range.collapse(true); }
     }
-
-    if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+    if (range?.startContainer.nodeType === Node.TEXT_NODE) {
       const fullText = range.startContainer.textContent || "";
-      const offset = range.startOffset;
-      let start = offset;
-      let end = offset;
+      let start = range.startOffset;
+      let end = range.startOffset;
       while (start > 0 && /[a-zA-Z0-9'-]/.test(fullText[start - 1])) start--;
       while (end < fullText.length && /[a-zA-Z0-9'-]/.test(fullText[end])) end++;
-      const clickedWord = fullText
-        .substring(start, end)
-        .replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, "")
-        .trim();
-      if (clickedWord && clickedWord.length >= 2 && /[a-zA-Z]/.test(clickedWord)) {
-        translateWordOrPhrase(clickedWord);
-      }
+      const clickedWord = fullText.substring(start, end).replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, "").trim();
+      if (clickedWord && clickedWord.length >= 2 && /[a-zA-Z]/.test(clickedWord)) void translateWordOrPhrase(clickedWord);
     }
   };
-
-  // 4. Double click
   const handleDoubleClick = () => {
-    const selection = window.getSelection();
-    const selectedStr = selection?.toString().trim();
-    if (selectedStr && /[a-zA-Z]/.test(selectedStr)) {
-      translateWordOrPhrase(selectedStr);
-    }
+    const selectedText = window.getSelection()?.toString().trim();
+    if (selectedText && /[a-zA-Z]/.test(selectedText)) void translateWordOrPhrase(selectedText);
+  };
+
+  const vocabularyCount = story.vocabulary.usage.length;
+  const openTrail = (trigger: HTMLButtonElement) => {
+    lastTriggerRef.current = trigger;
+    if (isMobile) setMobileTrailOpen(true);
+    else setTrailOpen((current) => !current);
   };
 
   return (
-    <article
-      className="wn-story-paper p-5 sm:p-8 md:p-10 relative"
-      aria-labelledby="story-heading"
-    >
-      {/* Top Header Stamps: Clean publication / notebook style */}
-      <header className="border-b-2 border-dashed border-[#DCD3C5] pb-4">
-        <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="wn-story-stamp text-[#8A5817] border-[#8A5817]/40 bg-[#FEF3C7]">
-              📖 {story.topic}
-            </span>
-            <span className="wn-story-stamp text-[#6B6258] border-[#6B6258]/30 bg-[#FAF6EE]">
-              CEFR {story.cefr}
-            </span>
-            <span className="wn-story-stamp text-[#8C8275] border-[#DCD3C5] bg-[#FFFDF8]">
-              {story.length === "short" ? "Ngắn" : story.length === "medium" ? "Vừa" : story.length === "long" ? "Dài" : story.length}
-            </span>
+    <article className={`wn-story-paper relative ${readingMode ? "wn-story-paper--reading" : ""}`} aria-labelledby="story-heading">
+      <header className={`wn-story-reader-header ${readingMode ? "wn-story-reader-header--reading" : ""}`}>
+        {readingMode ? (
+          <div className="wn-story-reading-toolbar">
+            <div className="min-w-0"><p className="wn-story-kicker">Chế độ đọc</p><h1 id="story-heading" className="truncate font-[family-name:var(--font-story-display)] text-xl font-semibold tracking-[-0.02em] text-[#221C16] sm:text-2xl">{story.title}</h1></div>
+            <div className="flex shrink-0 items-center gap-1.5"><StoryNarrationControls content={story.content} compact />{vocabularyCount ? <button type="button" onClick={(event) => openTrail(event.currentTarget)} className="wn-story-icon-control" aria-label={`Từ trong bài, ${vocabularyCount} từ`}><BookMarked className="h-4 w-4" aria-hidden="true" /></button> : null}<button type="button" onClick={() => onReadingModeChange?.(false)} className="wn-story-icon-control" aria-label="Thoát chế độ đọc"><Minimize2 className="h-4 w-4" aria-hidden="true" /></button></div>
           </div>
-          <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#8C8275] hidden sm:inline-block">
-            WordNest Study Archive
-          </span>
-        </div>
-
-        {/* Story Title with Editorial Personality */}
-        <div className="mt-3.5 flex flex-col gap-2">
-          <h1
-            id="story-heading"
-            className="wn-story-title text-2xl sm:text-3xl md:text-4xl text-[#221C16] leading-tight"
-          >
-            {story.title}
-          </h1>
-        </div>
-
-        {/* Reading Controls Bar: Visible reading actions, overflow destructive action */}
-        <div className="mt-4 flex items-start justify-between gap-2.5 border-t border-dashed border-[#DCD3C5] pt-3 text-xs">
-          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-            <StoryNarrationControls content={story.content} />
-            <PronounceButton text={story.title} size="sm" variant="story" label="Đọc tiêu đề" />
-          </div>
-
-          <div className="shrink-0 flex items-center gap-2 pt-0.5">
-            {/* Overflow Menu for Secondary/Destructive Actions */}
-            <details className="relative wn-menu-details">
-              <summary
-                aria-label="Tùy chọn truyện"
-                className="wn-icon-button flex h-9 w-9 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
-              >
-                <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
-              </summary>
-              <div
-                className="fixed inset-0 z-40 cursor-default"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                }}
-              />
-              <div className="absolute right-0 top-full z-50 mt-1.5 w-44 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-1.5 shadow-[3px_3px_0px_#221C16]">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.currentTarget.closest("details")?.removeAttribute("open");
-                    if (onDelete) onDelete();
-                  }}
-                  className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold cursor-pointer"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Xóa truyện</span>
-                </button>
-              </div>
-            </details>
-          </div>
-        </div>
-
+        ) : (
+          <>
+            <div className="wn-story-masthead"><span>WordNest · Reading file</span><span aria-hidden="true">✦</span><span>{vocabularyCount} từ mục tiêu</span></div>
+            <div className="mt-3"><h1 id="story-heading" className="wn-story-title text-[#221C16]">{story.title}</h1><div className="wn-story-metadata mt-3" aria-label="Thông tin truyện"><span>{story.topic}</span><span aria-hidden="true">•</span><span>CEFR {story.cefr}</span><span aria-hidden="true">•</span><span>{story.length === "short" ? "Ngắn" : story.length === "medium" ? "Vừa" : story.length === "long" ? "Dài" : story.length}</span></div></div>
+            <div className="mt-5 flex items-center justify-between gap-2 border-t border-dashed border-[#CFC2AF] pt-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5"><StoryNarrationControls content={story.content} />{vocabularyCount ? <button type="button" onClick={(event) => openTrail(event.currentTarget)} className="wn-story-secondary-control" aria-expanded={isMobile ? mobileTrailOpen : trailOpen} aria-controls={isMobile ? "story-vocabulary-trail-title" : "story-vocabulary-trail"}><BookMarked className="h-4 w-4" aria-hidden="true" /><span>Từ trong bài <b>· {vocabularyCount}</b></span></button> : null}<button type="button" onClick={() => onReadingModeChange?.(true)} className="wn-story-secondary-control wn-story-reading-toggle" aria-label="Chế độ đọc" aria-pressed={readingMode}><Maximize2 className="h-4 w-4" aria-hidden="true" /><span>Chế độ đọc</span></button></div>
+              <OverflowMenu title={story.title} onDelete={onDelete} />
+            </div>
+          </>
+        )}
         {storyActionNotice}
+        {!isMobile && trailOpen && vocabularyCount ? <motion.section id="story-vocabulary-trail" className="wn-story-trail-popover" role="dialog" aria-modal="false" aria-labelledby="story-vocabulary-trail-title" initial={reduceMotion ? { opacity: 0 } : panelVariants.hidden} animate={reduceMotion ? { opacity: 1 } : panelVariants.visible} exit={reduceMotion ? { opacity: 0 } : panelVariants.exit}>
+          <div className="flex items-baseline justify-between gap-3 border-b border-dashed border-[#CFC2AF] pb-2"><h2 id="story-vocabulary-trail-title" className="font-[family-name:var(--font-story-display)] text-xl font-semibold tracking-tight text-[#221C16]">Từ trong bài</h2><span className="wn-story-kicker">{vocabularyCount} mục</span></div>
+          <ol className="mt-2 divide-y divide-dashed divide-[#D8CEBE]">{story.vocabulary.usage.map((usage, index) => <li key={`${usage.term}-${usage.usedAs}-${index}`}><button type="button" className={`wn-vocab-trail-row ${selectedUsageIndex === index ? "wn-vocab-trail-row--active" : ""}`} onClick={() => selectTrailUsage(usage, index)}><span className="min-w-0 text-left"><strong>{usage.usedAs}</strong>{normalize(usage.term) !== normalize(usage.usedAs) ? <small>Dạng của {usage.term}</small> : null}</span><ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" /></button></li>)}</ol>
+        </motion.section> : null}
       </header>
 
-      {/* Story Prose Body with Editorial Serif font */}
-      <div
-        className="wn-story-prose py-6 select-text cursor-text"
-        onClick={handleContentClick}
-        onDoubleClick={handleDoubleClick}
-      >
-        {paragraphs.map((paragraph, index) => (
-          <p key={index}>
-            <TargetText
-              paragraph={paragraph}
-              usage={story.vocabulary.usage}
-              onClick={showDeckTranslation}
-            />
-          </p>
-        ))}
-
-        {/* End of story ornament / signature */}
-        <div className="my-6 flex items-center justify-center gap-3 text-[#DCD3C5]" aria-hidden="true">
-          <span className="h-px w-12 bg-[#DCD3C5]" />
-          <span className="text-xs font-bold tracking-widest text-[#B5A998]">✦ ✦ ✦</span>
-          <span className="h-px w-12 bg-[#DCD3C5]" />
-        </div>
+      <div className="wn-story-prose select-text cursor-text" onClick={handleContentClick} onDoubleClick={handleDoubleClick}>
+        {paragraphs.map((paragraph, index) => <p key={index}><TargetText paragraph={paragraph} usage={story.vocabulary.usage} activeUsageIndex={selectedUsageIndex} onClick={(usage, usageIndex, trigger) => showDeckTranslation(usage, usageIndex, trigger)} /></p>)}
+        <div className="wn-story-endmark" aria-hidden="true"><span /><b>✦</b><span /></div>
       </div>
 
-      {/* Target Word Translation Panel (Floating/Bottom Sheet) */}
-      {panel ? (
-        <TranslationDetails panel={panel} deckId={story.deckId} onClose={() => setPanel(null)} />
-      ) : null}
+      <AnimatePresence>{panel ? <VocabularyDetails panel={panel} deckId={story.deckId} onClose={closeVocabulary} /> : null}</AnimatePresence>
+      {isMobile && mobileTrailOpen && vocabularyCount ? <MobileVocabularyTrail usage={story.vocabulary.usage} selectedIndex={selectedUsageIndex} onSelect={selectTrailUsage} onClose={closeVocabulary} /> : null}
     </article>
   );
 }

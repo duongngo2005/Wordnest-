@@ -45,7 +45,7 @@ test("opens the story creator and translates target deck words without an AI req
   await expect(page.getByLabel("Nghĩa từ trong truyện")).toContainText("quả táo");
 
   await page.getByRole("button", { name: "Tạo truyện", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("dialog", { name: "Tạo truyện từ deck" });
   await expect(dialog.getByRole("heading", { name: "Tạo truyện từ deck" })).toBeVisible();
   await expect(dialog.getByRole("button", { name: /Tạo bằng WordNest AI/ })).toBeVisible();
   await expect(dialog.getByRole("button", { name: /Prompt → JSON/ })).toBeVisible();

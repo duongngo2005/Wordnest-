@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { WordNestMascot } from "../ui/Mascot";
 import { PronounceButton } from "../flashcards/PronounceButton";
 import { QuizQuestion, QuizQuestionExplanation, QuizSubmissionResult } from "@/services/vocabulary/quiz-service";
+import { playUISound } from "@/lib/ui-sound";
 import {
   RotateCcw,
   ArrowLeft,
@@ -13,6 +14,7 @@ import {
   BarChart2,
   Sparkles,
   BookOpen,
+  CheckCheck,
 } from "lucide-react";
 
 export interface AnswerRecord {
@@ -50,6 +52,10 @@ export function QuizResults({
 }: QuizResultsProps) {
   const [filter, setFilter] = useState<"all" | "correct" | "incorrect">("all");
 
+  useEffect(() => {
+    playUISound("completion");
+  }, []);
+
   const correctCount = records.filter((r) => r.isCorrect).length;
   const incorrectCount = total - correctCount;
 
@@ -66,39 +72,44 @@ export function QuizResults({
   };
 
   const getHeadlineMessage = () => {
-    if (accuracy === 100) return "Tuyệt đỉnh! Bạn đúng 100%!";
-    if (accuracy >= 80) return "Xuất sắc! Bạn nắm từ vựng rất vững!";
-    if (accuracy >= 50) return "Làm tốt lắm! Ôn lại chút là thành thạo ngay!";
-    return "Cố gắng lên! Mỗi lần làm là một lần nhớ sâu hơn!";
+    if (accuracy === 100) return "Bạn đã hoàn thành lượt luyện này.";
+    if (accuracy >= 50) return "Kết quả lần đầu đã được ghi nhận.";
+    return "Kết quả này giúp bạn chọn điều cần luyện tiếp.";
   };
 
   return (
     <div className="space-y-6 sm:space-y-8 max-w-3xl mx-auto">
-      {/* Top Banner with Score and Mascot */}
-      <div className="brick-card p-6 sm:p-8 bg-[#FFFDF9] text-center space-y-5">
+        {/* Top Banner with Score and Mascot — WordNest Practice Slip */}
+        <div className="brick-card p-6 sm:p-8 bg-[#FFFDF9] text-center space-y-5 relative overflow-hidden">
+        {/* Subtle decorative retro paper stamp in the corner */}
+        <div className="absolute top-3 right-3 hidden sm:flex items-center gap-1 px-2.5 py-1 rounded border border-dashed border-[#B91C1C]/40 text-[#B91C1C] text-[10px] font-black uppercase tracking-widest rotate-2 select-none opacity-80">
+          <CheckCheck className="w-3 h-3 text-[#B91C1C]" />
+          <span>WordNest Slip</span>
+        </div>
+
         <div className="flex justify-center">
           <WordNestMascot mood={getMascotMood()} size={110} />
         </div>
 
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#E06B43] bg-[#FEF3C7] px-3 py-1 rounded-full border border-[#221C16]">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Kết quả bài Quiz</span>
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 text-xs font-black text-[#E06B43] bg-[#FEF3C7] px-3.5 py-1 rounded-full border border-[#221C16]">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>WORDNEST PRACTICE SLIP</span>
+            </div>
+
+            <h1 className="text-2xl sm:text-3xl font-black text-[#221C16] tracking-tight">
+              Kết quả bài Quiz
+            </h1>
+            <p className="text-sm text-[#6B6258] font-semibold">
+              {getHeadlineMessage()} Bộ từ vựng: <span className="text-[#221C16] font-bold">{deck.name}</span>
+            </p>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-black text-[#221C16] tracking-tight">
-            {getHeadlineMessage()}
-          </h1>
-          <p className="text-sm text-[#6B6258] font-semibold">
-            Bộ từ vựng: <span className="text-[#221C16] font-bold">{deck.name}</span>
-          </p>
-        </div>
-
-        {/* Score & Accuracy Brick Badges */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+        {/* First-pass result stays primary; retry is a distinct reinforcement metric. */}
+        <div className={`grid grid-cols-2 gap-3 pt-2 ${submissionResult?.retryTotal ? "sm:grid-cols-3" : ""}`}>
           <div className="bg-[#FAF6EE] border-2 border-[#221C16] rounded-xl p-3 sm:p-4 text-center shadow-[2px_2px_0px_#221C16]">
             <p className="text-[11px] font-extrabold uppercase text-[#6B6258] tracking-wider">
-              Số câu đúng
+              Kết quả lần đầu
             </p>
             <p className="text-2xl sm:text-3xl font-black text-[#15803D] mt-0.5">
               {score} <span className="text-sm font-bold text-[#6B6258]">/ {total}</span>
@@ -114,7 +125,17 @@ export function QuizResults({
             </p>
           </div>
 
-          <div className="col-span-2 sm:col-span-1 bg-[#FAF6EE] border-2 border-[#221C16] rounded-xl p-3 sm:p-4 text-center shadow-[2px_2px_0px_#221C16]">
+          {submissionResult?.retryTotal ? (
+            <div className="col-span-2 sm:col-span-1 bg-[#FEF3C7] border-2 border-[#D97706] rounded-xl p-3 sm:p-4 text-center shadow-[2px_2px_0px_#D97706]">
+              <p className="text-[11px] font-extrabold uppercase text-[#92400E] tracking-wider">
+                Luyện lại
+              </p>
+              <p className="text-2xl sm:text-3xl font-black text-[#92400E] mt-0.5">
+                {submissionResult.retryScore} <span className="text-sm font-bold text-[#92400E]">/ {submissionResult.retryTotal}</span>
+              </p>
+            </div>
+          ) : (
+          <div className="col-span-2 bg-[#FAF6EE] border-2 border-[#221C16] rounded-xl p-3 sm:p-4 text-center shadow-[2px_2px_0px_#221C16]">
             <p className="text-[11px] font-extrabold uppercase text-[#6B6258] tracking-wider">
               Câu đã ghi nhận
             </p>
@@ -122,9 +143,10 @@ export function QuizResults({
               {submissionResult ? total : 0}
             </p>
           </div>
+          )}
         </div>
 
-        {/* Practice evidence notification banner */}
+        {/* Practice evidence notification banner (doctrine) */}
         <div className="bg-[#F0FDF4] border-2 border-[#16A34A] rounded-xl p-3 text-xs sm:text-sm font-bold text-[#166534] flex items-center justify-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-[#16A34A] shrink-0" />
           <span>
@@ -133,10 +155,10 @@ export function QuizResults({
           </span>
         </div>
 
-        {/* Retry Reinforcement Notification Banner */}
+        {/* Retry Reinforcement Notification Banner (Secondary Practice) */}
         {submissionResult?.retryTotal && submissionResult.retryTotal > 0 ? (
-          <div className="bg-[#EFF6FF] border-2 border-[#3B82F6] rounded-xl p-3 text-xs sm:text-sm font-bold text-[#1D4ED8] flex items-center justify-center gap-2 shadow-[2px_2px_0px_#1D4ED8]">
-            <Sparkles className="w-4 h-4 text-[#3B82F6] shrink-0" />
+          <div className="bg-[#FEF3C7] border-2 border-[#D97706] rounded-xl p-3 text-xs sm:text-sm font-bold text-[#92400E] flex items-center justify-center gap-2 shadow-[2px_2px_0px_#D97706]">
+            <RotateCcw className="w-4 h-4 text-[#D97706] shrink-0" />
             <span>
               Lần đầu: <strong>{submissionResult.firstPassScore ?? score}/{submissionResult.firstPassTotal ?? total}</strong>.
               {" "}Bạn đã sửa đúng <strong>{submissionResult.retryScore}/{submissionResult.retryTotal}</strong> câu khi luyện lại.
@@ -182,8 +204,10 @@ export function QuizResults({
 
           <div className="flex items-center gap-1.5">
             <button
+              type="button"
               onClick={() => setFilter("all")}
-              className={`px-3 py-1 text-xs font-black rounded-lg border-2 border-[#221C16] transition-all ${
+              aria-pressed={filter === "all"}
+              className={`min-h-[44px] px-3 py-1 text-xs font-black rounded-lg border-2 border-[#221C16] transition-all ${
                 filter === "all"
                   ? "bg-[#221C16] text-white"
                   : "bg-[#FAF6EE] text-[#221C16] hover:bg-gray-100"
@@ -192,8 +216,10 @@ export function QuizResults({
               Tất cả ({records.length})
             </button>
             <button
+              type="button"
               onClick={() => setFilter("correct")}
-              className={`px-3 py-1 text-xs font-black rounded-lg border-2 border-[#221C16] transition-all ${
+              aria-pressed={filter === "correct"}
+              className={`min-h-[44px] px-3 py-1 text-xs font-black rounded-lg border-2 border-[#221C16] transition-all ${
                 filter === "correct"
                   ? "bg-[#16A34A] text-white"
                   : "bg-[#DCFCE7] text-[#15803D] hover:bg-[#BBF7D0]"
@@ -202,8 +228,10 @@ export function QuizResults({
               Đúng ({correctCount})
             </button>
             <button
+              type="button"
               onClick={() => setFilter("incorrect")}
-              className={`px-3 py-1 text-xs font-black rounded-lg border-2 border-[#221C16] transition-all ${
+              aria-pressed={filter === "incorrect"}
+              className={`min-h-[44px] px-3 py-1 text-xs font-black rounded-lg border-2 border-[#221C16] transition-all ${
                 filter === "incorrect"
                   ? "bg-[#DC2626] text-white"
                   : "bg-[#FEE2E2] text-[#B91C1C] hover:bg-[#FECACA]"

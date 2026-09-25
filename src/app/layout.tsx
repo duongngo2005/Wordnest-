@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Lora } from "next/font/google";
+import { Fraunces, Geist, Geist_Mono, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,7 +12,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const lora = Lora({
+const fraunces = Fraunces({
+  variable: "--font-story-display",
+  subsets: ["latin", "vietnamese"],
+  display: "swap",
+});
+
+const sourceSerif = Source_Serif_4({
   variable: "--font-story-serif",
   subsets: ["latin", "vietnamese"],
   display: "swap",
@@ -62,7 +68,7 @@ export default function RootLayout({
     <html
       lang="vi"
       data-scroll-behavior="smooth"
-      className={`${geistSans.variable} ${geistMono.variable} ${lora.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} ${sourceSerif.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body

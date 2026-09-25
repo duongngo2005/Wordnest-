@@ -9,6 +9,9 @@ const envSchema = z.object({
   GEMINI_REQUEST_TIMEOUT_MS: z.string().optional().default("45000"),
   OPENROUTER_API_KEY: z.string().optional().default(""),
   UNSPLASH_ACCESS_KEY: z.string().optional().default(""),
+  AZURE_SPEECH_KEY: z.string().optional().default(""),
+  AZURE_SPEECH_REGION: z.string().optional().default(""),
+  TTS_CACHE_DIR: z.string().optional().default(""),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
@@ -21,6 +24,9 @@ const parsed = envSchema.safeParse({
   GEMINI_REQUEST_TIMEOUT_MS: process.env.GEMINI_REQUEST_TIMEOUT_MS,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   UNSPLASH_ACCESS_KEY: process.env.UNSPLASH_ACCESS_KEY,
+  AZURE_SPEECH_KEY: process.env.AZURE_SPEECH_KEY,
+  AZURE_SPEECH_REGION: process.env.AZURE_SPEECH_REGION,
+  TTS_CACHE_DIR: process.env.TTS_CACHE_DIR,
   NODE_ENV: process.env.NODE_ENV,
 });
 

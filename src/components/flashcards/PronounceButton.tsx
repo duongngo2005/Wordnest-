@@ -23,7 +23,7 @@ export function PronounceButton({
   className = "",
 }: PronounceButtonProps) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const { error } = useToast();
+  const { error, info } = useToast();
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -55,7 +55,8 @@ export function PronounceButton({
         error("Không thể phát âm", {
           description: "Kiểm tra kết nối và âm lượng rồi thử lại.",
         });
-      }
+      },
+      { onCloudFallback: () => info("Đang dùng giọng hệ thống.") }
     );
   };
 

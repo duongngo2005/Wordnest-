@@ -74,12 +74,16 @@ test("keeps the daily mobile path prominent and advanced reinforcement reachable
   await page.getByLabel("Thêm tùy chọn").tap();
   await expect(page.getByRole("link", { name: "Story" })).toBeVisible();
 
+  // Close options menu: overlay must dismiss cleanly and leave no blocking invisible layer
+  await page.getByLabel("Thêm tùy chọn").tap();
+  await expect(page.getByRole("link", { name: "Story" })).toBeHidden();
+
   await page.getByRole("button", { name: "Thêm thẻ" }).tap();
   await expect(page.getByLabel("Từ", { exact: true })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
   await page.goto(`/decks/${deckId}/study`);
-  await expect(page.getByText("allocate", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "allocate" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
   await page.goto(`/decks/${deckId}/quiz?mode=typed`);

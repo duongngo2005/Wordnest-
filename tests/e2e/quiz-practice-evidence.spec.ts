@@ -122,7 +122,7 @@ test("Typed Recall (Phase 2A): Scenarios A & B - correct recall and misspelling 
 
     // Verify feedback shows incorrect and shows expected answer
     await expect(page.getByText("Chưa chính xác.")).toBeVisible();
-    await expect(page.getByText("Đáp án đúng:")).toBeVisible();
+    await expect(page.getByText(/^Đáp án: /)).toBeVisible();
 
     // Submit quiz
     await page.getByRole("button", { name: "Xem kết quả bài Quiz" }).click();
@@ -191,7 +191,7 @@ test("Typed Recall (Phase 2A): Scenarios C & D - normalization and multi-word ph
     await expect(page.getByText("Chính xác! Giỏi lắm!")).toBeVisible();
 
     await page.getByRole("button", { name: "Xem kết quả bài Quiz" }).click();
-    await expect(page.getByText("Tuyệt đỉnh! Bạn đúng 100%!")).toBeVisible();
+    await expect(page.getByText("Bạn đã hoàn thành lượt luyện này.")).toBeVisible();
 
     const practiceAttempts = await db.practiceAttempt.findMany({
       where: { flashcard: { deckId: normDeck.id } },
@@ -371,6 +371,7 @@ test.skip("Story Contextual Cloze (Phase 2B): parked active workflow; historical
 });
 
 test("Phase 2C - Scenario A: 10 questions (7 correct, 3 wrong), retry 3 correct, score 7/10 preserved, 13 PracticeAttempts, FSRS untouched", async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 932 });
   const deck = await db.deck.create({ data: { name: `Retry 10Q E2E ${crypto.randomUUID()}` } });
   try {
     const wordList = [
@@ -426,6 +427,8 @@ test("Phase 2C - Scenario A: 10 questions (7 correct, 3 wrong), retry 3 correct,
         await input.fill("intentionally wrong");
         await page.getByRole("button", { name: "Kiểm tra" }).click();
         await expect(page.getByText("Chưa chính xác.")).toBeVisible();
+        await expect(page.getByText("Bạn trả lời:")).toBeVisible();
+        await expect(page.getByText(/^Đáp án: /)).toBeVisible();
       }
 
       if (i < 10) {
@@ -462,10 +465,16 @@ test("Phase 2C - Scenario A: 10 questions (7 correct, 3 wrong), retry 3 correct,
 
     // Results page assertions
     await expect(page.getByText("Kết quả bài Quiz")).toBeVisible();
+    await expect(page.getByText("WORDNEST PRACTICE SLIP")).toBeVisible();
+    await expect(page.getByText("Kết quả lần đầu", { exact: true })).toBeVisible();
+    await expect(page.getByText("Luyện lại", { exact: true })).toBeVisible();
     await expect(page.getByText("7 / 10")).toBeVisible();
     await expect(page.getByText(/Lần đầu:\s*7\/10\.\s*Bạn đã sửa đúng\s*3\/3\s*câu khi luyện lại\./)).toBeVisible();
     await expect(page.getByText("Luyện tập không thay đổi lịch ôn.")).toBeVisible();
     await expect(page.getByText("Đã sửa đúng khi luyện lại ✓")).toHaveCount(3);
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+      .toBe(true);
 
     // Database assertions: QuizAttempt score strictly first-pass
     const quizAttempt = await db.quizAttempt.findFirstOrThrow({ where: { deckId: deck.id } });
@@ -622,7 +631,7 @@ test("Phase 2C - Scenario C: Perfect score (all correct) -> No retry button offe
     await finishBtn.click();
 
     await expect(page.getByText("Kết quả bài Quiz")).toBeVisible();
-    await expect(page.getByText("Tuyệt đỉnh! Bạn đúng 100%!")).toBeVisible();
+    await expect(page.getByText("Bạn đã hoàn thành lượt luyện này.")).toBeVisible();
     await expect(page.getByText(/Bạn đã sửa đúng/)).toHaveCount(0);
   } finally {
     await db.deck.delete({ where: { id: deck.id } });

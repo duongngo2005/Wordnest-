@@ -1,181 +1,52 @@
 /**
- * Browser Speech & Audio helper for English pronunciation.
- * Optimized for desktop and mobile browsers (iOS Safari, Android Chrome).
- *
- * iOS Safari on insecure HTTP origins (LAN IPs like 192.168.x.x) enforces an
- * extremely strict "user gesture" chain: audio.play() must be called in the
- * SAME synchronous microtask as the user tap. Any intervening API that
- * touches speechSynthesis, navigator.audioSession, or localStorage can
- * "consume" the gesture token and cause a silent NotAllowedError.
- *
- * To guarantee playback on every origin (localhost, LAN HTTP, Tailscale HTTPS,
- * cellular), this module follows two rules:
- *   1.  For WordNest server audio (the default), call `new Audio(url).play()`
- *       IMMEDIATELY — no speechSynthesis or audioSession calls beforehand.
- *   2.  Only touch speechSynthesis when the user explicitly picked a device voice.
+ * The single client-side speech boundary. Cloud audio is requested only for a
+ * curated WordNest voice; system voices always stay in the browser.
  */
-import {
-  getSpeechPreferences,
-  getWordNestSpeechLocale,
-  isWordNestSpeechVoice,
-  type WordNestSpeechLocale,
-} from "./speech-preferences";
+import { getSpeechPreferences, isCloudSpeechVoice } from "./speech-preferences";
 
-// Retain active references to prevent garbage collection on mobile browsers.
+type SpeechCallbacks = {
+  onStart?: () => void;
+  onEnd?: () => void;
+  onError?: (error: unknown) => void;
+  onCloudFallback?: () => void;
+};
+
+type SpeakOptions = {
+  voiceURI?: string | null;
+  onCloudFallback?: () => void;
+};
+
 let activeUtterance: SpeechSynthesisUtterance | null = null;
 let activeAudio: HTMLAudioElement | null = null;
 
 export function isSpeechSupported(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    ("speechSynthesis" in window || typeof Audio !== "undefined")
-  );
+  return typeof window !== "undefined" && (isSpeechSynthesisSupported() || typeof Audio !== "undefined");
 }
 
 export function isSpeechSynthesisSupported(): boolean {
-  return typeof window !== "undefined" && "speechSynthesis" in window && !!window.speechSynthesis;
+  return typeof window !== "undefined" && "speechSynthesis" in window && Boolean(window.speechSynthesis);
 }
 
-export function configureEnglishUtterance(utterance: SpeechSynthesisUtterance): void {
+export function configureEnglishUtterance(
+  utterance: SpeechSynthesisUtterance,
+  voiceURI = getSpeechPreferences().voiceURI
+): void {
   const preferences = getSpeechPreferences();
   utterance.lang = "en-US";
   utterance.rate = preferences.rate;
-  utterance.pitch = 1.0;
+  utterance.pitch = 1;
 
-  if (typeof window !== "undefined" && "speechSynthesis" in window && window.speechSynthesis) {
-    const voices = window.speechSynthesis.getVoices();
-    const normalize = (l: string) => l.toLowerCase().replace(/_/g, "-");
-    const preferredVoice = preferences.voiceURI
-      ? voices.find((voice) => voice.voiceURI === preferences.voiceURI)
-      : undefined;
-    const englishVoice =
-      preferredVoice ||
-      voices.find((voice) => normalize(voice.lang) === "en-us") ||
-      voices.find((voice) => normalize(voice.lang).startsWith("en-")) ||
-      voices.find((voice) => normalize(voice.lang) === "en");
+  if (!isSpeechSynthesisSupported()) return;
 
-    if (englishVoice) {
-      utterance.voice = englishVoice;
-      utterance.lang = englishVoice.lang;
-    }
-  }
-}
+  const voices = window.speechSynthesis.getVoices();
+  const selectedVoice = !isCloudSpeechVoice(voiceURI)
+    ? voices.find((voice) => voice.voiceURI === voiceURI)
+    : undefined;
+  const englishVoice = selectedVoice ?? findDefaultEnglishVoice(voices);
 
-// ---------------------------------------------------------------------------
-// Cleanup helpers — called AFTER audio.play() so they never consume the
-// user-gesture token that iOS Safari requires.
-// ---------------------------------------------------------------------------
-
-function stopActiveAudio(): void {
-  if (activeAudio) {
-    activeAudio.pause();
-    activeAudio = null;
-  }
-}
-
-function cancelSpeechSynthesis(): void {
-  try {
-    if (isSpeechSynthesisSupported() && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
-      window.speechSynthesis.cancel();
-    }
-  } catch {
-    // speechSynthesis may throw on some insecure contexts — ignore.
-  }
-}
-
-function trySetAudioSessionPlayback(): void {
-  // navigator.audioSession is secure-context only (iOS 17+).
-  // Must NOT be called before audio.play() on insecure origins.
-  try {
-    if (typeof navigator !== "undefined" && "audioSession" in navigator && window.isSecureContext) {
-      // @ts-expect-error - WebKit AudioSession API
-      navigator.audioSession.type = "playback";
-    }
-  } catch {
-    // Silently ignore — feature detection may pass but setter can throw.
-  }
-}
-
-// ---------------------------------------------------------------------------
-// WordNest server-side audio playback (primary path).
-//
-// CRITICAL for iOS Safari on HTTP LAN:
-//   new Audio(url) and audio.play() MUST be the first DOM / media calls
-//   inside the synchronous click handler. Any preceding call to
-//   speechSynthesis.cancel(), navigator.audioSession, or similar will
-//   consume the user-gesture token and block playback.
-// ---------------------------------------------------------------------------
-
-export function playAudioFallback(
-  text: string,
-  onStart?: () => void,
-  onEnd?: () => void,
-  onError?: (error: unknown) => void,
-  voice: WordNestSpeechLocale = getWordNestSpeechLocale(getSpeechPreferences().voiceURI)
-) {
-  if (typeof window === "undefined" || typeof Audio === "undefined") {
-    onError?.(new Error("Audio playback is not supported"));
-    return;
-  }
-
-  try {
-    // ── 1. Build and play IMMEDIATELY — preserve user-gesture token ──
-    const trimmed = text.trim().slice(0, 300);
-    const audioUrl = `/api/tts?text=${encodeURIComponent(trimmed)}&voice=${encodeURIComponent(voice)}`;
-
-    const audio = new Audio(audioUrl);
-    const rate = getSpeechPreferences().rate;
-    audio.preload = "auto";
-    audio.volume = 1;
-    audio.defaultPlaybackRate = rate;
-    audio.playbackRate = rate;
-
-    stopActiveAudio();
-    cancelSpeechSynthesis();
-    activeAudio = audio;
-
-    trySetAudioSessionPlayback();
-
-    audio.addEventListener("loadedmetadata", () => {
-      audio.playbackRate = rate;
-    });
-
-    let started = false;
-    const triggerStart = () => {
-      if (started) return;
-      started = true;
-      onStart?.();
-    };
-
-    audio.onplay = triggerStart;
-
-    audio.onended = () => {
-      if (activeAudio === audio) activeAudio = null;
-      onEnd?.();
-    };
-
-    audio.onerror = (e) => {
-      if (activeAudio === audio) activeAudio = null;
-      console.warn("Audio fallback playback error:", e);
-      onError?.(e);
-    };
-
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise
-        .then(() => {
-          triggerStart();
-        })
-        .catch((err) => {
-          if (activeAudio === audio) activeAudio = null;
-          console.warn("Audio play promise rejected:", err);
-          onError?.(err);
-        });
-    }
-  } catch (err) {
-    activeAudio = null;
-    console.error("Failed to play audio fallback:", err);
-    onError?.(err);
+  if (englishVoice) {
+    utterance.voice = englishVoice;
+    utterance.lang = englishVoice.lang;
   }
 }
 
@@ -183,84 +54,161 @@ export function speakEnglish(
   text: string,
   onStart?: () => void,
   onEnd?: () => void,
-  onError?: (error: unknown) => void
-) {
-  if (typeof window === "undefined") return;
+  onError?: (error: unknown) => void,
+  options: SpeakOptions = {}
+): void {
+  const callbacks: SpeechCallbacks = { onStart, onEnd, onError, onCloudFallback: options.onCloudFallback };
+  const voiceURI = options.voiceURI === undefined ? getSpeechPreferences().voiceURI : options.voiceURI;
 
-  const preferences = getSpeechPreferences();
-  const isSecure = typeof window !== "undefined" && window.isSecureContext !== false;
-
-  // On insecure HTTP contexts (e.g. LAN IP: http://192.168.x.x:3000),
-  // Chrome, Edge, and other Chromium browsers RESTRICT or BLOCK the Web Speech API (speechSynthesis).
-  // Attempting speechSynthesis on insecure origins causes Chrome to fail silently or reject.
-  // Tailscale and localhost work because they are secure contexts (HTTPS or localhost).
-  // Therefore, whenever isSecure is false, ALWAYS use WordNest server audio!
-  if (
-    !isSecure ||
-    !isSpeechSynthesisSupported() ||
-    isWordNestSpeechVoice(preferences.voiceURI)
-  ) {
-    playAudioFallback(text, onStart, onEnd, onError);
+  if (isCloudSpeechVoice(voiceURI)) {
+    playCloudSpeech(text, voiceURI, callbacks);
     return;
   }
 
-  const selectedVoice = window.speechSynthesis
-    .getVoices()
-    .find((voice) => voice.voiceURI === preferences.voiceURI);
+  playSystemSpeech(text, voiceURI, callbacks);
+}
 
-  if (!selectedVoice) {
-    playAudioFallback(text, onStart, onEnd, onError);
+export function stopSpeech(): void {
+  if (activeAudio) {
+    activeAudio.pause();
+    activeAudio = null;
+  }
+
+  cancelSystemSpeech();
+}
+
+export function pauseSpeech(): boolean {
+  if (activeAudio && !activeAudio.paused) {
+    activeAudio.pause();
+    return true;
+  }
+  if (isSpeechSynthesisSupported() && window.speechSynthesis.speaking) {
+    window.speechSynthesis.pause();
+    return true;
+  }
+  return false;
+}
+
+export function resumeSpeech(): boolean {
+  if (activeAudio?.paused) {
+    void activeAudio.play();
+    return true;
+  }
+  if (isSpeechSynthesisSupported() && window.speechSynthesis.paused) {
+    window.speechSynthesis.resume();
+    return true;
+  }
+  return false;
+}
+
+function playCloudSpeech(text: string, voiceURI: string, callbacks: SpeechCallbacks): void {
+  if (typeof Audio === "undefined") {
+    fallbackToSystemSpeech(text, callbacks);
     return;
   }
 
-  // User explicitly chose a device voice — use SpeechSynthesis.
-  stopActiveAudio();
+  const audio = new Audio(`/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(voiceURI)}`);
+  const previousAudio = activeAudio;
+  const rate = getSpeechPreferences().rate;
+  let didFallback = false;
+  let didStart = false;
 
-  if (window.speechSynthesis.speaking || window.speechSynthesis.paused) {
-    window.speechSynthesis.cancel();
+  audio.preload = "auto";
+  audio.playbackRate = rate;
+  audio.defaultPlaybackRate = rate;
+  audio.onplay = () => {
+    if (didStart) return;
+    didStart = true;
+    callbacks.onStart?.();
+  };
+  audio.onended = () => {
+    if (activeAudio === audio) activeAudio = null;
+    callbacks.onEnd?.();
+  };
+  audio.onerror = () => {
+    if (activeAudio === audio) activeAudio = null;
+    if (!didFallback) fallbackToSystemSpeech(text, callbacks, () => {
+      didFallback = true;
+    });
+  };
+
+  // iOS Safari requires this to be the first media call in the user gesture.
+  activeAudio = audio;
+  const playPromise = audio.play();
+  previousAudio?.pause();
+  cancelSystemSpeech();
+  trySetAudioSessionPlayback();
+
+  void playPromise?.catch(() => {
+    if (activeAudio === audio) activeAudio = null;
+    if (!didFallback) fallbackToSystemSpeech(text, callbacks, () => {
+      didFallback = true;
+    });
+  });
+}
+
+function fallbackToSystemSpeech(text: string, callbacks: SpeechCallbacks, markFallback?: () => void): void {
+  markFallback?.();
+  callbacks.onCloudFallback?.();
+  playSystemSpeech(text, null, callbacks);
+}
+
+function playSystemSpeech(text: string, voiceURI: string | null, callbacks: SpeechCallbacks): void {
+  if (!isSpeechSynthesisSupported()) {
+    callbacks.onError?.(new Error("System speech is not supported"));
+    return;
   }
+
+  if (activeAudio) {
+    activeAudio.pause();
+    activeAudio = null;
+  }
+  cancelSystemSpeech();
 
   try {
     const utterance = new SpeechSynthesisUtterance(text);
     activeUtterance = utterance;
-    configureEnglishUtterance(utterance);
-
-    let hasStarted = false;
-    let didFallback = false;
-    const startAudioFallback = () => {
-      if (didFallback) return;
-      didFallback = true;
-      if (activeUtterance === utterance) activeUtterance = null;
-      window.speechSynthesis.cancel();
-      playAudioFallback(text, onStart, onEnd, onError);
-    };
-
-    utterance.onstart = () => {
-      hasStarted = true;
-      onStart?.();
-    };
+    configureEnglishUtterance(utterance, voiceURI);
+    utterance.onstart = callbacks.onStart ?? null;
     utterance.onend = () => {
-      if (didFallback) return;
       if (activeUtterance === utterance) activeUtterance = null;
-      onEnd?.();
+      callbacks.onEnd?.();
     };
     utterance.onerror = (event) => {
-      if (event.error === "canceled" || event.error === "interrupted") {
-        if (!didFallback) onEnd?.();
-        return;
-      }
-      startAudioFallback();
+      if (event.error === "canceled" || event.error === "interrupted") return;
+      if (activeUtterance === utterance) activeUtterance = null;
+      callbacks.onError?.(event);
     };
-
     window.speechSynthesis.speak(utterance);
-
-    // Some browser speech engines hang without starting or reporting an error.
-    // A selected device voice gets a brief chance, then the stable MP3 takes over.
-    window.setTimeout(() => {
-      if (!hasStarted && activeUtterance === utterance) startAudioFallback();
-    }, 800);
-  } catch {
+  } catch (error) {
     activeUtterance = null;
-    playAudioFallback(text, onStart, onEnd, onError);
+    callbacks.onError?.(error);
+  }
+}
+
+function cancelSystemSpeech(): void {
+  if (isSpeechSynthesisSupported() && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+    window.speechSynthesis.cancel();
+  }
+  activeUtterance = null;
+}
+
+function findDefaultEnglishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
+  const normalize = (locale: string) => locale.toLowerCase().replace(/_/g, "-");
+  return (
+    voices.find((voice) => normalize(voice.lang) === "en-us") ??
+    voices.find((voice) => normalize(voice.lang).startsWith("en-")) ??
+    voices.find((voice) => normalize(voice.lang) === "en")
+  );
+}
+
+function trySetAudioSessionPlayback(): void {
+  try {
+    if (typeof navigator !== "undefined" && "audioSession" in navigator && window.isSecureContext) {
+      // @ts-expect-error WebKit AudioSession is not declared by TypeScript's DOM lib yet.
+      navigator.audioSession.type = "playback";
+    }
+  } catch {
+    // Feature detection can still pass while the WebKit setter rejects.
   }
 }

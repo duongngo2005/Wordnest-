@@ -11,6 +11,7 @@ export default defineConfig({
       OPENROUTER_API_KEY: "",
     },
     exclude: [...configDefaults.exclude, "tests/e2e/**"],
+    fileParallelism: false,
   },
   resolve: {
     alias: {

@@ -1,7 +1,10 @@
-import React from "react";
+"use client";
+
+import React, { useRef, useState } from "react";
 import Link from "next/link";
 import { BookOpen, CheckCircle2, Sparkles } from "lucide-react";
 import { WordNestMascot } from "@/components/ui/Mascot";
+import { playUISound } from "@/lib/ui-sound";
 
 export interface TodayPostcardProps {
   dueCount: number;
@@ -174,11 +177,47 @@ export function TodayPostcard({
     : 0;
 
   const { type, quote, mascotMood } = getPostcardState(dueCount, reviewedTodayCount, date);
+  const postcardRef = useRef<HTMLElement>(null);
+  const [tilt, setTilt] = useState({ rotateX: 0, rotateY: 0 });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+    if (typeof window === "undefined") return;
+    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const el = postcardRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+
+    // Extremely gentle tilt: max ±1.2 degrees (no glare, calm paper feeling)
+    const rotateY = Number((((x - centerX) / centerX) * 1.2).toFixed(2));
+    const rotateX = Number((-((y - centerY) / centerY) * 1.2).toFixed(2));
+
+    setTilt({ rotateX, rotateY });
+  };
+
+  const handleMouseLeave = () => {
+    setTilt({ rotateX: 0, rotateY: 0 });
+  };
 
   return (
     <section
-      className="wn-postcard"
+      ref={postcardRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className="wn-postcard wn-postcard-tilt"
       aria-labelledby="today-heading"
+      style={{
+        transform:
+          tilt.rotateX || tilt.rotateY
+            ? `perspective(1000px) rotateX(${tilt.rotateX}deg) rotateY(${tilt.rotateY}deg)`
+            : undefined,
+        transition: "transform 180ms cubic-bezier(0.2, 0, 0, 1)",
+      }}
     >
       <div className="wn-postcard__layout">
         {/* Left Column: Postcard Message, Stats & Progress */}
@@ -280,19 +319,31 @@ export function TodayPostcard({
               {dueCount > 0 && studyDeckId ? (
                 <Link
                   href={`/decks/${studyDeckId}/study`}
+                  onClick={() => playUISound("softTap")}
                   className="brick-button-primary wn-postcard__cta"
                 >
                   <BookOpen className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />
                   <span>Ôn tập</span>
                 </Link>
               ) : type === "completed" ? (
-                <div className="wn-postcard__completed-pill" role="status">
-                  <CheckCircle2 className="h-4 w-4 text-[#15803D]" aria-hidden="true" strokeWidth={2.5} />
-                  <span>Đã xong hôm nay</span>
+                <div className="flex flex-col items-center sm:items-end gap-2">
+                  <div
+                    className="wn-postcard__completion-stamp wn-completion-stamp-slam select-none inline-flex items-center gap-1.5 rounded-lg border-2 border-[#15803D] bg-[#DCFCE7]/90 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-[#15803D] shadow-[1.5px_1.5px_0px_#15803D]"
+                    style={{ transform: "rotate(-2deg)" }}
+                    aria-hidden="true"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2.5} />
+                    <span>HOÀN THÀNH</span>
+                  </div>
+                  <div className="wn-postcard__completed-pill" role="status">
+                    <CheckCircle2 className="h-4 w-4 text-[#15803D]" aria-hidden="true" strokeWidth={2.5} />
+                    <span>Đã xong hôm nay</span>
+                  </div>
                 </div>
               ) : studyDeckId ? (
                 <Link
                   href={`/decks/${studyDeckId}/study`}
+                  onClick={() => playUISound("softTap")}
                   className="brick-button-secondary wn-postcard__cta"
                 >
                   <BookOpen className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />

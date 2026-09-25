@@ -277,7 +277,12 @@ test.describe("learning collections", () => {
       return decks.map((deck) => deck.id);
     }).toEqual([secondDestinationDeck.id, firstDestinationDeck.id, movableDeck.id]);
 
-    await page.getByLabel(`Tùy chọn cho ${source.name}`, { exact: true }).first().click();
+    // Wait for router.refresh() to complete DOM reconciliation
+    await expect(page.locator(`[data-collection-card="${destination.id}"]`).locator("li.wn-tile").first()).toContainText(secondDestinationDeck.name);
+
+    const sourceCard = page.locator(`[data-collection-card="${source.id}"]`);
+    await sourceCard.scrollIntoViewIfNeeded();
+    await sourceCard.getByLabel(`Tùy chọn cho ${source.name}`, { exact: true }).click();
     await page.getByRole("button", { name: "Xóa", exact: true }).click();
     const deleteDialog = page.getByRole("alertdialog");
     await expect(deleteDialog.getByRole("heading", { name: `Xóa bộ sưu tập “${source.name}”?` })).toBeVisible();

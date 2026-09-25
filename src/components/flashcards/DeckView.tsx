@@ -174,13 +174,17 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
           <details className="relative wn-menu-details">
             <summary
               aria-label="Thêm tùy chọn"
-              className="flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
+              className="relative z-50 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
             >
               <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
             </summary>
             <div
               className="fixed inset-0 z-40 cursor-default"
               onClick={(e) => {
+                e.stopPropagation();
+                e.currentTarget.closest("details")?.removeAttribute("open");
+              }}
+              onPointerDown={(e) => {
                 e.stopPropagation();
                 e.currentTarget.closest("details")?.removeAttribute("open");
               }}

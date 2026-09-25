@@ -1,20 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { db } from "@/lib/db";
 
-declare global {
-  interface Window {
-    __wordNestAudioEvents?: string[];
-  }
-}
-
 let deckId: string | null = null;
 
-test.afterEach(async () => {
-  if (deckId) await db.deck.delete({ where: { id: deckId } });
-  deckId = null;
-});
-
-test("uses the selected WordNest voice for playable pronunciation", async ({ page }) => {
+async function createAudioDeck() {
   const deck = await db.deck.create({
     data: {
       name: `Audio ${crypto.randomUUID()}`,
@@ -22,45 +11,81 @@ test("uses the selected WordNest voice for playable pronunciation", async ({ pag
     },
   });
   deckId = deck.id;
+  return deck;
+}
 
-  await page.addInitScript(() => {
-    const audioEvents: string[] = [];
-    Object.defineProperty(window, "__wordNestAudioEvents", { configurable: true, value: audioEvents });
-    const nativePlay = HTMLMediaElement.prototype.play;
-    HTMLMediaElement.prototype.play = function () {
-      this.addEventListener("playing", () => audioEvents.push("playing"), { once: true });
-      this.addEventListener("error", () => audioEvents.push("error"), { once: true });
-      const result = nativePlay.call(this);
-      result?.catch(() => audioEvents.push("play-rejected"));
-      return result;
-    };
-  });
+test.afterEach(async () => {
+  if (deckId) await db.deck.delete({ where: { id: deckId } });
+  deckId = null;
+});
 
-  await page.goto(`/decks/${deckId}`);
+test("Flashcard sends only the selected curated WordNest voice to the audio route", async ({ page }) => {
+  const deck = await createAudioDeck();
+  await page.route("**/api/tts?**", (route) =>
+    route.fulfill({ status: 200, contentType: "audio/mpeg", body: Buffer.from([73, 68, 51, 4]) })
+  );
+
+  await page.goto(`/decks/${deck.id}`);
   await page.evaluate(() => {
-    localStorage.setItem("wordnest.speech-preferences.v1", JSON.stringify({ voiceURI: "wordnest:en-GB", rate: 0.9 }));
+    localStorage.setItem("wordnest.speech-preferences.v1", JSON.stringify({ voiceURI: "wordnest:ava", rate: 0.9 }));
   });
   await page.reload();
 
-  await expect
-    .poll(() => page.evaluate(() => localStorage.getItem("wordnest.speech-preferences.v1")))
-    .toBe(JSON.stringify({ voiceURI: "wordnest:en-GB", rate: 0.9 }));
+  const audioRequest = page.waitForRequest((request) =>
+    request.url().includes("/api/tts?text=allocate") && request.url().includes("voice=wordnest%3Aava")
+  );
+  await page.getByRole("button", { name: 'Phát âm "allocate"' }).click();
 
-  await page.route("**/api/tts?**", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    await route.continue();
-  });
-
-  let requestDelay = -1;
-  const clickStartedAt = Date.now();
-  page.on("request", (request) => {
-    if (request.url().includes("/api/tts?text=allocate&voice=en-GB")) requestDelay = Date.now() - clickStartedAt;
-  });
-  const audioRequest = page.waitForRequest(/\/api\/tts\?text=allocate&voice=en-GB/, { timeout: 750 });
-  const pronounceButton = page.getByRole("button", { name: "Nghe" });
-  await pronounceButton.click();
-  await expect(pronounceButton).toHaveText("Đang đọc...");
   await expect(audioRequest).resolves.toBeTruthy();
-  expect(requestDelay).toBeLessThan(750);
-  await expect.poll(() => page.evaluate(() => window.__wordNestAudioEvents ?? [])).toContain("playing");
+});
+
+test("Flashcard keeps using system speech when a system voice is selected", async ({ page }) => {
+  const deck = await createAudioDeck();
+  await page.addInitScript(() => {
+    const speechEvents: string[] = [];
+    Object.defineProperty(window, "__wordNestSpeechEvents", { configurable: true, value: speechEvents });
+    Object.defineProperty(window.speechSynthesis, "speak", {
+      configurable: true,
+      value: (utterance: SpeechSynthesisUtterance) => {
+        speechEvents.push("speak");
+        utterance.onstart?.(new Event("start") as SpeechSynthesisEvent);
+        window.setTimeout(() => utterance.onend?.(new Event("end") as SpeechSynthesisEvent), 0);
+      },
+    });
+  });
+
+  await page.goto(`/decks/${deck.id}`);
+  await page.evaluate(() => {
+    localStorage.setItem("wordnest.speech-preferences.v1", JSON.stringify({ voiceURI: null, rate: 1 }));
+  });
+  await page.reload();
+
+  let cloudRequestMade = false;
+  page.on("request", (request) => {
+    if (request.url().includes("/api/tts?")) cloudRequestMade = true;
+  });
+  await page.getByRole("button", { name: 'Phát âm "allocate"' }).click();
+
+  await expect.poll(() => page.evaluate(() => (window as Window & { __wordNestSpeechEvents?: string[] }).__wordNestSpeechEvents ?? [])).toContain("speak");
+  expect(cloudRequestMade).toBe(false);
+});
+
+test("a Cloud voice failure falls back to system speech without blocking a Flashcard", async ({ page }) => {
+  const deck = await createAudioDeck();
+  await page.addInitScript(() => {
+    Object.defineProperty(window.speechSynthesis, "speak", {
+      configurable: true,
+      value: (utterance: SpeechSynthesisUtterance) => utterance.onstart?.(new Event("start") as SpeechSynthesisEvent),
+    });
+  });
+  await page.route("**/api/tts?**", (route) => route.fulfill({ status: 503, body: "unavailable" }));
+
+  await page.goto(`/decks/${deck.id}`);
+  await page.evaluate(() => {
+    localStorage.setItem("wordnest.speech-preferences.v1", JSON.stringify({ voiceURI: "wordnest:ava", rate: 0.9 }));
+  });
+  await page.reload();
+  await page.getByRole("button", { name: 'Phát âm "allocate"' }).click();
+
+  await expect(page.getByRole("status").filter({ hasText: "Đang dùng giọng hệ thống." })).toBeVisible();
 });

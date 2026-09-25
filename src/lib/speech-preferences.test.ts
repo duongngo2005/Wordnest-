@@ -17,6 +17,15 @@ describe("parseSpeechPreferences", () => {
     ).toEqual({ voiceURI: "Google US English", rate: 0.9 });
   });
 
+  it("keeps a curated WordNest voice but migrates retired locale-only WordNest choices to system speech", () => {
+    expect(
+      parseSpeechPreferences(JSON.stringify({ voiceURI: "wordnest:ava", rate: 1 }))
+    ).toEqual({ voiceURI: "wordnest:ava", rate: 1 });
+    expect(
+      parseSpeechPreferences(JSON.stringify({ voiceURI: "wordnest:en-US", rate: 0.9 }))
+    ).toEqual({ voiceURI: null, rate: 0.9 });
+  });
+
   it("falls back to defaults for missing or malformed saved data", () => {
     expect(parseSpeechPreferences(null)).toEqual(DEFAULT_SPEECH_PREFERENCES);
     expect(parseSpeechPreferences("not json")).toEqual(DEFAULT_SPEECH_PREFERENCES);
