@@ -17,6 +17,16 @@ export default async function DeckStoryPage({ params }: { params: Promise<{ id: 
       <main className="page-container py-5 sm:py-8">
         <StoryPageContainer
           deck={{ id: deck.id, name: deck.name }}
+          deckWords={deck.cards.map((card) => ({
+            term: card.term,
+            meaningVi: card.meaningVi,
+            definitionEn: card.definitionEn,
+            ipa: card.ipa,
+            partOfSpeech: card.partOfSpeech,
+            cefr: card.cefr,
+            exampleEn: card.exampleEn,
+            exampleVi: card.exampleVi,
+          }))}
           initialStories={stories.map((story) => ({
             id: story.id,
             deckId: story.deckId,

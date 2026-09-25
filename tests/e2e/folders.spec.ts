@@ -73,6 +73,9 @@ test.describe("learning collections", () => {
     const folderName = uniqueName(testInfo.testId, "create");
     const deckName = `${folderName} Day 01`;
 
+    // Expand/collapse remains the compact mobile-library interaction. Desktop
+    // now exposes collection context directly and opens the collection page.
+    await page.setViewportSize({ width: 430, height: 932 });
     await page.goto("/");
     await page.getByRole("button", { name: "Bộ sưu tập", exact: true }).click();
     await page.getByLabel("Tên bộ sưu tập").fill(folderName);
@@ -128,7 +131,7 @@ test.describe("learning collections", () => {
     await createCard(activeDeck.id, `${folder.id}-new`);
 
     await page.goto(`/folders/${folder.id}`);
-    await expect(page.getByRole("heading", { name: folder.name })).toBeVisible();
+    await expect(page.getByRole("heading", { name: folder.name, exact: true })).toBeVisible();
     // Both the due and future Review cards are in the scheduler-derived
     // KNOWN/Review projection; only the third card is New.
     await expect(page.getByText(activeDeck.name, { exact: true })).toBeVisible();
@@ -136,6 +139,114 @@ test.describe("learning collections", () => {
     await expect(page).toHaveURL(new RegExp(`/decks/${activeDeck.id}/study$`));
 
     await expect(page.getByRole("heading", { name: dueTerm })).toBeVisible();
+  });
+
+  test("uses a concise, wider collection grid card on desktop without a visible expand toggle", async ({ page }, testInfo) => {
+    const folder = await createFolder(uniqueName(testInfo.testId, "desktop-library"));
+    const firstDeck = await createDeck(folder.id, `${folder.name} Foundations`, 0);
+    const secondDeck = await createDeck(folder.id, `${folder.name} Conversation`, 1);
+    const thirdDeck = await createDeck(folder.id, `${folder.name} Review`, 2);
+    await createCard(firstDeck.id, `${folder.id}-new`);
+    await createCard(secondDeck.id, `${folder.id}-learning`, {
+      status: FlashcardStatus.LEARNING,
+      state: 1,
+      due: new Date(Date.now() - 60_000),
+    });
+    await createCard(thirdDeck.id, `${folder.id}-known`, {
+      status: FlashcardStatus.KNOWN,
+      state: 2,
+      due: new Date(Date.now() + 86_400_000),
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/");
+
+    const card = page.locator(`[data-collection-card="${folder.id}"]`);
+    const desktopMetrics = card.locator("dl");
+    await expect(card).toBeVisible();
+    await expect(card.getByRole("link", { name: `Mở bộ sưu tập ${folder.name}` })).toBeVisible();
+    await expect(desktopMetrics.getByText("3 bộ thẻ", { exact: true })).toBeVisible();
+    await expect(desktopMetrics.getByText("3 từ", { exact: true })).toBeVisible();
+    await expect(desktopMetrics.getByText("1 thẻ cần ôn", { exact: true })).toBeVisible();
+    await expect(card.getByText(firstDeck.name, { exact: true })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: `Mở ${folder.name}` })).not.toBeVisible();
+
+    const cardBox = await card.boundingBox();
+    expect(cardBox).not.toBeNull();
+    expect(cardBox!.width).toBeGreaterThan(500);
+  });
+
+  test("uses two information-rich deck cards per row on desktop and one column on mobile", async ({ page }, testInfo) => {
+    const folder = await createFolder(uniqueName(testInfo.testId, "deck-grid"));
+    const firstDeck = await createDeck(folder.id, `${folder.name} Foundations`, 0);
+    const secondDeck = await createDeck(folder.id, `${folder.name} Review`, 1);
+
+    await createCard(firstDeck.id, `${folder.id}-new`);
+    await createCard(firstDeck.id, `${folder.id}-learning`, {
+      status: FlashcardStatus.LEARNING,
+      state: 1,
+      due: new Date(Date.now() + 86_400_000),
+    });
+    await createCard(secondDeck.id, `${folder.id}-due`, {
+      status: FlashcardStatus.KNOWN,
+      state: 2,
+      due: new Date(Date.now() - 60_000),
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/folders/${folder.id}`);
+
+    const deckGrid = page.locator("section[aria-labelledby='collection-decks'] ul");
+    const firstCard = page.getByRole("link", { name: new RegExp(firstDeck.name) });
+    const secondCard = page.getByRole("link", { name: new RegExp(secondDeck.name) });
+    await expect(deckGrid).toHaveClass(/md:grid-cols-2/);
+    await expect(firstCard.getByText("2 thẻ", { exact: true })).toBeVisible();
+    await expect(firstCard.getByText("1 mới", { exact: true })).toBeVisible();
+    await expect(firstCard.getByText("1 đang học", { exact: true })).toBeVisible();
+    await expect(secondCard.getByText("1 cần ôn", { exact: true })).toBeVisible();
+
+    const firstDesktopBox = await firstCard.boundingBox();
+    const secondDesktopBox = await secondCard.boundingBox();
+    expect(firstDesktopBox).not.toBeNull();
+    expect(secondDesktopBox).not.toBeNull();
+    expect(secondDesktopBox!.x).toBeGreaterThan(firstDesktopBox!.x);
+    expect(Math.abs(secondDesktopBox!.y - firstDesktopBox!.y)).toBeLessThan(2);
+
+    await page.setViewportSize({ width: 430, height: 932 });
+    const firstMobileBox = await firstCard.boundingBox();
+    const secondMobileBox = await secondCard.boundingBox();
+    expect(firstMobileBox).not.toBeNull();
+    expect(secondMobileBox).not.toBeNull();
+    expect(Math.abs(secondMobileBox!.x - firstMobileBox!.x)).toBeLessThan(2);
+    expect(secondMobileBox!.y).toBeGreaterThan(firstMobileBox!.y);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
+  test("keeps a deck overflow control and its delete action anchored inside the deck card", async ({ page }, testInfo) => {
+    const folder = await createFolder(uniqueName(testInfo.testId, "overflow-anchor"));
+    const deck = await createDeck(folder.id, `${folder.name} Day 01`, 0);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/folders/${folder.id}`);
+
+    const deckCard = page.getByRole("link", { name: new RegExp(deck.name) });
+    const overflowTrigger = page.getByLabel(`Tùy chọn cho ${deck.name}`);
+    await overflowTrigger.click();
+    const deleteAction = page.getByRole("button", { name: "Xóa bộ từ" });
+
+    const [cardBox, triggerBox, deleteBox] = await Promise.all([
+      deckCard.boundingBox(),
+      overflowTrigger.boundingBox(),
+      deleteAction.boundingBox(),
+    ]);
+    expect(cardBox).not.toBeNull();
+    expect(triggerBox).not.toBeNull();
+    expect(deleteBox).not.toBeNull();
+    expect(triggerBox!.x).toBeGreaterThan(cardBox!.x);
+    expect(triggerBox!.y).toBeGreaterThanOrEqual(cardBox!.y);
+    expect(triggerBox!.y + triggerBox!.height).toBeLessThanOrEqual(cardBox!.y + cardBox!.height);
+    expect(deleteBox!.y).toBeGreaterThan(triggerBox!.y);
+    expect(deleteBox!.y + deleteBox!.height).toBeLessThanOrEqual(cardBox!.y + cardBox!.height);
   });
 
   test("moves, reorders, and safely deletes collections", async ({ page }, testInfo) => {
@@ -147,6 +258,9 @@ test.describe("learning collections", () => {
     const secondDestinationDeck = await createDeck(destination.id, `${destination.name} second`, 1);
     await createCard(safeDeck.id, `${source.id}-card`);
 
+    // Deck-level library management is available from the compact mobile card;
+    // the desktop catalogue card intentionally has no per-collection toggle.
+    await page.setViewportSize({ width: 430, height: 932 });
     await page.goto("/");
     await page.getByLabel(`Mở ${source.name}`).click();
     await page.getByLabel(`Tùy chọn cho ${movableDeck.name}`, { exact: true }).click();
@@ -163,9 +277,11 @@ test.describe("learning collections", () => {
       return decks.map((deck) => deck.id);
     }).toEqual([secondDestinationDeck.id, firstDestinationDeck.id, movableDeck.id]);
 
-    page.once("dialog", (dialog) => dialog.accept());
-    await page.getByLabel(`Tùy chọn cho ${source.name}`, { exact: true }).click();
+    await page.getByLabel(`Tùy chọn cho ${source.name}`, { exact: true }).first().click();
     await page.getByRole("button", { name: "Xóa", exact: true }).click();
+    const deleteDialog = page.getByRole("alertdialog");
+    await expect(deleteDialog.getByRole("heading", { name: `Xóa bộ sưu tập “${source.name}”?` })).toBeVisible();
+    await deleteDialog.getByRole("button", { name: "Xóa bộ sưu tập" }).click();
     await expect.poll(async () => db.folder.findUnique({ where: { id: source.id } })).toBeNull();
     const retainedDeck = await db.deck.findUniqueOrThrow({ where: { id: safeDeck.id }, include: { cards: true } });
     expect(retainedDeck.folderId).toBeNull();

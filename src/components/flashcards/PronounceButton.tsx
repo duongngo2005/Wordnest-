@@ -9,6 +9,7 @@ interface PronounceButtonProps {
   text: string;
   label?: string;
   size?: "sm" | "md";
+  variant?: "default" | "story" | "card";
   className?: string;
 }
 
@@ -18,6 +19,7 @@ export function PronounceButton({
   text,
   label,
   size = "md",
+  variant = "default",
   className = "",
 }: PronounceButtonProps) {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -58,6 +60,29 @@ export function PronounceButton({
   };
 
   const isSmall = size === "sm";
+  const isStoryControl = variant === "story";
+  const isCard = variant === "card";
+
+  // Icon-only circular button for flashcard rows
+  if (isCard) {
+    return (
+      <button
+        type="button"
+        onClick={handleSpeak}
+        disabled={isPlaying}
+        title={label || `Phát âm "${text}"`}
+        aria-label={label || `Phát âm "${text}"`}
+        aria-busy={isPlaying}
+        data-speaking={isPlaying}
+        className={`wn-audio-btn ${isPlaying ? "wn-audio-btn--speaking" : ""} focus:outline-none focus:ring-2 focus:ring-[#E06B43] ${className}`}
+      >
+        <Volume2
+          className={`h-[0.9375rem] w-[0.9375rem] ${isPlaying ? "speaking-pulse text-[#92400E]" : "text-[#221C16]"}`}
+          strokeWidth={2.5}
+        />
+      </button>
+    );
+  }
 
   return (
     <button
@@ -66,12 +91,20 @@ export function PronounceButton({
       disabled={isPlaying}
       title={label || `Phát âm "${text}"`}
       aria-label={label || `Phát âm "${text}"`}
+      aria-busy={isPlaying}
+      data-speaking={isPlaying}
       className={`inline-flex items-center justify-center gap-1.5 font-bold transition-all border-2 border-[#221C16] active:translate-y-0.5 select-none focus:outline-none focus:ring-2 focus:ring-[#E06B43] ${
         isPlaying
-          ? "bg-[#FEF3C7] text-[#D97706] border-[#D97706]"
-          : "bg-[#FFFDF9] text-[#221C16] hover:bg-[#FEF3C7]"
+          ? isStoryControl
+            ? "bg-[#FEF3C7] text-[#8A5817] border-[#C85630]"
+            : "bg-[#FEF3C7] text-[#D97706] border-[#D97706]"
+          : isStoryControl
+            ? "bg-[#FEF3C7] text-[#8A5817] hover:bg-[#FDE68A]"
+            : "bg-[#FFFDF9] text-[#221C16] hover:bg-[#FEF3C7]"
       } ${
-        isSmall
+        isStoryControl
+          ? "min-h-9 rounded-lg px-3 py-1.5 text-xs shadow-[1.5px_1.5px_0px_#221C16]"
+          : isSmall
           ? "px-2 py-1 rounded-md text-xs min-h-[32px]"
           : "px-3 py-1.5 rounded-lg text-xs sm:text-sm min-h-[40px] shadow-[2px_2px_0px_#221C16]"
       } ${className}`}
@@ -81,7 +114,7 @@ export function PronounceButton({
           isPlaying ? "speaking-pulse text-[#D97706]" : "text-[#221C16]"
         }`}
       />
-      {label && <span>{isPlaying ? "Đang đọc..." : label}</span>}
+      {label && <span>{isPlaying && !isStoryControl ? "Đang đọc..." : label}</span>}
     </button>
   );
 }

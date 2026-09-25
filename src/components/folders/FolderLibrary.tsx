@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -145,8 +145,11 @@ function DeckRow({
               <div className="mt-2.5 border-t border-[#DCD3C5] pt-2.5">
                 <button
                   type="button"
-                  onClick={() => onDelete(deck)}
-                  className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold"
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    onDelete(deck);
+                  }}
+                  className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold cursor-pointer"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   <span>Xóa bộ từ</span>
@@ -241,33 +244,60 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
     }
   };
 
-  const deleteFolder = async (folder: FolderDetail) => {
-    if (!window.confirm(`Xóa bộ sưu tập “${folder.name}”? Các bộ từ vẫn được giữ lại.`)) return;
-    try {
-      const response = await fetch(`/api/folders/${folder.id}`, { method: "DELETE" });
-      if (!response.ok) {
-        toast.error("Không thể xóa bộ sưu tập", { description: await responseError(response, "Thử lại.") });
-        return;
+  const [itemPendingDelete, setItemPendingDelete] = useState<
+    | { type: "folder"; id: string; name: string }
+    | { type: "deck"; id: string; name: string }
+    | null
+  >(null);
+  const [isDeletingItem, setIsDeletingItem] = useState(false);
+
+  useEffect(() => {
+    if (!itemPendingDelete) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isDeletingItem) {
+        setItemPendingDelete(null);
       }
-      toast.success("Đã xóa bộ sưu tập");
-      refresh();
-    } catch {
-      toast.error("Không thể xóa bộ sưu tập", { description: "Kiểm tra kết nối rồi thử lại." });
-    }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [itemPendingDelete, isDeletingItem]);
+
+  const deleteFolder = (folder: FolderDetail) => {
+    setItemPendingDelete({ type: "folder", id: folder.id, name: folder.name });
   };
 
-  const deleteDeck = async (deck: FolderDeckSummary) => {
-    if (!window.confirm(`Xóa bộ từ “${deck.name}”? Toàn bộ thẻ trong bộ từ này sẽ bị xóa.`)) return;
+  const deleteDeck = (deck: FolderDeckSummary) => {
+    setItemPendingDelete({ type: "deck", id: deck.id, name: deck.name });
+  };
+
+  const confirmDeleteItem = async () => {
+    if (!itemPendingDelete) return;
+    setIsDeletingItem(true);
     try {
-      const response = await fetch(`/api/decks/${deck.id}`, { method: "DELETE" });
-      if (!response.ok) {
-        toast.error("Không thể xóa bộ từ", { description: await responseError(response, "Thử lại.") });
-        return;
+      if (itemPendingDelete.type === "folder") {
+        const response = await fetch(`/api/folders/${itemPendingDelete.id}`, { method: "DELETE" });
+        if (!response.ok) {
+          toast.error("Không thể xóa bộ sưu tập", { description: await responseError(response, "Thử lại.") });
+          return;
+        }
+        toast.success(`Đã xóa bộ sưu tập “${itemPendingDelete.name}”`);
+      } else {
+        const response = await fetch(`/api/decks/${itemPendingDelete.id}`, { method: "DELETE" });
+        if (!response.ok) {
+          toast.error("Không thể xóa bộ từ", { description: await responseError(response, "Thử lại.") });
+          return;
+        }
+        toast.success(`Đã xóa bộ từ “${itemPendingDelete.name}”`);
       }
-      toast.success("Đã xóa bộ từ");
+      setItemPendingDelete(null);
       refresh();
     } catch {
-      toast.error("Không thể xóa bộ từ", { description: "Kiểm tra kết nối mạng rồi thử lại." });
+      toast.error(
+        itemPendingDelete.type === "folder" ? "Không thể xóa bộ sưu tập" : "Không thể xóa bộ từ",
+        { description: "Kiểm tra kết nối rồi thử lại." }
+      );
+    } finally {
+      setIsDeletingItem(false);
     }
   };
 
@@ -450,7 +480,7 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
       ) : null}
 
       {/* Folders / Collections Grid */}
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         {folders.map((folder) => {
           const isExpanded = expanded.has(folder.id);
           const isDue = folder.progress.dueTodayCount > 0;
@@ -459,125 +489,221 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
             : `${folder.progress.deckCount} bộ từ`;
 
           return (
-            <article key={folder.id} className="wn-primary-surface relative overflow-visible bg-[#FFFDF9] focus-within:z-30">
-              {/* Folder Top Bar */}
-              <div
-                className={`grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-t-[calc(var(--radius-lg)-2px)] bg-[#FEF3C7] p-3 sm:px-4 ${
-                  isExpanded ? "border-b-2 border-[#221C16]" : "rounded-b-[calc(var(--radius-lg)-2px)]"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setExpanded((current) => {
-                      const next = new Set(current);
-                      if (next.has(folder.id)) next.delete(folder.id);
-                      else next.add(folder.id);
-                      return next;
-                    })
-                  }
-                  aria-expanded={isExpanded}
-                  aria-label={`${isExpanded ? "Thu gọn" : "Mở"} ${folder.name}`}
-                  className="wn-button wn-button-quiet wn-icon-button h-11 w-11 rounded-lg"
+            <article
+              key={folder.id}
+              data-collection-card={folder.id}
+              className="wn-primary-surface relative overflow-visible bg-[#FFFDF9] focus-within:z-30"
+            >
+              {/* Mobile preserves the compact, expandable collection card with warm binder styling. */}
+              <div className="lg:hidden">
+                <div
+                  className={`grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-t-[calc(var(--radius-lg)-2px)] bg-[#F8F4EC] p-3 sm:px-4 ${
+                    isExpanded ? "border-b-2 border-dashed border-[#DCD3C5]" : "rounded-b-[calc(var(--radius-lg)-2px)]"
+                  }`}
                 >
-                  <span className="sr-only">{isExpanded ? "Thu gọn" : "Mở"}</span>
-                  {isExpanded ? (
-                    <ChevronDown className="h-5 w-5 text-[#221C16]" strokeWidth={2.5} />
-                  ) : (
-                    <ChevronRight className="h-5 w-5 text-[#221C16]" strokeWidth={2.5} />
-                  )}
-                </button>
-
-                <Link
-                  href={`/folders/${folder.id}`}
-                  className="group flex min-w-0 items-center gap-2.5 rounded-lg p-1 transition-transform active:translate-x-0.5"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
-                    <Layers className="h-4 w-4 text-[#D97706]" strokeWidth={2.5} />
-                  </span>
-                  <div className="min-w-0">
-                    <span className="block truncate font-black text-[#221C16] group-hover:text-[#E06B43] sm:text-base">
-                      {folder.name}
-                    </span>
-                    <span
-                      className={`inline-block text-xs font-bold ${
-                        isDue ? "text-[#E06B43]" : "text-[#6B6258]"
-                      }`}
-                    >
-                      {summary}
-                    </span>
-                  </div>
-                </Link>
-
-                <button
-                  type="button"
-                  onClick={() => openDeckComposer(folder.id)}
-                  aria-label={`Tạo bộ từ trong ${folder.name}`}
-                  className="brick-button-secondary px-2.5 py-2 text-xs font-black"
-                >
-                  <Plus className="h-4 w-4 text-[#E06B43]" />
-                  <span>Bộ từ</span>
-                </button>
-
-                <details className="relative wn-menu-details">
-                  <summary
-                    aria-label={`Tùy chọn cho ${folder.name}`}
-                    className="wn-icon-button flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpanded((current) => {
+                        const next = new Set(current);
+                        if (next.has(folder.id)) next.delete(folder.id);
+                        else next.add(folder.id);
+                        return next;
+                      })
+                    }
+                    aria-expanded={isExpanded}
+                    aria-label={`${isExpanded ? "Thu gọn" : "Mở"} ${folder.name}`}
+                    className="wn-button wn-button-quiet wn-icon-button h-11 w-11 rounded-lg"
                   >
-                    <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
-                  </summary>
-                  <div
-                    className="fixed inset-0 z-40 cursor-default"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.currentTarget.closest("details")?.removeAttribute("open");
-                    }}
-                  />
-                  <div className="absolute right-0 top-full z-50 mt-1.5 w-48 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
-                    <button
-                      type="button"
-                      onClick={() => openFolderComposer(folder)}
-                      className="wn-button wn-button-quiet w-full justify-start text-xs font-bold"
+                    <span className="sr-only">{isExpanded ? "Thu gọn" : "Mở"}</span>
+                    {isExpanded ? (
+                      <ChevronDown className="h-5 w-5 text-[#221C16]" strokeWidth={2.5} />
+                    ) : (
+                      <ChevronRight className="h-5 w-5 text-[#221C16]" strokeWidth={2.5} />
+                    )}
+                  </button>
+
+                  <Link
+                    href={`/folders/${folder.id}`}
+                    className="group flex min-w-0 items-center gap-2.5 rounded-lg p-1 transition-transform active:translate-x-0.5"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
+                      <Layers className="h-4 w-4 text-[#D97706]" strokeWidth={2.5} />
+                    </span>
+                    <div className="min-w-0">
+                      <span className="block truncate font-black text-[#221C16] group-hover:text-[#E06B43] sm:text-base">
+                        {folder.name}
+                      </span>
+                      <span className={`inline-block text-xs font-bold ${isDue ? "text-[#E06B43]" : "text-[#6B6258]"}`}>
+                        {summary}
+                      </span>
+                    </div>
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => openDeckComposer(folder.id)}
+                    aria-label={`Tạo bộ từ trong ${folder.name}`}
+                    className="brick-button-secondary px-2.5 py-2 text-xs font-black"
+                  >
+                    <Plus className="h-4 w-4 text-[#E06B43]" />
+                    <span>Bộ từ</span>
+                  </button>
+
+                  <details className="relative wn-menu-details">
+                    <summary
+                      aria-label={`Tùy chọn cho ${folder.name}`}
+                      className="wn-icon-button flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
                     >
-                      Đổi tên
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteFolder(folder)}
-                      className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      <span>Xóa</span>
-                    </button>
-                  </div>
-                </details>
+                      <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
+                    </summary>
+                    <div
+                      className="fixed inset-0 z-40 cursor-default"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.currentTarget.closest("details")?.removeAttribute("open");
+                      }}
+                    />
+                    <div className="absolute right-0 top-full z-50 mt-1.5 w-48 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
+                      <button type="button" onClick={() => openFolderComposer(folder)} className="wn-button wn-button-quiet w-full justify-start text-xs font-bold">
+                        Đổi tên
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.currentTarget.closest("details")?.removeAttribute("open");
+                          deleteFolder(folder);
+                        }}
+                        className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        <span>Xóa</span>
+                      </button>
+                    </div>
+                  </details>
+                </div>
+
+                {isExpanded ? (
+                  <ul className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {folder.decks.length === 0 ? (
+                      <li className="flex flex-wrap items-center justify-between gap-3 py-4 text-sm font-bold text-[#6B6258]">
+                        <span>Chưa có bộ từ</span>
+                        <button type="button" onClick={() => openDeckComposer(folder.id)} className="brick-button-primary px-3 py-2 text-xs font-black">
+                          <Plus className="h-4 w-4" /> Bộ từ
+                        </button>
+                      </li>
+                    ) : (
+                      folder.decks.map((deck) => (
+                        <DeckRow
+                          key={deck.id}
+                          deck={deck}
+                          folders={folders}
+                          currentFolderId={folder.id}
+                          onMove={moveDeck}
+                          onReorder={(direction) => reorderDeck(folder, deck.id, direction)}
+                          onDelete={deleteDeck}
+                        />
+                      ))
+                    )}
+                  </ul>
+                ) : null}
               </div>
 
-              {/* Expanded Deck List */}
-              {isExpanded ? (
-                <ul className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {folder.decks.length === 0 ? (
-                    <li className="flex flex-wrap items-center justify-between gap-3 py-4 text-sm font-bold text-[#6B6258]">
-                      <span>Chưa có bộ từ</span>
-                      <button type="button" onClick={() => openDeckComposer(folder.id)} className="brick-button-primary px-3 py-2 text-xs font-black">
-                        <Plus className="h-4 w-4" /> Bộ từ
-                      </button>
-                    </li>
-                  ) : (
-                    folder.decks.map((deck) => (
-                      <DeckRow
-                        key={deck.id}
-                        deck={deck}
-                        folders={folders}
-                        currentFolderId={folder.id}
-                        onMove={moveDeck}
-                        onReorder={(direction) => reorderDeck(folder, deck.id, direction)}
-                        onDelete={deleteDeck}
+              {/* Desktop: Study binder folder with organic metrics and visible action */}
+              <div className="hidden min-h-44 flex-col p-5 lg:flex">
+                <div className="flex items-start justify-between gap-3">
+                  <Link
+                    href={`/folders/${folder.id}`}
+                    aria-label={`Mở bộ sưu tập ${folder.name}`}
+                    className="group flex min-w-0 items-start gap-3 rounded-lg transition-transform active:translate-x-0.5"
+                  >
+                    <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FEF3C7] shadow-[1.5px_1.5px_0px_#221C16]">
+                      <Layers className="h-5 w-5 text-[#D97706]" strokeWidth={2.5} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[11px] font-black uppercase tracking-wider text-[#8A5817]">Bộ sưu tập</span>
+                      <span className="mt-0.5 block break-words text-xl font-black tracking-tight text-[#221C16] group-hover:text-[#C85630]">
+                        {folder.name}
+                      </span>
+                      {folder.description ? (
+                        <span className="mt-1 block text-sm font-semibold leading-relaxed text-[#6B6258]">{folder.description}</span>
+                      ) : null}
+                    </span>
+                  </Link>
+
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openDeckComposer(folder.id)}
+                      aria-label={`Tạo bộ từ trong ${folder.name}`}
+                      className="brick-button-secondary px-2.5 py-2 text-xs font-black"
+                    >
+                      <Plus className="h-4 w-4 text-[#E06B43]" />
+                      <span>Bộ từ</span>
+                    </button>
+                    <details className="relative wn-menu-details">
+                      <summary
+                        aria-label={`Tùy chọn cho ${folder.name}`}
+                        className="wn-icon-button flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
+                      >
+                        <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
+                      </summary>
+                      <div
+                        className="fixed inset-0 z-40 cursor-default"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.currentTarget.closest("details")?.removeAttribute("open");
+                        }}
                       />
-                    ))
-                  )}
-                </ul>
-              ) : null}
+                      <div className="absolute right-0 top-full z-50 mt-1.5 w-48 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
+                        <button type="button" onClick={() => openFolderComposer(folder)} className="wn-button wn-button-quiet w-full justify-start text-xs font-bold">
+                          Đổi tên
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.currentTarget.closest("details")?.removeAttribute("open");
+                            deleteFolder(folder);
+                          }}
+                          className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold cursor-pointer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>Xóa</span>
+                        </button>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+
+                {/* Organic Metrics & Status replacing the rigid 3-box strip */}
+                <dl className="mt-auto flex items-center justify-between border-t border-dashed border-[#DCD3C5] pt-3 text-xs">
+                  <div className="flex items-center gap-2 font-bold text-[#6B6258]">
+                    <div>
+                      <dt className="sr-only">Bộ thẻ</dt>
+                      <dd>{folder.progress.deckCount} bộ thẻ</dd>
+                    </div>
+                    <span aria-hidden="true" className="text-[#C9BFB1]">·</span>
+                    <div>
+                      <dt className="sr-only">Từ vựng</dt>
+                      <dd>{folder.progress.totalCards} từ</dd>
+                    </div>
+                  </div>
+                  <div>
+                    <dt className="sr-only">Hôm nay</dt>
+                    <dd>
+                      {isDue ? (
+                        <span className="wn-marker-amber text-xs font-black text-[#C85630]">
+                          {folder.progress.dueTodayCount} thẻ cần ôn
+                        </span>
+                      ) : (
+                        <span className="text-xs font-bold text-[#15803D]">
+                          Không cần ôn
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
             </article>
           );
         })}
@@ -607,6 +733,80 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
             </ul>
           </div>
         </section>
+      ) : null}
+
+      {/* Modal Toast Xác nhận Xóa */}
+      {itemPendingDelete ? (
+        <div
+          role="presentation"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#221C16]/50 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeletingItem) {
+              setItemPendingDelete(null);
+            }
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-dialog-title"
+            aria-describedby="delete-dialog-desc"
+            className="toast-enter w-full max-w-md rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-5 sm:p-6 shadow-[6px_6px_0px_#221C16] space-y-4"
+          >
+            <div className="flex items-start gap-3.5">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 border-[#221C16] bg-[#FEE2E2] text-[#B91C1C] shadow-[2px_2px_0px_#221C16]">
+                <Trash2 className="h-5 w-5" strokeWidth={2.5} />
+              </span>
+              <div className="min-w-0">
+                <span className="inline-block rounded-md border border-[#B91C1C]/30 bg-[#FEE2E2] px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#991B1B]">
+                  Xác nhận xóa
+                </span>
+                <h3
+                  id="delete-dialog-title"
+                  className="mt-1 text-lg font-black text-[#221C16] leading-snug break-words"
+                >
+                  {itemPendingDelete.type === "folder"
+                    ? `Xóa bộ sưu tập “${itemPendingDelete.name}”?`
+                    : `Xóa bộ từ “${itemPendingDelete.name}”?`}
+                </h3>
+                <p
+                  id="delete-dialog-desc"
+                  className="mt-1.5 text-xs sm:text-sm font-semibold text-[#6B6258] leading-relaxed"
+                >
+                  {itemPendingDelete.type === "folder"
+                    ? "Các bộ từ bên trong sẽ được giữ lại an toàn ở mục Chưa phân loại trong Thư viện."
+                    : "Toàn bộ thẻ flashcard và tiến trình học trong bộ từ này sẽ bị xóa hoàn toàn. Hành động này không thể hoàn tác."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t-2 border-dashed border-[#221C16]/15">
+              <button
+                type="button"
+                disabled={isDeletingItem}
+                onClick={() => setItemPendingDelete(null)}
+                className="inline-flex items-center justify-center px-4 py-2 rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] text-xs sm:text-sm font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] hover:bg-[#F4EFE6] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingItem}
+                onClick={confirmDeleteItem}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 border-[#B91C1C] bg-[#B91C1C] text-xs sm:text-sm font-black text-white shadow-[2px_2px_0px_#221C16] hover:bg-[#991B1B] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all disabled:opacity-50 cursor-pointer"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>
+                  {isDeletingItem
+                    ? "Đang xóa..."
+                    : itemPendingDelete.type === "folder"
+                    ? "Xóa bộ sưu tập"
+                    : "Xóa bộ từ"}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </section>
   );

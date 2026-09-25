@@ -6,14 +6,7 @@ export type StoryCefr = z.infer<typeof StoryCefrEnum>;
 export const StoryLengthEnum = z.enum(["short", "medium", "long"]);
 export type StoryLength = z.infer<typeof StoryLengthEnum>;
 
-export const StoryTopicEnum = z.enum([
-  "Daily Life",
-  "IT",
-  "Travel",
-  "Mystery",
-  "Fantasy",
-  "Random",
-]);
+export const StoryTopicEnum = z.string().trim().min(2, "Chủ đề cần có ít nhất 2 ký tự").max(120);
 export type StoryTopic = z.infer<typeof StoryTopicEnum>;
 
 export const generateStoryRequestSchema = z.object({
@@ -47,6 +40,12 @@ export const aiStoryResponseSchema = z.object({
 });
 
 export type AIStoryResponse = z.infer<typeof aiStoryResponseSchema>;
+
+export const createStoryFromJsonRequestSchema = generateStoryRequestSchema.extend({
+  rawStory: z.string().trim().min(2, "Hãy dán JSON do AI trả về").max(60_000),
+});
+
+export type CreateStoryFromJsonRequest = z.infer<typeof createStoryFromJsonRequestSchema>;
 
 export const translateInContextRequestSchema = z.object({
   storyId: z.string().min(1, "storyId is required"),

@@ -4,18 +4,22 @@ interface MascotProps {
   mood?: "happy" | "thinking" | "celebrating" | "reading";
   className?: string;
   size?: number;
+  ariaHidden?: boolean;
 }
 
 export function WordNestMascot({
   mood = "happy",
   className = "",
   size = 120,
+  ariaHidden = false,
 }: MascotProps) {
   return (
     <div
       className={`inline-flex items-center justify-center select-none ${className}`}
       style={{ width: size, height: size }}
-      aria-label={`WordNest Mascot: Nesty (${mood})`}
+      {...(ariaHidden
+        ? { "aria-hidden": "true" }
+        : { "aria-label": `WordNest Mascot: Nesty (${mood})` })}
     >
       <svg
         viewBox="0 0 160 160"

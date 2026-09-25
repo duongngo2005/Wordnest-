@@ -3,11 +3,14 @@ import { aiService } from "@/services/ai";
 import { normalizeTerm } from "./parser";
 import { FlashcardStatus } from "@prisma/client";
 import {
+  aiStoryResponseSchema,
+  type AIStoryResponse,
   StoryCefr,
   StoryLength,
   StoryTopic,
   AddCardFromStoryRequest,
 } from "@/lib/validation/story";
+import { buildStoryPrompt } from "@/lib/story/story-prompt";
 import {
   createStoryVocabularyMetadata,
   normalizeStoryContextualTranslations,
@@ -55,15 +58,80 @@ export class StoryService {
       topic,
     });
 
+    return this.persistGeneratedStory({
+      deckId,
+      requestedTerms,
+      cefr,
+      length,
+      topic,
+      generated,
+    });
+  }
+
+  /** Persists a validated JSON result supplied by an external AI. */
+  async createStoryFromJson({
+    deckId,
+    targetWords,
+    cefr = "B1",
+    length = "medium",
+    topic = "Daily Life",
+    generated,
+  }: {
+    deckId: string;
+    targetWords: string[];
+    cefr?: StoryCefr;
+    length?: StoryLength;
+    topic?: StoryTopic;
+    generated: AIStoryResponse;
+  }) {
+    const requestedTerms = await this.getSelectedDeckTerms(deckId, targetWords);
+    return this.persistGeneratedStory({ deckId, requestedTerms, cefr, length, topic, generated });
+  }
+
+  /** Returns the exact portable prompt after verifying that every term belongs to this deck. */
+  async getStoryGenerationPrompt({
+    deckId,
+    targetWords,
+    cefr = "B1",
+    length = "medium",
+    topic = "Daily Life",
+  }: {
+    deckId: string;
+    targetWords: string[];
+    cefr?: StoryCefr;
+    length?: StoryLength;
+    topic?: StoryTopic;
+  }) {
+    const requestedTerms = await this.getSelectedDeckTerms(deckId, targetWords);
+    return buildStoryPrompt({ targetWords: requestedTerms, cefr, length, topic });
+  }
+
+  private async persistGeneratedStory({
+    deckId,
+    requestedTerms,
+    cefr,
+    length,
+    topic,
+    generated,
+  }: {
+    deckId: string;
+    requestedTerms: string[];
+    cefr: StoryCefr;
+    length: StoryLength;
+    topic: StoryTopic;
+    generated: AIStoryResponse;
+  }) {
+    const validatedGenerated = aiStoryResponseSchema.parse(generated);
+
     // Providers deployed before the new contract may only return wordsUsed. Use it
     // as a conservative compatibility fallback; invalid/non-present forms are dropped.
     const reportedUsage =
-      generated.usage.length > 0
-        ? generated.usage
-        : generated.wordsUsed.map((term) => ({ term, usedAs: term }));
-    const usage = this.normalizeGeneratedUsage(reportedUsage, requestedTerms, generated.content);
+      validatedGenerated.usage.length > 0
+        ? validatedGenerated.usage
+        : validatedGenerated.wordsUsed.map((term) => ({ term, usedAs: term }));
+    const usage = this.normalizeGeneratedUsage(reportedUsage, requestedTerms, validatedGenerated.content);
     const contextualTranslations = normalizeStoryContextualTranslations(
-      generated.contextualTranslations,
+      validatedGenerated.contextualTranslations,
       usage
     );
 
@@ -72,8 +140,8 @@ export class StoryService {
     const story = await db.story.create({
       data: {
         deckId,
-        title: generated.title,
-        content: generated.content,
+        title: validatedGenerated.title,
+        content: validatedGenerated.content,
         cefr,
         length,
         topic,

@@ -23,10 +23,9 @@ describe("Phase 2 Story & Translation Validation Schemas", () => {
       generateStoryRequestSchema.safeParse({ ...valid, targetWords: [] }).success
     ).toBe(false);
 
-    // Rejects invalid topic
-    expect(
-      generateStoryRequestSchema.safeParse({ ...valid, topic: "Cooking" }).success
-    ).toBe(false);
+    // Custom topics are supported, while too-short topics are still rejected.
+    expect(generateStoryRequestSchema.safeParse({ ...valid, topic: "Cooking" }).success).toBe(true);
+    expect(generateStoryRequestSchema.safeParse({ ...valid, topic: "X" }).success).toBe(false);
   });
 
   it("validates AI story response schema", () => {

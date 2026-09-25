@@ -1,6 +1,7 @@
 import { PracticeAttempt } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
+  EVIDENCE_CONFIG,
   aggregateCardPracticeEvidence,
   getNeedPracticePriority,
   type PracticeEvidenceSummary,
@@ -76,7 +77,8 @@ export interface ProgressAnalytics {
   today: {
     due: number;
     overdue: number;
-    reviewed: number;
+    reviewedCards: number;
+    reviewEvents: number;
     totalCards: number;
     weakCards: number;
   };
@@ -88,6 +90,8 @@ export interface ProgressAnalytics {
     byType: ProgressPerformance[];
     retry: ProgressPerformance;
     sessions: number;
+    assessedCards: number;
+    hasSufficientEvidence: boolean;
   };
   reviewRatings: ProgressRatingCount[];
   weakCards: ProgressWeakCard[];
@@ -206,9 +210,12 @@ export function buildProgressAnalytics({
   const deckById = new Map(decks.map((deck) => [deck.id, deck]));
   const cardById = new Map(cards.map((card) => [card.id, card]));
 
-  const due = cards.filter((card) => card.state > 0 && card.due <= todayEnd);
+  // Keep the primary CTA in lockstep with FSRSService.getReviewQueue(): these
+  // are cards that can be reviewed now, not cards merely scheduled later today.
+  const due = cards.filter((card) => card.state > 0 && card.due <= now);
   const overdue = cards.filter((card) => card.state > 0 && card.due < todayStart);
-  const reviewed = reviewLogs.filter((log) => log.review >= todayStart && log.review <= todayEnd).length;
+  const reviewEvents = reviewLogs.filter((log) => log.review >= todayStart && log.review <= todayEnd);
+  const reviewedCards = new Set(reviewEvents.map((log) => log.cardId)).size;
 
   const stateCounts: Record<ProgressStateCount["key"], number> = {
     new: 0,
@@ -239,8 +246,8 @@ export function buildProgressAnalytics({
     const end = endOfDay(date);
     return {
       date: dateKey(date),
-      label: index === 0 ? "Hôm nay" : dayLabel(date),
-      count: cards.filter((card) => card.state > 0 && card.due >= date && card.due <= end).length,
+      label: dayLabel(date),
+      count: cards.filter((card) => card.state > 0 && card.due > now && card.due >= date && card.due <= end).length,
     };
   });
 
@@ -252,8 +259,10 @@ export function buildProgressAnalytics({
   }
 
   const weakCards: ProgressWeakCard[] = [];
+  let assessedCards = 0;
   for (const card of cards) {
     const evidence: PracticeEvidenceSummary = aggregateCardPracticeEvidence(card.id, attemptsByCard.get(card.id) ?? []);
+    if (evidence.firstPassAttempts >= EVIDENCE_CONFIG.MIN_STABLE_ATTEMPTS) assessedCards += 1;
     if (evidence.classification !== "NEEDS_PRACTICE" && evidence.classification !== "MIXED") continue;
     const deck = deckById.get(card.deckId);
     if (!deck) continue;
@@ -293,7 +302,7 @@ export function buildProgressAnalytics({
         folderId: deck.folderId,
         folderName: deck.folderName,
         totalCards: deck.cards.length,
-        dueToday: deck.cards.filter((card) => card.state > 0 && card.due <= todayEnd).length,
+        dueToday: deck.cards.filter((card) => card.state > 0 && card.due <= now).length,
         weakCards: weakCards.filter((card) => card.deckId === deck.id).length,
         reviewedRecently: reviewLogs.filter((log) => deckCardIds.has(log.cardId) && log.review >= activityStart).length,
         firstPass: performance("Kết quả lần đầu", deckAttempts),
@@ -314,7 +323,7 @@ export function buildProgressAnalytics({
     };
     item.deckCount += 1;
     item.totalCards += deck.cards.length;
-    item.dueToday += deck.cards.filter((card) => card.state > 0 && card.due <= todayEnd).length;
+    item.dueToday += deck.cards.filter((card) => card.state > 0 && card.due <= now).length;
     item.weakCards += weakCards.filter((card) => card.deckId === deck.id).length;
     foldersById.set(deck.folderId, item);
   }
@@ -329,7 +338,8 @@ export function buildProgressAnalytics({
     today: {
       due: due.length,
       overdue: overdue.length,
-      reviewed,
+      reviewedCards,
+      reviewEvents: reviewEvents.length,
       totalCards: cards.length,
       weakCards: weakCards.length,
     },
@@ -341,6 +351,8 @@ export function buildProgressAnalytics({
       byType,
       retry: performance("Luyện lại", retries.filter((attempt) => cardById.has(attempt.flashcardId))),
       sessions: quizAttempts.length,
+      assessedCards,
+      hasSufficientEvidence: assessedCards > 0,
     },
     reviewRatings,
     weakCards: weakCards.slice(0, 8),

@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  BarChart3,
   BookOpen,
   Download,
   GraduationCap,
@@ -48,6 +47,17 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
   const [page, setPage] = useState(1);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+
+  useEffect(() => {
+    if (!isConfirmingDelete) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isDeleting) {
+        setIsConfirmingDelete(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isConfirmingDelete, isDeleting]);
 
   const needPracticeCards = useMemo(() => {
     const byId = new Map(deck.cards.map((card) => [card.id, card]));
@@ -129,7 +139,9 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
     try {
       const response = await fetch(`/api/decks/${deck.id}`, { method: "DELETE" });
       if (!response.ok) throw new Error();
+      toast.success(`Đã xóa bộ từ “${deck.name}”`);
       router.push("/");
+      router.refresh();
     } catch {
       setIsDeleting(false);
       toast.error("Không thể xóa bộ từ", { description: "Thử lại." });
@@ -148,8 +160,8 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
       </Link>
 
       {/* Deck Header Card */}
-      <section className="wn-primary-surface relative overflow-visible bg-[#FFFDF9] focus-within:z-30" aria-labelledby="deck-name">
-        <div className="flex items-center justify-between rounded-t-[calc(var(--radius-lg)-2px)] border-b-2 border-dashed border-[#C9BFB1] bg-[#F4EFE6] px-4 py-2.5 sm:px-5">
+      <section className="wn-primary-surface relative overflow-visible border-l-[6px] border-l-[#E06B43] focus-within:z-30" aria-labelledby="deck-name">
+        <div className="flex items-center justify-between rounded-t-[calc(var(--radius-lg)-2px)] border-b-2 border-dashed border-[#C9BFB1] bg-[#ECD9A8] px-4 py-2.5 sm:px-5">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
               <Layers className="h-4 w-4 text-[#D97706]" strokeWidth={2.5} />
@@ -174,6 +186,13 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
               }}
             />
             <div className="absolute right-0 top-full z-50 mt-1.5 grid w-52 gap-1 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
+              <Link
+                href={`/progress/decks/${deck.id}`}
+                className="wn-button wn-button-quiet justify-start text-xs font-bold"
+              >
+                <Target className="h-4 w-4 text-[#0284C7]" />
+                <span>Tiến độ</span>
+              </Link>
               <a
                 href={`/api/decks/${deck.id}/export`}
                 download
@@ -198,8 +217,11 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
               </Link>
               <button
                 type="button"
-                onClick={() => setIsConfirmingDelete(true)}
-                className="wn-button wn-button-quiet wn-button-danger justify-start text-xs font-bold"
+                onClick={(e) => {
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                  setIsConfirmingDelete(true);
+                }}
+                className="wn-button wn-button-quiet wn-button-danger justify-start text-xs font-bold cursor-pointer"
               >
                 <Trash2 className="h-4 w-4" />
                 <span>Xóa bộ từ</span>
@@ -216,13 +238,6 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
             >
               {deck.name}
             </h1>
-            <Link
-              href={`/progress/decks/${deck.id}`}
-              className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-1 text-xs font-black text-[#6B6258] underline decoration-dashed underline-offset-4 hover:text-[#E06B43] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
-            >
-              <BarChart3 className="h-4 w-4" aria-hidden="true" />
-              Tiến độ
-            </Link>
             {deck.description ? (
               <p className="mt-1 text-xs sm:text-sm font-semibold text-[#6B6258]">
                 {deck.description}
@@ -277,11 +292,11 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
         />
       ) : null}
 
-      {/* Contextual Weak Evidence Section: Cần luyện thêm */}
+      {/* Contextual Weak Evidence Section: Cần luyện thêm (Notebook Study Callout) */}
       {needPracticeCards.length > 0 ? (
         <section
           data-testid="need-practice-section"
-          className="brick-card overflow-hidden bg-[#FEF3C7] p-4 sm:p-5"
+          className="wn-notebook-callout p-4 sm:p-5"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
@@ -290,6 +305,9 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
                   <Target className="h-3.5 w-3.5 text-[#B45309]" strokeWidth={2.5} />
                 </span>
                 <h2 className="text-base font-black text-[#221C16]">Cần luyện thêm</h2>
+                <span className="wn-marker-amber text-xs font-black text-[#9A3412]">
+                  {needPracticeCards.length} từ
+                </span>
               </div>
               <p className="mt-1 text-xs font-bold text-[#6B6258]">
                 {needPracticeCards[0].summary.explanationVi}
@@ -339,15 +357,19 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
         {deck.cards.length > 0 ? (
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6B6258]" />
+              <label htmlFor="deck-card-search" className="wn-sr-only">Tìm từ vựng hoặc nghĩa</label>
+              <span aria-hidden="true" className="pointer-events-none absolute inset-y-2 left-2 flex w-8 items-center justify-center border-r border-[#C9BFB1] pr-2">
+                <Search className="h-4 w-4 text-[#6B6258]" />
+              </span>
               <input
+                id="deck-card-search"
                 value={search}
                 onChange={(event) => {
                   setSearch(event.target.value);
                   setPage(1);
                 }}
                 placeholder="Tìm từ vựng hoặc nghĩa..."
-                className="wn-field pl-9"
+                className="wn-field wn-field-with-leading-icon"
               />
             </div>
             <select
@@ -435,38 +457,68 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
         ) : null}
       </section>
 
-      {/* Delete Confirmation Alert Dialog */}
+      {/* Modal Dialog Xác nhận Xóa bộ từ */}
       {isConfirmingDelete ? (
-        <section
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="delete-deck-title"
-          className="brick-card wn-form-group bg-[#FFFDF9] p-5 shadow-[4px_4px_0px_#B91C1C] border-[#B91C1C]"
+        <div
+          role="presentation"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#221C16]/50 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeleting) {
+              setIsConfirmingDelete(false);
+            }
+          }}
         >
-          <h2 id="delete-deck-title" className="text-lg font-black text-[#B91C1C]">
-            Xóa bộ từ &ldquo;{deck.name}&rdquo;?
-          </h2>
-          <p className="text-xs sm:text-sm font-bold text-[#6B6258]">
-            Toàn bộ thẻ và tiến trình học trong bộ từ này sẽ bị xóa hoàn toàn.
-          </p>
-          <div className="wn-form-actions">
-            <button
-              type="button"
-              disabled={isDeleting}
-              onClick={deleteDeck}
-              className="wn-button-danger brick-button-secondary px-4 py-2 text-xs sm:text-sm font-black"
-            >
-              {isDeleting ? "Đang xóa..." : "Xóa bộ từ"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsConfirmingDelete(false)}
-              className="brick-button-secondary px-4 py-2 text-xs sm:text-sm font-bold"
-            >
-              Hủy
-            </button>
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-deck-dialog-title"
+            aria-describedby="delete-deck-dialog-desc"
+            className="toast-enter w-full max-w-md rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-5 sm:p-6 shadow-[6px_6px_0px_#221C16] space-y-4"
+          >
+            <div className="flex items-start gap-3.5">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 border-[#221C16] bg-[#FEE2E2] text-[#B91C1C] shadow-[2px_2px_0px_#221C16]">
+                <Trash2 className="h-5 w-5" strokeWidth={2.5} />
+              </span>
+              <div className="min-w-0">
+                <span className="inline-block rounded-md border border-[#B91C1C]/30 bg-[#FEE2E2] px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#991B1B]">
+                  Xác nhận xóa
+                </span>
+                <h3
+                  id="delete-deck-dialog-title"
+                  className="mt-1 text-lg font-black text-[#221C16] leading-snug break-words"
+                >
+                  Xóa bộ từ &ldquo;{deck.name}&rdquo;?
+                </h3>
+                <p
+                  id="delete-deck-dialog-desc"
+                  className="mt-1.5 text-xs sm:text-sm font-semibold text-[#6B6258] leading-relaxed"
+                >
+                  Toàn bộ thẻ flashcard và tiến trình học trong bộ từ này sẽ bị xóa hoàn toàn. Hành động này không thể hoàn tác.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t-2 border-dashed border-[#221C16]/15">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setIsConfirmingDelete(false)}
+                className="inline-flex items-center justify-center px-4 py-2 rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] text-xs sm:text-sm font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] hover:bg-[#F4EFE6] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={deleteDeck}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 border-[#B91C1C] bg-[#B91C1C] text-xs sm:text-sm font-black text-white shadow-[2px_2px_0px_#221C16] hover:bg-[#991B1B] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all disabled:opacity-50 cursor-pointer"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>{isDeleting ? "Đang xóa..." : "Xóa bộ từ"}</span>
+              </button>
+            </div>
           </div>
-        </section>
+        </div>
       ) : null}
     </div>
   );

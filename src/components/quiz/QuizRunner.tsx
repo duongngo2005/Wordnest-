@@ -536,8 +536,8 @@ export function QuizRunner({
         </div>
       </div>
 
-      {/* Main Question Card */}
-      <div className="brick-card space-y-6 p-5 sm:p-7 bg-[#FFFDF9] shadow-[4px_4px_0px_#221C16]">
+      {/* Main Question Card (Physical Study Card Metaphor) */}
+      <div className="wn-primary-surface border-t-4 border-t-[#E06B43] space-y-6 p-5 sm:p-7 bg-[#FFFDF9] shadow-[4px_4px_0px_#221C16]">
         {/* Question Type Tag & Selection Reason */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">

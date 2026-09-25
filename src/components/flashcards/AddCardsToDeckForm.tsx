@@ -24,10 +24,38 @@ export function AddCardsToDeckForm({
   onCardsCreated,
 }: AddCardsToDeckFormProps) {
   const [mode, setMode] = useState<CreationMode>("manual");
-  const methods: Array<{ id: CreationMode; label: string; description: string; icon: typeof PenLine }> = [
-    { id: "manual", label: "Thủ công", description: "Một thẻ", icon: PenLine },
-    { id: "ai", label: "AI", description: "Tạo tự động", icon: Sparkles },
-    { id: "json", label: "JSON", description: "AI bên ngoài", icon: Braces },
+  const methods: Array<{
+    id: CreationMode;
+    label: string;
+    description: string;
+    icon: typeof PenLine;
+    badgeBg: string;
+    iconColor: string;
+  }> = [
+    {
+      id: "manual",
+      label: "Thủ công",
+      description: "Tự viết thẻ",
+      icon: PenLine,
+      badgeBg: "bg-[#FDEEE9]",
+      iconColor: "text-[#E06B43]",
+    },
+    {
+      id: "ai",
+      label: "AI",
+      description: "Gợi ý tự động",
+      icon: Sparkles,
+      badgeBg: "bg-[#FEF3C7]",
+      iconColor: "text-[#D97706]",
+    },
+    {
+      id: "json",
+      label: "JSON",
+      description: "Nhập dữ liệu ngoài",
+      icon: Braces,
+      badgeBg: "bg-[#DDF5F1]",
+      iconColor: "text-[#0D9488]",
+    },
   ];
 
   return (
@@ -35,9 +63,14 @@ export function AddCardsToDeckForm({
       className="wn-primary-surface overflow-hidden"
       aria-label="Thêm thẻ"
     >
-      {/* Header bar */}
-      <div className="flex items-center justify-between border-b-2 border-[#221C16] bg-[#FEF3C7] px-4 py-2.5 sm:px-5">
-        <h2 className="text-base font-black text-[#221C16]">Thêm thẻ mới</h2>
+      {/* Warm paper header bar replacing the uniform yellow bar */}
+      <div className="flex items-center justify-between border-b-2 border-dashed border-[#DCD3C5] bg-[#F8F4EC] px-4 py-3 sm:px-5">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
+            <PenLine className="h-3.5 w-3.5 text-[#E06B43]" strokeWidth={2.5} />
+          </span>
+          <h2 className="text-base font-black text-[#221C16]">Thêm thẻ mới</h2>
+        </div>
         <button
           type="button"
           onClick={onClose}
@@ -49,7 +82,7 @@ export function AddCardsToDeckForm({
       </div>
 
       <div className="p-4 sm:p-5">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" aria-label="Cách thêm thẻ">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3" aria-label="Cách thêm thẻ">
           {methods.map((method) => {
             const Icon = method.icon;
             const selected = mode === method.id;
@@ -59,9 +92,13 @@ export function AddCardsToDeckForm({
                 type="button"
                 aria-pressed={selected}
                 onClick={() => setMode(method.id)}
-                className={`wn-method-card ${method.id === "json" ? "col-span-2 sm:col-span-1" : ""}`}
+                className={`wn-method-card ${method.id === "json" ? "col-span-2 sm:col-span-1" : ""} ${
+                  selected ? "!border-[#221C16] !bg-[#FFF8E8]" : "bg-[#FFFDF9]"
+                }`}
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#221C16] bg-[#FFFDF9] text-[#E06B43]">
+                <span
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg border-2 border-[#221C16] ${method.badgeBg} ${method.iconColor} shadow-[1.5px_1.5px_0px_#221C16]`}
+                >
                   <Icon className="h-4 w-4" strokeWidth={2.5} />
                 </span>
                 <span>

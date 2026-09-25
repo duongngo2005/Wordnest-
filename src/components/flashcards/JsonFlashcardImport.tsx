@@ -205,9 +205,22 @@ export function JsonFlashcardImport({
 
   return (
     <div className="space-y-4">
-      <div className="wn-paper-surface space-y-3 bg-[#FEF3C7] p-3">
-        <label htmlFor="json-vocabulary-terms" className="block text-xs font-extrabold text-[#221C16]">
-          Từ vựng
+      {/* Bước 1: Từ vựng & Prompt */}
+      <div className="wn-paper-surface space-y-3 bg-[#FFFDF7] border-2 border-[#221C16] p-4 shadow-[2px_2px_0px_#221C16]">
+        <div className="flex items-center justify-between border-b border-dashed border-[#DCD3C5] pb-2">
+          <div className="flex items-center gap-2">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E06B43] text-[10px] font-black text-white">
+              1
+            </span>
+            <span className="text-xs font-black uppercase tracking-wider text-[#221C16]">
+              Nhập danh sách từ vựng & Tạo Prompt
+            </span>
+          </div>
+          <span className="text-[11px] font-bold text-[#6B6258]">Tối đa 30 từ</span>
+        </div>
+
+        <label htmlFor="json-vocabulary-terms" className="block text-xs font-bold text-[#6B6258]">
+          <span>Gõ hoặc dán danh sách từ (cách nhau bởi dấu chấm phẩy hoặc xuống dòng):</span>
           <textarea
             id="json-vocabulary-terms"
             value={rawTerms}
@@ -216,62 +229,133 @@ export function JsonFlashcardImport({
               setRequestError(null);
             }}
             rows={3}
-            placeholder={"allocate; resilient; meticulous\ncapacity"}
-            className="wn-field mt-1.5 min-h-24 resize-y leading-6"
+            placeholder={"allocate; resilient; meticulous\ncapacity; strategy"}
+            className="wn-field mt-1.5 min-h-20 resize-y leading-6"
             aria-describedby="json-vocabulary-helper"
           />
         </label>
-        <p id="json-vocabulary-helper" className="text-xs font-semibold text-[#6B6258]" aria-live="polite">
-          {parsedTerms.error
-            ? parsedTerms.error
-            : parsedTerms.terms.length
-              ? `${parsedTerms.terms.length}/30 từ${parsedTerms.duplicateCount ? ` · Đã bỏ ${parsedTerms.duplicateCount} từ trùng.` : ""}`
-              : "Dùng dấu ; hoặc xuống dòng"}
-        </p>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-xl text-xs font-semibold text-[#6B6258]">Tạo JSON ở chatbot bên ngoài, rồi dán lại đây.</p>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={parsedTerms.terms.length === 0 || Boolean(parsedTerms.error)} onClick={() => setIsPromptVisible((visible) => !visible)} className="brick-button-secondary px-3 py-2 text-xs font-black" aria-expanded={isPromptVisible}>
-              {isPromptVisible ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />} {isPromptVisible ? "Ẩn AI Prompt" : "Hiện AI Prompt"}
+
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+          <p id="json-vocabulary-helper" className="text-xs font-semibold text-[#6B6258]" aria-live="polite">
+            {parsedTerms.error
+              ? parsedTerms.error
+              : parsedTerms.terms.length
+                ? `${parsedTerms.terms.length}/30 từ${parsedTerms.duplicateCount ? ` · Đã bỏ ${parsedTerms.duplicateCount} từ trùng.` : ""}`
+                : "Dùng dấu ; hoặc xuống dòng"}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={parsedTerms.terms.length === 0 || Boolean(parsedTerms.error)}
+              onClick={() => setIsPromptVisible((visible) => !visible)}
+              className="brick-button-secondary px-3 py-1.5 text-xs font-bold"
+              aria-expanded={isPromptVisible}
+            >
+              {isPromptVisible ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              <span>{isPromptVisible ? "Ẩn Prompt" : "Xem Prompt"}</span>
             </button>
-            <button type="button" disabled={parsedTerms.terms.length === 0 || Boolean(parsedTerms.error)} onClick={copyPrompt} className="brick-button-secondary px-3 py-2 text-xs font-black">
-              <ClipboardCopy className="h-4 w-4" /> Copy AI Prompt
+            <button
+              type="button"
+              disabled={parsedTerms.terms.length === 0 || Boolean(parsedTerms.error)}
+              onClick={copyPrompt}
+              className="brick-button-primary px-3.5 py-1.5 text-xs font-black shadow-[1.5px_1.5px_0px_#221C16]"
+            >
+              <ClipboardCopy className="h-3.5 w-3.5" />
+              <span>Copy AI Prompt</span>
             </button>
           </div>
         </div>
-        {isPromptVisible ? <label className="block text-xs font-extrabold text-[#221C16]">
-          AI Prompt — bạn có thể bôi đen và copy thủ công
-          <textarea readOnly rows={14} value={prompt} className="mt-1.5 w-full resize-y rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] p-3 font-mono text-xs leading-5 text-[#221C16]" />
-        </label> : null}
+
+        {isPromptVisible ? (
+          <label className="block text-xs font-bold text-[#6B6258] pt-2 border-t border-dashed border-[#DCD3C5]">
+            <span>AI Prompt (dán vào ChatGPT, Claude hoặc Gemini):</span>
+            <textarea
+              readOnly
+              rows={10}
+              value={prompt}
+              className="mt-1.5 w-full resize-y rounded-lg border-2 border-[#221C16] bg-[#FAF6EE] p-3 font-mono text-xs leading-5 text-[#221C16]"
+            />
+          </label>
+        ) : null}
       </div>
 
-      <label htmlFor="json-flashcard-import" className="block text-xs font-extrabold text-[#221C16]">
-        JSON flashcard
-        <textarea
-          id="json-flashcard-import"
-          rows={12}
-          value={rawJson}
-          onChange={(event) => changeJson(event.target.value)}
-          disabled={isValidating || isImporting}
-          placeholder={'{\n  "schemaVersion": 1,\n  "cards": []\n}'}
-          className="mt-1.5 w-full resize-y rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-3 font-mono text-[16px] sm:text-xs leading-5 text-[#221C16] shadow-[2px_2px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43] disabled:opacity-60"
-        />
-      </label>
+      {/* Bước 2: Dán mã JSON */}
+      <div className="wn-paper-surface space-y-3 bg-[#FFFDF7] border-2 border-[#221C16] p-4 shadow-[2px_2px_0px_#221C16]">
+        <div className="flex items-center justify-between border-b border-dashed border-[#DCD3C5] pb-2">
+          <div className="flex items-center gap-2">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0D9488] text-[10px] font-black text-white">
+              2
+            </span>
+            <span className="text-xs font-black uppercase tracking-wider text-[#221C16]">
+              Dán mã JSON trả về từ AI
+            </span>
+          </div>
+        </div>
 
-      <div className="flex flex-wrap justify-between gap-2">
-        <button type="button" onClick={() => changeJson("")} disabled={!rawJson || isValidating || isImporting} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-[#991B1B] hover:bg-[#FEE2E2] disabled:opacity-50">
-          <Trash2 className="h-4 w-4" /> Clear
-        </button>
-        <button type="button" onClick={validateAndPreview} disabled={isValidating || isImporting} className="brick-button-primary px-4 py-2.5 text-xs font-black disabled:opacity-50">
-          {isValidating ? <><Loader2 className="h-4 w-4 animate-spin" /> Đang kiểm tra...</> : <><CheckCircle2 className="h-4 w-4" /> Validate & Preview</>}
-        </button>
+        <label htmlFor="json-flashcard-import" className="block text-xs font-bold text-[#6B6258]">
+          <span className="sr-only">JSON flashcard</span>
+          <span>Dán toàn bộ kết quả JSON nhận được:</span>
+          <textarea
+            id="json-flashcard-import"
+            aria-label="JSON flashcard"
+            rows={10}
+            value={rawJson}
+            onChange={(event) => changeJson(event.target.value)}
+            disabled={isValidating || isImporting}
+            placeholder={'{\n  "schemaVersion": 1,\n  "cards": [\n    {\n      "term": "example",\n      "meaningVi": "ví dụ"\n    }\n  ]\n}'}
+            className="mt-1.5 w-full resize-y rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-3 font-mono text-xs leading-5 text-[#221C16] shadow-[1.5px_1.5px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43] disabled:opacity-60"
+          />
+        </label>
+
+        <div className="flex flex-wrap justify-between items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => changeJson("")}
+            disabled={!rawJson || isValidating || isImporting}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#991B1B] hover:bg-[#FEE2E2] disabled:opacity-40"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            <span>Xóa nội dung</span>
+          </button>
+          <button
+            type="button"
+            onClick={validateAndPreview}
+            disabled={isValidating || isImporting || !rawJson.trim()}
+            className="brick-button-primary px-4 py-2 text-xs font-black disabled:opacity-50"
+          >
+            {isValidating ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Đang kiểm tra...</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-4 w-4" />
+                <span>Validate &amp; Preview</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {requestError ? <ImportError errors={[requestError]} /> : null}
       {preview && !preview.valid ? <ImportError errors={preview.errors} /> : null}
 
       {preview ? (
-        <div className="space-y-3 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-3 sm:p-4">
+        <div className="space-y-3 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-4 shadow-[2px_2px_0px_#221C16]">
+          <div className="flex items-center justify-between border-b border-dashed border-[#DCD3C5] pb-2">
+            <div className="flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#15803D] text-[10px] font-black text-white">
+                3
+              </span>
+              <span className="text-xs font-black uppercase tracking-wider text-[#221C16]">
+                Xem trước & Xác nhận nhập thẻ
+              </span>
+            </div>
+            <span className="text-xs font-bold text-[#15803D]">
+              {preview.valid ? "✓ Dữ liệu hợp lệ" : "✕ Có lỗi cần sửa"}
+            </span>
+          </div>
           <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
             <PreviewStat label="Tổng thẻ" value={preview.cards.length} />
             <PreviewStat label="Lỗi" value={preview.errors.length} />

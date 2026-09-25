@@ -424,7 +424,7 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
 
   return (
     <article
-      className="wn-vocabulary-card relative flex flex-col justify-between overflow-visible p-4 sm:p-5 focus-within:z-30"
+      className="wn-index-card wn-vocabulary-card relative flex flex-col justify-between overflow-visible p-4 sm:p-5 border-t-4 border-t-[#E06B43] focus-within:z-30"
       aria-label={`Thẻ từ vựng: ${card.term}`}
     >
       <div>
@@ -441,8 +441,8 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
             ) : null}
           </div>
 
-          <div className="flex shrink-0 items-center gap-1">
-            <PronounceButton text={card.term} label="Nghe" size="sm" />
+          <div className="flex shrink-0 items-center gap-1.5">
+            <PronounceButton text={card.term} variant="card" />
             <details className="relative wn-menu-details">
               <summary
                 aria-label={`Tùy chọn cho ${card.term}`}
@@ -483,16 +483,16 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
           <p className="text-base sm:text-lg font-black text-[#221C16]">{card.meaningVi}</p>
         </div>
 
-        {/* Practice Evidence Badge */}
+        {/* Practice Evidence Badge with tactile study marker */}
         {evidenceLabel ? (
           <p className="mt-2.5 text-xs font-bold text-[#6B6258]">
             <span
               data-testid={`practice-badge-${card.id}`}
               className={`font-black ${
                 evidence?.classification === "NEEDS_PRACTICE"
-                  ? "text-[#B45309]"
+                  ? "wn-marker-amber text-[#9A3412]"
                   : evidence?.classification === "RECENTLY_SUCCESSFUL"
-                  ? "text-[#15803D]"
+                  ? "wn-marker-green text-[#15803D]"
                   : "text-[#6B6258]"
               }`}
             >
@@ -522,7 +522,7 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
             ) : null}
 
             {card.exampleEn ? (
-              <div className="space-y-1 border-l-2 border-[#DCD3C5] pl-3">
+              <div className="space-y-1 border-l-2 border-[#E06B43]/50 pl-3">
                 <p className="font-bold text-[#221C16]">&ldquo;{card.exampleEn}&rdquo;</p>
                 {card.exampleVi ? (
                   <p className="text-xs text-[#6B6258] font-medium">&rarr; {card.exampleVi}</p>

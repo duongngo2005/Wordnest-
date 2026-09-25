@@ -12,7 +12,7 @@ import {
   StoryLength,
   StoryTopic,
 } from "@/lib/validation/story";
-import { getStoryGenerationGuidance } from "@/lib/story/story-options";
+import { buildStoryPrompt } from "@/lib/story/story-prompt";
 import { normalizeTerm } from "@/services/vocabulary/parser";
 import { ZodSchema } from "zod";
 import {
@@ -1068,34 +1068,7 @@ You MUST respond strictly with a valid JSON object matching this schema:
       throw new Error("At least one target word is required to generate a story.");
     }
 
-    const guidance = getStoryGenerationGuidance(length, targetWords.length);
-    const wordCountGuide = `${guidance.minWords}–${guidance.maxWords} words`;
-
-    const prompt = `You are a talented author and English language teacher writing an engaging, memorable story for English learners.
-
-Target Vocabulary to include naturally in the story:
-${JSON.stringify(targetWords)}
-
-Requirements:
-1. Topic: ${topic}
-2. Language level: CEFR ${cefr}. The sentence structure, vocabulary, and grammar should naturally align with ${cefr}.
-3. Length: ${wordCountGuide}.
-4. Use approximately ${guidance.vocabularyTarget.min}–${guidance.vocabularyTarget.max} of the ${targetWords.length} target words naturally. If fewer fit the narrative, omit them rather than forcing an awkward list.
-5. Provide a catchy, appealing title for the story.
-6. For every target vocabulary item actually used, report its canonical supplied term and the exact surface form copied from content in 'usage'. If a term is absent, omit it. Do not infer a surface form.
-7. 'contextualTranslations' is optional enrichment. For any used vocabulary you are confident about, return its natural Vietnamese meaning in the story context. Omit uncertain entries. Do not include sentences.
-
-You MUST respond strictly with a valid JSON object matching this schema:
-{
-  "title": "Story Title Here",
-  "content": "Paragraph 1\\n\\nParagraph 2\\n\\nParagraph 3",
-  "usage": [
-    { "term": "allocate", "usedAs": "allocated" }
-  ],
-  "contextualTranslations": [
-    { "term": "allocate", "usedAs": "allocated", "meaningVi": "phân bổ" }
-  ]
-}`;
+    const prompt = buildStoryPrompt({ targetWords, cefr, length, topic });
 
     return this.callGeminiStructured<AIStoryResponse>({
       prompt,

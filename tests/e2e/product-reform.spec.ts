@@ -21,7 +21,13 @@ test("keeps collection and empty-deck creation actions visible", async ({ page }
   deckId = deck.id;
 
   await page.goto(`/folders/${folder.id}`);
-  await expect(page.getByRole("button", { name: "Tạo bộ từ" })).toBeVisible();
+  const collectionHeader = page.locator("section.brick-card").first();
+  const createDeckButton = collectionHeader.getByRole("button", { name: "Tạo bộ từ" });
+  await expect(createDeckButton).toBeVisible();
+  await expect(createDeckButton).toHaveText("Bộ từ");
+  await expect(collectionHeader.getByRole("link", { name: "Tiến độ" })).toHaveCount(0);
+  await collectionHeader.getByLabel(`Tùy chọn cho ${folder.name}`).click();
+  await expect(collectionHeader.getByRole("link", { name: "Tiến độ" })).toHaveAttribute("href", `/progress/folders/${folder.id}`);
 
   await page.goto(`/decks/${deck.id}`);
   await expect(page.getByRole("button", { name: "Thêm thẻ", exact: true })).toBeVisible();
@@ -29,6 +35,28 @@ test("keeps collection and empty-deck creation actions visible", async ({ page }
   await expect(page.getByRole("button", { name: /^AI/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^JSON/ })).toBeVisible();
   await expect(page.getByText("Hàng loạt", { exact: true })).toHaveCount(0);
+});
+
+test("keeps deck progress in the contextual menu and gives search its own icon space", async ({ page }, testInfo) => {
+  const deck = await db.deck.create({
+    data: {
+      name: `Deck controls ${testInfo.testId}`,
+      cards: { create: { term: "apple", normalizedTerm: "apple", meaningVi: "quả táo" } },
+    },
+  });
+  deckId = deck.id;
+
+  await page.goto(`/decks/${deck.id}`);
+  const deckHeader = page.locator("section[aria-labelledby='deck-name']");
+  await expect(deckHeader.getByRole("link", { name: "Tiến độ" })).toHaveCount(0);
+
+  await deckHeader.getByLabel("Thêm tùy chọn").click();
+  await expect(deckHeader.getByRole("link", { name: "Tiến độ" })).toBeVisible();
+
+  const searchField = page.getByRole("textbox", { name: "Tìm từ vựng hoặc nghĩa" });
+  await expect(searchField).toBeVisible();
+  await expect(searchField).toHaveClass(/wn-field-with-leading-icon/);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("keeps the collection overflow menu visible outside its card", async ({ page }, testInfo) => {
@@ -94,7 +122,7 @@ test("renders global, collection, and deck progress with factual empty states", 
 
   await page.goto("/progress");
   await expect(page.getByRole("heading", { name: "Tiến độ học" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Hoạt động ôn tập" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hoạt động ôn theo lịch" })).toBeVisible();
 
   await page.goto(`/progress/folders/${folder.id}`);
   await expect(page.getByRole("heading", { name: folder.name })).toBeVisible();
