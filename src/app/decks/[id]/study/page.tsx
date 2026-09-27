@@ -21,7 +21,7 @@ export default async function StudyPage({ params }: StudyPageProps) {
   const reviewQueue = await fsrsService.getReviewQueue({ deckId: deck.id });
 
   return (
-    <div className="min-h-screen bg-[#FAF6EE] flex flex-col selection:bg-[#FDE68A] selection:text-[#221C16]">
+    <div className="min-h-[100dvh] bg-[#FAF6EE] flex flex-col selection:bg-[#FDE68A] selection:text-[#221C16]">
       <Header />
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-4 sm:py-6">
         <StudyMode

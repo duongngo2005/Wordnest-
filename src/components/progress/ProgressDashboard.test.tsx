@@ -71,6 +71,47 @@ const mockAnalytics: ProgressAnalytics = {
     },
   ],
   folders: [],
+  reviewActivity: {
+    timezone: "Asia/Ho_Chi_Minh",
+    todayDateKey: "2026-09-26",
+    metrics: {
+      currentStreak: 5,
+      longestStreak: 12,
+      activeDaysInPeriod: 25,
+      totalReviewsInPeriod: 140,
+      isTodayActive: true,
+      todayReviewCount: 5,
+    },
+    days: [
+      {
+        dateKey: "2026-09-26",
+        displayDate: "T.7, 26/09/2026",
+        count: 5,
+        ratings: { again: 0, hard: 1, good: 3, easy: 1 },
+        isToday: true,
+        isFuture: false,
+        intensity: 2,
+      },
+    ],
+    weeks: [
+      {
+        weekIndex: 0,
+        days: [
+          {
+            dateKey: "2026-09-26",
+            displayDate: "T.7, 26/09/2026",
+            count: 5,
+            ratings: { again: 0, hard: 1, good: 3, easy: 1 },
+            isToday: true,
+            isFuture: false,
+            intensity: 2,
+          },
+        ],
+        monthLabel: "T9",
+      },
+    ],
+    allActiveDates: ["2026-09-26"],
+  },
 };
 
 describe("ProgressDashboard component", () => {
@@ -89,6 +130,19 @@ describe("ProgressDashboard component", () => {
     expect(html).toContain("4");
     expect(html).toContain("5 lượt FSRS");
     expect(html).toContain("2 thẻ đã quá hạn");
+  });
+
+  it("renders Review Activity Heatmap and streak summary metrics", () => {
+    const html = renderToStaticMarkup(<ProgressDashboard analytics={mockAnalytics} />);
+    expect(html).toContain("Hoạt động ôn tập");
+    expect(html).toContain("LỊCH SỬ FSRS");
+    expect(html).toContain("Chuỗi hiện tại");
+    expect(html).toContain("5");
+    expect(html).toContain("Chuỗi dài nhất");
+    expect(html).toContain("12");
+    expect(html).toContain("Ngày có ôn tập");
+    expect(html).not.toContain("Ghi nhận từng lượt đánh giá thẻ hoàn thành theo múi giờ học");
+    expect(html).toContain("Xem dữ liệu hoạt động theo bảng");
   });
 
   it("renders Attention panel with weak cards and practice button", () => {

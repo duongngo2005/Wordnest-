@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { ProgressDashboard } from "@/components/progress/ProgressDashboard";
 import { Header } from "@/components/ui/Header";
 import { progressService } from "@/services/vocabulary";
+import { getServerStudyTimezone } from "@/lib/study-timezone-server";
 
 export const revalidate = 0;
 
@@ -11,7 +12,8 @@ interface DeckProgressPageProps {
 
 export default async function DeckProgressPage({ params }: DeckProgressPageProps) {
   const { id } = await params;
-  const analytics = await progressService.getDeckAnalytics(id);
+  const timezone = await getServerStudyTimezone();
+  const analytics = await progressService.getDeckAnalytics(id, timezone);
   if (!analytics) notFound();
 
   return (

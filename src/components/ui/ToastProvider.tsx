@@ -106,12 +106,17 @@ export function ToastProvider({ children }: Readonly<{ children: React.ReactNode
     <ToastContext.Provider value={value}>
       {children}
       <Toaster
-        position="top-right"
+        position="top-center"
         gap={8}
         visibleToasts={4}
         closeButton={true}
+        offset={{
+          top: "calc(var(--safe-top) + 1rem)",
+          left: "1rem",
+          right: "1rem",
+        }}
         mobileOffset={{
-          bottom: "calc(env(safe-area-inset-bottom) + 1rem)",
+          top: "calc(var(--safe-top) + 0.75rem)",
           left: "0.75rem",
           right: "0.75rem",
         }}
@@ -151,7 +156,7 @@ export function ToastProvider({ children }: Readonly<{ children: React.ReactNode
             title: "text-sm font-black leading-tight text-[#221C16]",
             description: "mt-1 text-xs font-semibold leading-relaxed text-[#6B6258]",
             closeButton:
-              "border-2 border-[#221C16] bg-[#FAF6EE] text-[#6B6258] hover:bg-[#EAE3D2] hover:text-[#221C16] active:translate-y-0.5",
+              "min-h-[44px] min-w-[44px] border-2 border-[#221C16] bg-[#FAF6EE] text-[#6B6258] hover:bg-[#EAE3D2] hover:text-[#221C16] active:translate-y-0.5",
           },
         }}
       />

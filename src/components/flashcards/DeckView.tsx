@@ -160,8 +160,8 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
       </Link>
 
       {/* Deck Header Card */}
-      <section className="wn-primary-surface relative overflow-visible border-l-[6px] border-l-[#E06B43] focus-within:z-30" aria-labelledby="deck-name">
-        <div className="flex items-center justify-between rounded-t-[calc(var(--radius-lg)-2px)] border-b-2 border-dashed border-[#C9BFB1] bg-[#ECD9A8] px-4 py-2.5 sm:px-5">
+      <section className="wn-primary-surface brick-card relative overflow-visible border-l-[6px] border-l-[#E06B43] bg-[#FFFDF9] rounded-2xl shadow-[4px_4px_0px_#221C16] focus-within:z-30" aria-labelledby="deck-name">
+        <div className="flex items-center justify-between rounded-t-[calc(var(--radius-lg)-2px)] border-b-2 border-dashed border-[#DCD3C5] bg-[#FEF8ED] px-4 py-2.5 sm:px-5">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
               <Layers className="h-4 w-4 text-[#D97706]" strokeWidth={2.5} />
@@ -300,7 +300,7 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
       {needPracticeCards.length > 0 ? (
         <section
           data-testid="need-practice-section"
-          className="wn-notebook-callout p-4 sm:p-5"
+          className="brick-card rounded-2xl border-2 border-[#221C16] bg-[#FEF8ED] p-4 sm:p-5 shadow-[3px_3px_0px_#221C16]"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
@@ -465,7 +465,7 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
       {isConfirmingDelete ? (
         <div
           role="presentation"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#221C16]/50 backdrop-blur-xs animate-in fade-in duration-150"
+          className="wn-modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#221C16]/50 backdrop-blur-xs animate-in fade-in duration-150"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isDeleting) {
               setIsConfirmingDelete(false);

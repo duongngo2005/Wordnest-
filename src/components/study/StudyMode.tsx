@@ -155,8 +155,13 @@ export function StudyMode({
         advanceCard();
       } catch (error) {
         console.error("Failed to submit review to server:", error);
+        const isConnectionFailure =
+          error instanceof TypeError ||
+          (error instanceof Error && /failed to fetch|networkerror|load failed/i.test(error.message));
         const msg =
-          error instanceof Error
+          isConnectionFailure
+            ? "Lượt ôn chưa được lưu: Không kết nối được máy chủ WordNest. Kiểm tra mạng hoặc Tailscale rồi thử lại."
+            : error instanceof Error
             ? `Lượt ôn chưa được lưu: ${error.message}`
             : "Lượt ôn chưa được lưu. Vui lòng thử lại khi có kết nối mạng.";
         setSaveError(msg);
@@ -274,19 +279,21 @@ export function StudyMode({
           <Link
             href={backHref ?? `/decks/${deckId}`}
             onClick={() => playUISound("softTap")}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#6B6258] hover:text-[#221C16] p-1 rounded-md transition-colors"
+            className="inline-flex w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-all hover:bg-[#FAF6EE] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span>{backHref ? backLabel : "Thoát Study"}</span>
+            <ArrowLeft className="w-4 h-4" strokeWidth={2.5} />
+            <span>{backHref ? backLabel : "Thoát study"}</span>
           </Link>
 
-          <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#6B6258] bg-[#FAF6EE] px-2.5 py-0.5 rounded-full border border-[#DCD3C5]">
-            {mode === "scheduled-review" ? "Ôn tập" : "Luyện tự do"}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono font-black uppercase tracking-wider text-[#6B6258] bg-[#FAF6EE] px-2.5 py-1 rounded-lg border-2 border-[#221C16] shadow-[1.5px_1.5px_0px_#221C16]">
+              {mode === "scheduled-review" ? "Ôn tập" : "Luyện tự do"}
+            </span>
 
-          {/* Progress Indicator */}
-          <div className="font-mono text-xs font-black text-[#221C16]">
-            {currentIndex + 1} / {totalCards}
+            {/* Progress Indicator */}
+            <div className="font-mono text-xs font-black text-[#221C16] bg-[#FFFDF9] px-2.5 py-1 rounded-lg border-2 border-[#221C16] shadow-[1.5px_1.5px_0px_#221C16]">
+              {currentIndex + 1} / {totalCards}
+            </div>
           </div>
         </div>
 

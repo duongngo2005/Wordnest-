@@ -218,15 +218,15 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
 
   if (isEditing) {
     return (
-      <div className="fixed inset-0 z-50 flex items-end bg-[#221C16]/35 p-0 sm:items-center sm:justify-center sm:p-6">
+      <div className="wn-modal-sheet-backdrop fixed inset-0 z-50 flex items-end bg-[#221C16]/35 p-0 sm:items-center sm:justify-center sm:p-6">
       <article
         ref={editorRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={`edit-card-${card.id}`}
-        className="wn-primary-surface flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-b-none bg-[#FFFDF9] sm:rounded-[var(--radius-lg)]"
+        className="brick-card flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-b-none border-2 border-[#221C16] bg-[#FFFDF9] shadow-[4px_4px_0px_#221C16] sm:rounded-2xl"
       >
-        <div className="flex shrink-0 items-center justify-between border-b-2 border-dashed border-[#DCD3C5] bg-[#FEF3C7] px-4 py-3 sm:px-5">
+        <div className="flex shrink-0 items-center justify-between border-b-2 border-dashed border-[#DCD3C5] bg-[#FEF8ED] px-4 py-3 sm:px-5">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FEF3C7] shadow-[1.5px_1.5px_0px_#221C16]">
               <Edit3 className="h-4 w-4 text-[#E06B43]" strokeWidth={2.5} />
@@ -388,7 +388,7 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
         </section>
 
         </div>
-        <div className="wn-form-actions shrink-0 bg-[#FFFDF9] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5">
+        <div className="wn-form-actions wn-modal-footer-safe shrink-0 bg-[#FFFDF9] px-4 sm:px-5">
           <button
             type="button"
             onClick={save}
@@ -424,12 +424,12 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
 
   return (
     <article
-      className="wn-index-card wn-vocabulary-card relative flex flex-col justify-between overflow-visible p-4 sm:p-5 border-t-4 border-t-[#E06B43] focus-within:z-30"
+      className="wn-index-card wn-vocabulary-card brick-card relative flex flex-col justify-between overflow-visible p-4 sm:p-5 rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] shadow-[3px_3px_0px_#221C16] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_#221C16] transition-all border-t-4 border-t-[#E06B43] focus-within:z-30"
       aria-label={`Thẻ từ vựng: ${card.term}`}
     >
       <div>
         {/* Top Header of Card: Term, IPA, Audio & Menu */}
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3 border-b border-dashed border-[#DCD3C5] pb-3">
           <div className="min-w-0">
             <h3 className="break-all text-xl font-black tracking-tight text-[#221C16] sm:text-2xl">
               {card.term}
@@ -479,8 +479,14 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
           </div>
         </div>
 
-        <div className="mt-3 border-t border-dashed border-[#DCD3C5] pt-3">
-          <p className="text-base sm:text-lg font-black text-[#221C16]">{card.meaningVi}</p>
+        {/* Vietnamese Meaning Box (Flashcard Accent) */}
+        <div className="mt-3 rounded-xl border-2 border-[#221C16] bg-[#FEF8ED] p-3 shadow-[1.5px_1.5px_0px_#221C16]">
+          <span className="text-[10px] font-black uppercase tracking-wider text-[#E06B43] block mb-0.5">
+            Nghĩa tiếng Việt
+          </span>
+          <p className="text-base sm:text-lg font-black text-[#221C16] leading-snug break-words">
+            {card.meaningVi}
+          </p>
         </div>
 
         {/* Practice Evidence Badge with tactile study marker */}
@@ -522,8 +528,11 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
             ) : null}
 
             {card.exampleEn ? (
-              <div className="space-y-1 border-l-2 border-[#E06B43]/50 pl-3">
-                <p className="font-bold text-[#221C16]">&ldquo;{card.exampleEn}&rdquo;</p>
+              <div className="rounded-xl border border-[#DCD3C5] bg-[#FAF6EE] p-3 space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#6B6258] block">
+                  Ví dụ minh họa
+                </span>
+                <p className="text-xs sm:text-sm font-semibold text-[#221C16]">&ldquo;{card.exampleEn}&rdquo;</p>
                 {card.exampleVi ? (
                   <p className="text-xs text-[#6B6258] font-medium">&rarr; {card.exampleVi}</p>
                 ) : null}

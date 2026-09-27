@@ -4,22 +4,17 @@ import { Header } from "@/components/ui/Header";
 import { TodayPostcard } from "@/components/home/TodayPostcard";
 import { FolderLibrary } from "@/components/folders/FolderLibrary";
 import { folderService } from "@/services/vocabulary";
+import { getServerStudyTimezone } from "@/lib/study-timezone-server";
+import { getTodayDateKey, getStartOfDayInTimezone, offsetDateKey } from "@/lib/study-timezone";
 
 export const revalidate = 0;
 
-function getTodayRange(now: Date) {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
-
-  return { start, end };
-}
-
 export default async function HomePage() {
   const now = new Date();
-  const { start: todayStart, end: tomorrowStart } = getTodayRange(now);
+  const timezone = await getServerStudyTimezone();
+  const todayKey = getTodayDateKey(timezone, now);
+  const todayStart = getStartOfDayInTimezone(todayKey, timezone);
+  const tomorrowStart = getStartOfDayInTimezone(offsetDateKey(todayKey, 1), timezone);
   const [library, dueCards, reviewedTodayLogs] = await Promise.all([
     folderService.getLibrary(),
     db.flashcard.findMany({

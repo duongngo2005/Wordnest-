@@ -1,6 +1,19 @@
 import { PracticeAttempt } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
+  DEFAULT_STUDY_TIMEZONE,
+  getEndOfDayInTimezone,
+  getLocalDateKey,
+  getStartOfDayInTimezone,
+  getTodayDateKey,
+  normalizeTimezone,
+  offsetDateKey,
+} from "@/lib/study-timezone";
+import {
+  buildReviewActivity,
+  type ReviewActivityData,
+} from "./review-activity-service";
+import {
   EVIDENCE_CONFIG,
   aggregateCardPracticeEvidence,
   getNeedPracticePriority,
@@ -97,6 +110,7 @@ export interface ProgressAnalytics {
   weakCards: ProgressWeakCard[];
   decks: ProgressDeckInsight[];
   folders: ProgressFolderInsight[];
+  reviewActivity: ReviewActivityData;
 }
 
 export interface ProgressCardRecord {
@@ -124,36 +138,12 @@ export interface ProgressAnalyticsInput {
   practiceAttempts: PracticeAttempt[];
   quizAttempts: Array<{ deckId: string }>;
   now?: Date;
+  timezone?: string;
+  allTimeReviewLogs?: Array<{ cardId?: string; rating?: number; review: Date }>;
 }
 
-function startOfDay(date: Date): Date {
-  const result = new Date(date);
-  result.setHours(0, 0, 0, 0);
-  return result;
-}
-
-function endOfDay(date: Date): Date {
-  const result = startOfDay(date);
-  result.setDate(result.getDate() + 1);
-  result.setMilliseconds(-1);
-  return result;
-}
-
-function addDays(date: Date, amount: number): Date {
-  const result = new Date(date);
-  result.setDate(result.getDate() + amount);
-  return result;
-}
-
-function dateKey(date: Date): string {
-  const local = startOfDay(date);
-  return `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(
-    local.getDate()
-  ).padStart(2, "0")}`;
-}
-
-function dayLabel(date: Date): string {
-  return new Intl.DateTimeFormat("vi-VN", { weekday: "short", day: "numeric" }).format(date);
+function dayLabel(date: Date, timezone: string = DEFAULT_STUDY_TIMEZONE): string {
+  return new Intl.DateTimeFormat("vi-VN", { timeZone: timezone, weekday: "short", day: "numeric" }).format(date);
 }
 
 function performance(label: string, attempts: Array<{ correct: boolean }>): ProgressPerformance {
@@ -203,9 +193,14 @@ export function buildProgressAnalytics({
   practiceAttempts,
   quizAttempts,
   now = new Date(),
+  timezone = DEFAULT_STUDY_TIMEZONE,
+  allTimeReviewLogs,
 }: ProgressAnalyticsInput): ProgressAnalytics {
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
+  const tz = normalizeTimezone(timezone);
+  const todayKey = getTodayDateKey(tz, now);
+  const todayStart = getStartOfDayInTimezone(todayKey, tz);
+  const todayEnd = getEndOfDayInTimezone(todayKey, tz);
+
   const cards = decks.flatMap((deck) => deck.cards);
   const deckById = new Map(decks.map((deck) => [deck.id, deck]));
   const cardById = new Map(cards.map((card) => [card.id, card]));
@@ -230,25 +225,34 @@ export function buildProgressAnalytics({
     count: stateCounts[key],
   }));
 
-  const activityStart = addDays(todayStart, -13);
+  const activityStartKey = offsetDateKey(todayKey, -13);
+  const activityStart = getStartOfDayInTimezone(activityStartKey, tz);
   const activity = Array.from({ length: 14 }, (_, index) => {
-    const date = addDays(activityStart, index);
-    const key = dateKey(date);
+    const key = offsetDateKey(todayKey, -13 + index);
+    const dateInstant = getStartOfDayInTimezone(key, tz);
     return {
       date: key,
-      label: dayLabel(date),
-      count: reviewLogs.filter((log) => dateKey(log.review) === key).length,
+      label: dayLabel(dateInstant, tz),
+      count: reviewLogs.filter((log) => getLocalDateKey(log.review, tz) === key).length,
     };
   });
 
   const upcomingDue = Array.from({ length: 7 }, (_, index) => {
-    const date = addDays(todayStart, index);
-    const end = endOfDay(date);
+    const key = offsetDateKey(todayKey, index);
+    const start = getStartOfDayInTimezone(key, tz);
+    const end = getEndOfDayInTimezone(key, tz);
     return {
-      date: dateKey(date),
-      label: dayLabel(date),
-      count: cards.filter((card) => card.state > 0 && card.due > now && card.due >= date && card.due <= end).length,
+      date: key,
+      label: dayLabel(start, tz),
+      count: cards.filter((card) => card.state > 0 && card.due > now && card.due >= start && card.due <= end).length,
     };
+  });
+
+  const reviewActivity = buildReviewActivity({
+    periodDays: 364,
+    timezone: tz,
+    now,
+    allTimeLogs: allTimeReviewLogs ?? reviewLogs,
   });
 
   const attemptsByCard = new Map<string, PracticeAttempt[]>();
@@ -358,38 +362,43 @@ export function buildProgressAnalytics({
     weakCards: weakCards.slice(0, 8),
     decks: decksInsight,
     folders,
+    reviewActivity,
   };
 }
 
 export class ProgressService {
-  async getGlobalAnalytics(): Promise<ProgressAnalytics> {
-    return this.getAnalytics({ kind: "global", name: "Tất cả bộ từ" });
+  async getGlobalAnalytics(timezone?: string): Promise<ProgressAnalytics> {
+    return this.getAnalytics({ kind: "global", name: "Tất cả bộ từ" }, timezone);
   }
 
-  async getFolderAnalytics(folderId: string): Promise<ProgressAnalytics | null> {
+  async getFolderAnalytics(folderId: string, timezone?: string): Promise<ProgressAnalytics | null> {
     const folder = await db.folder.findUnique({
       where: { id: folderId },
       select: { id: true, name: true },
     });
     if (!folder) return null;
-    return this.getAnalytics({ kind: "folder", id: folder.id, name: folder.name });
+    return this.getAnalytics({ kind: "folder", id: folder.id, name: folder.name }, timezone);
   }
 
-  async getDeckAnalytics(deckId: string): Promise<ProgressAnalytics | null> {
+  async getDeckAnalytics(deckId: string, timezone?: string): Promise<ProgressAnalytics | null> {
     const deck = await db.deck.findUnique({
       where: { id: deckId },
       select: { id: true, name: true, folder: { select: { name: true } } },
     });
     if (!deck) return null;
-    return this.getAnalytics({
-      kind: "deck",
-      id: deck.id,
-      name: deck.name,
-      parentName: deck.folder?.name ?? null,
-    });
+    return this.getAnalytics(
+      {
+        kind: "deck",
+        id: deck.id,
+        name: deck.name,
+        parentName: deck.folder?.name ?? null,
+      },
+      timezone
+    );
   }
 
-  private async getAnalytics(scope: ProgressScope): Promise<ProgressAnalytics> {
+  private async getAnalytics(scope: ProgressScope, timezone?: string): Promise<ProgressAnalytics> {
+    const resolvedTimezone = normalizeTimezone(timezone);
     const deckWhere = scope.kind === "deck" ? { id: scope.id } : scope.kind === "folder" ? { folderId: scope.id } : {};
     const decks = await db.deck.findMany({
       where: deckWhere,
@@ -422,14 +431,20 @@ export class ProgressService {
     }));
     const cardIds = deckRecords.flatMap((deck) => deck.cards.map((card) => card.id));
     const deckIds = deckRecords.map((deck) => deck.id);
+    const isGlobal = scope.kind === "global";
 
-    const [reviewLogs, practiceAttempts, quizAttempts] = await Promise.all([
+    const [scopedLogs, allTimeLogs, practiceAttempts, quizAttempts] = await Promise.all([
       cardIds.length > 0
         ? db.reviewLog.findMany({
-            where: { cardId: { in: cardIds } },
+            where: isGlobal ? undefined : { cardId: { in: cardIds } },
             select: { cardId: true, rating: true, review: true },
           })
         : [],
+      isGlobal
+        ? Promise.resolve(null)
+        : db.reviewLog.findMany({
+            select: { cardId: true, rating: true, review: true },
+          }),
       cardIds.length > 0
         ? db.practiceAttempt.findMany({
             where: { flashcardId: { in: cardIds } },
@@ -441,12 +456,17 @@ export class ProgressService {
         : [],
     ]);
 
+    const reviewLogs = scopedLogs;
+    const allTimeReviewLogs = isGlobal ? scopedLogs : (allTimeLogs ?? scopedLogs);
+
     return buildProgressAnalytics({
       scope,
       decks: deckRecords,
       reviewLogs,
       practiceAttempts,
       quizAttempts,
+      timezone: resolvedTimezone,
+      allTimeReviewLogs,
     });
   }
 }

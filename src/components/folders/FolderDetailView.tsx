@@ -251,7 +251,7 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
       {isConfirmingDelete ? (
         <div
           role="presentation"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#221C16]/50 backdrop-blur-xs animate-in fade-in duration-150"
+          className="wn-modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#221C16]/50 backdrop-blur-xs animate-in fade-in duration-150"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isDeleting) {
               setIsConfirmingDelete(false);
@@ -472,7 +472,7 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
       {deckPendingDelete ? (
         <div
           role="presentation"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#221C16]/50 backdrop-blur-xs animate-in fade-in duration-150"
+          className="wn-modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#221C16]/50 backdrop-blur-xs animate-in fade-in duration-150"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isDeletingDeck) {
               setDeckPendingDelete(null);

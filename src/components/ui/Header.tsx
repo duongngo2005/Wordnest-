@@ -14,7 +14,7 @@ export function Header() {
   const pathname = usePathname();
 
   return (
-    <header className="wn-global-header sticky top-0 z-40 border-b-2 border-[#221C16] bg-[#FAF6EE]/95 backdrop-blur-md">
+    <header className="wn-global-header sticky z-40 border-b-2 border-[#221C16] bg-[#FAF6EE]/95 backdrop-blur-md">
       <div className="page-container flex min-h-[48px] items-center justify-between gap-2 py-2">
         <Link
           href="/"

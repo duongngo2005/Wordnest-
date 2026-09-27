@@ -24,6 +24,15 @@ export function StoryNarrationControls({ content, compact = false }: { content: 
 
   useEffect(() => stopNarration, [stopNarration, content]);
 
+  useEffect(() => {
+    const stopWhenBackgrounded = () => {
+      if (document.hidden) stopNarration();
+    };
+
+    document.addEventListener("visibilitychange", stopWhenBackgrounded);
+    return () => document.removeEventListener("visibilitychange", stopWhenBackgrounded);
+  }, [stopNarration]);
+
   const startNarration = useCallback(() => {
     if (!speechSupported || chunks.length === 0) return;
 

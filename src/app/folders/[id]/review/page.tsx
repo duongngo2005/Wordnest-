@@ -17,7 +17,7 @@ export default async function FolderReviewPage({ params }: FolderReviewPageProps
   const reviewQueue = await fsrsService.getReviewQueue({ folderId: id });
 
   return (
-    <div className="min-h-screen bg-[#FAF6EE] selection:bg-[#FDE68A] selection:text-[#221C16]">
+    <div className="min-h-[100dvh] bg-[#FAF6EE] selection:bg-[#FDE68A] selection:text-[#221C16]">
       <Header />
       <main className="px-4 py-4 sm:py-6">
         <StudyMode

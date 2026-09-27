@@ -75,6 +75,9 @@ describe("buildProgressAnalytics", () => {
     expect(analytics.reviewRatings.find((rating) => rating.rating === 3)?.count).toBe(1);
     expect(analytics.weakCards[0]).toMatchObject({ term: "allocate", deckName: "Day 1" });
     expect("mastery" in analytics).toBe(false);
+    expect(analytics.reviewActivity.metrics.currentStreak).toBe(1);
+    expect(analytics.reviewActivity.timezone).toBe("Asia/Ho_Chi_Minh");
+    expect(analytics.reviewActivity.weeks).toHaveLength(52);
   });
 
   it("keeps an empty analytics scope factual rather than manufacturing percentages", () => {
@@ -92,6 +95,9 @@ describe("buildProgressAnalytics", () => {
     expect(analytics.practice).toMatchObject({ assessedCards: 0, hasSufficientEvidence: false });
     expect(analytics.practice.byType).toEqual([]);
     expect(analytics.activity.every((day) => day.count === 0)).toBe(true);
+    expect(analytics.reviewActivity.metrics.currentStreak).toBe(0);
+    expect(analytics.reviewActivity.metrics.longestStreak).toBe(0);
+    expect(analytics.reviewActivity.metrics.activeDaysInPeriod).toBe(0);
   });
 
   it("separates overdue work from upcoming work and counts reviewed cards uniquely", () => {

@@ -60,11 +60,11 @@ export function AddCardsToDeckForm({
 
   return (
     <section
-      className="wn-primary-surface overflow-hidden"
+      className="brick-card rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] shadow-[4px_4px_0px_#221C16] overflow-hidden"
       aria-label="Thêm thẻ"
     >
       {/* Warm paper header bar replacing the uniform yellow bar */}
-      <div className="flex items-center justify-between border-b-2 border-dashed border-[#DCD3C5] bg-[#F8F4EC] px-4 py-3 sm:px-5">
+      <div className="flex items-center justify-between border-b-2 border-dashed border-[#DCD3C5] bg-[#FEF8ED] px-4 py-3 sm:px-5">
         <div className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
             <PenLine className="h-3.5 w-3.5 text-[#E06B43]" strokeWidth={2.5} />

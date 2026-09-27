@@ -242,7 +242,14 @@ export function QuizRunner({
         setIsFinished(true);
       } catch (err) {
         console.error("Failed to submit quiz results:", err);
-        const msg = err instanceof Error ? err.message : "Không thể lưu kết quả quiz. Vui lòng thử lại.";
+        const isConnectionFailure =
+          err instanceof TypeError ||
+          (err instanceof Error && /failed to fetch|networkerror|load failed/i.test(err.message));
+        const msg = isConnectionFailure
+          ? "Không thể lưu kết quả Quiz. Không kết nối được máy chủ WordNest. Kiểm tra mạng hoặc Tailscale rồi thử lại."
+          : err instanceof Error
+          ? err.message
+          : "Không thể lưu kết quả quiz. Vui lòng thử lại.";
         setSubmissionError(msg);
         wnToast.error(msg);
       } finally {
@@ -492,78 +499,91 @@ export function QuizRunner({
         <div className="flex items-center justify-between flex-wrap gap-2">
           <Link
             href={`/decks/${deck.id}`}
-            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-[#6B6258] hover:text-[#221C16] p-1 rounded-md"
+            onClick={() => playUISound("softTap")}
+            className="inline-flex w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-all hover:bg-[#FAF6EE] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
             <span>Thoát Quiz</span>
           </Link>
 
           {/* Mode Switcher */}
-          <div className="flex flex-wrap justify-end rounded-lg border border-[#221C16]/18 bg-[#FAF6EE] p-0.5">
+          <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-1 shadow-[2px_2px_0px_#221C16]">
             <button
               type="button"
-              onClick={() => handleSwitchMode("multiple_choice")}
+              onClick={() => {
+                playUISound("softTap");
+                handleSwitchMode("multiple_choice");
+              }}
               disabled={isSubmitting || isCheckingTyped || isRetrying}
               aria-pressed={currentMode === "multiple_choice"}
-              className={`inline-flex min-h-[44px] items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
+              className={`inline-flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
                 currentMode === "multiple_choice"
-                  ? "bg-[#221C16] text-white shadow-sm"
-                  : "text-[#6B6258] hover:text-[#221C16]"
+                  ? "bg-[#221C16] text-[#FFFDF9] border-2 border-[#221C16] shadow-[2px_2px_0px_#221C16] -translate-y-0.5"
+                  : "bg-transparent text-[#6B6258] border-2 border-transparent hover:text-[#221C16] hover:bg-[#FFFDF9] hover:border-[#DCD3C5]"
               }`}
             >
-              <ListCheck className="w-3.5 h-3.5" />
+              <ListCheck className="w-3.5 h-3.5" strokeWidth={2.5} />
               <span>Trắc nghiệm</span>
             </button>
             <button
               type="button"
-              onClick={() => handleSwitchMode("typed")}
+              onClick={() => {
+                playUISound("softTap");
+                handleSwitchMode("typed");
+              }}
               disabled={isSubmitting || isCheckingTyped || isRetrying}
               aria-pressed={currentMode === "typed"}
-              className={`inline-flex min-h-[44px] items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
+              className={`inline-flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
                 currentMode === "typed"
-                  ? "bg-[#E06B43] text-white shadow-sm"
-                  : "text-[#6B6258] hover:text-[#221C16]"
+                  ? "bg-[#E06B43] text-white border-2 border-[#221C16] shadow-[2px_2px_0px_#221C16] -translate-y-0.5"
+                  : "bg-transparent text-[#6B6258] border-2 border-transparent hover:text-[#221C16] hover:bg-[#FFFDF9] hover:border-[#DCD3C5]"
               }`}
             >
-              <Keyboard className="w-3.5 h-3.5" />
+              <Keyboard className="w-3.5 h-3.5" strokeWidth={2.5} />
               <span>Gõ đáp án (Recall)</span>
             </button>
             {(storyId || currentMode === "story_cloze") && (
               <button
                 type="button"
-                onClick={() => handleSwitchMode("story_cloze")}
+                onClick={() => {
+                  playUISound("softTap");
+                  handleSwitchMode("story_cloze");
+                }}
                 disabled={isSubmitting || isCheckingTyped || isRetrying}
                 aria-pressed={currentMode === "story_cloze"}
-                className={`inline-flex min-h-[44px] items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
+                className={`inline-flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
                   currentMode === "story_cloze"
-                    ? "bg-[#2563EB] text-white shadow-sm"
-                    : "text-[#6B6258] hover:text-[#221C16]"
+                    ? "bg-[#2563EB] text-white border-2 border-[#221C16] shadow-[2px_2px_0px_#221C16] -translate-y-0.5"
+                    : "bg-transparent text-[#6B6258] border-2 border-transparent hover:text-[#221C16] hover:bg-[#FFFDF9] hover:border-[#DCD3C5]"
                 }`}
               >
-                <BookOpen className="w-3.5 h-3.5" />
+                <BookOpen className="w-3.5 h-3.5" strokeWidth={2.5} />
                 <span>Story Cloze</span>
               </button>
             )}
             {currentMode === "focused_practice" && (
-            <button
-              type="button"
-              onClick={() => handleSwitchMode("focused_practice")}
-              disabled={isSubmitting || isCheckingTyped || isRetrying}
-              aria-pressed={currentMode === "focused_practice"}
-              className={`inline-flex min-h-[44px] items-center gap-1 px-2.5 py-1 text-xs font-black rounded-md transition-all ${
-                currentMode === "focused_practice"
-                  ? "bg-[#D97706] text-white shadow-sm"
-                  : "text-[#6B6258] hover:text-[#221C16]"
-              }`}
-            >
-              <Target className="w-3.5 h-3.5" />
-              <span>Luyện tập trung</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  playUISound("softTap");
+                  handleSwitchMode("focused_practice");
+                }}
+                disabled={isSubmitting || isCheckingTyped || isRetrying}
+                aria-pressed={currentMode === "focused_practice"}
+                className={`inline-flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
+                  currentMode === "focused_practice"
+                    ? "bg-[#D97706] text-white border-2 border-[#221C16] shadow-[2px_2px_0px_#221C16] -translate-y-0.5"
+                    : "bg-transparent text-[#6B6258] border-2 border-transparent hover:text-[#221C16] hover:bg-[#FFFDF9] hover:border-[#DCD3C5]"
+                }`}
+              >
+                <Target className="w-3.5 h-3.5" strokeWidth={2.5} />
+                <span>Luyện tập trung</span>
+              </button>
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-[#6B6258]">
+            <span className="font-mono text-xs font-black text-[#221C16] bg-[#FFFDF9] px-2.5 py-1.5 rounded-xl border-2 border-[#221C16] shadow-[1.5px_1.5px_0px_#221C16]">
               {isRetrying
                 ? `Luyện lại câu sai: Câu ${activeIndex + 1} / ${total}`
                 : `Câu ${activeIndex + 1} / ${total}`}
@@ -580,13 +600,13 @@ export function QuizRunner({
         </div>
       </div>
 
-      {/* Main Question Card (Physical Study Card Metaphor) */}
-      <div className="wn-primary-surface border-t-4 border-t-[#E06B43] space-y-6 p-5 sm:p-7 bg-[#FFFDF9] shadow-[4px_4px_0px_#221C16]">
+      {/* Main Question Card (Physical Flashcard Style Metaphor) */}
+      <div className="brick-card rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-5 sm:p-7 shadow-[4px_4px_0px_#221C16] space-y-6">
         {/* Question Type Tag & Selection Reason */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center justify-between gap-2 flex-wrap border-b border-dashed border-[#DCD3C5] pb-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#E06B43] bg-[#FEF3C7] px-2.5 py-1 rounded-md border border-[#221C16]">
-              {isRetrying ? <RotateCcw className="w-3.5 h-3.5" /> : <HelpCircle className="w-3.5 h-3.5" />}
+            <div className="inline-flex items-center gap-1.5 text-xs font-black text-[#E06B43] bg-[#FEF8ED] px-2.5 py-1 rounded-lg border-2 border-[#221C16] shadow-[1.5px_1.5px_0px_#221C16]">
+              {isRetrying ? <RotateCcw className="w-3.5 h-3.5 stroke-[2.5]" /> : <HelpCircle className="w-3.5 h-3.5 stroke-[2.5]" />}
               <span>
                 {isRetrying
                   ? `Luyện lại: ${getQuestionTypeLabel(currentQuestion.type)}`
@@ -597,7 +617,7 @@ export function QuizRunner({
             {currentQuestion.selectionReason && (
               <span
                 data-testid="selection-reason-tag"
-                className="text-[11px] font-bold text-[#92400E] bg-[#FEF3C7] px-2 py-0.5 rounded border border-[#D97706]/40"
+                className="text-[11px] font-bold text-[#92400E] bg-[#FEF3C7] px-2.5 py-1 rounded-lg border-2 border-[#221C16] shadow-[1.5px_1.5px_0px_#221C16]"
               >
                 Mục tiêu: {currentQuestion.selectionReason}
               </span>
@@ -612,7 +632,7 @@ export function QuizRunner({
 
         {/* Question Prompt */}
         <div className="space-y-2 text-center py-2">
-          <h1 className="text-2xl sm:text-3xl font-black text-[#221C16] tracking-tight leading-snug">
+          <h1 className="text-2xl sm:text-3xl font-black text-[#221C16] tracking-tight leading-snug break-words">
             {currentQuestion.prompt}
           </h1>
 
@@ -627,7 +647,7 @@ export function QuizRunner({
         {isTypedQuestion ? (
           <form onSubmit={handleSubmitTypedAnswer} className="space-y-4 pt-2">
             <div
-              className={`space-y-2 transition-all ${
+              className={`rounded-2xl border-2 border-[#221C16] bg-[#FEF8ED] p-4 sm:p-5 shadow-[2.5px_2.5px_0px_#221C16] space-y-3 transition-all ${
                 isAnswerChecked && !isCorrect
                   ? "wn-shake-subtle"
                   : isAnswerChecked && isCorrect
@@ -637,7 +657,7 @@ export function QuizRunner({
             >
               <label
                 htmlFor="typed-recall-input"
-                className="block text-xs font-extrabold uppercase text-[#6B6258] tracking-wider text-center"
+                className="block text-xs font-black uppercase tracking-wider text-[#E06B43] text-center"
               >
                 {currentQuestion.type === "story_cloze"
                   ? "Điền từ thích hợp vào chỗ trống trong câu trên:"
@@ -655,23 +675,25 @@ export function QuizRunner({
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck="false"
+                inputMode="text"
+                enterKeyHint="done"
                 placeholder={
                   currentQuestion.type === "story_cloze"
                     ? "Nhập dạng từ thích hợp trong ngữ cảnh..."
                     : "Ví dụ: allocate..."
                 }
-                className={`w-full text-center px-4 py-3.5 rounded-xl border-2 text-base sm:text-xl font-bold placeholder-[#9CA3AF] shadow-[3px_3px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43] min-h-[48px] transition-colors ${
+                className={`w-full text-center px-4 py-3.5 rounded-xl border-2 text-base sm:text-xl font-black placeholder-[#8C8275] shadow-[2px_2px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43] min-h-[48px] transition-colors ${
                   isAnswerChecked
                     ? isCorrect
-                      ? "bg-[#F0FDF4] border-[#16A34A] text-[#166534]"
-                      : "bg-[#FEF2F2] border-[#DC2626] text-[#991B1B]"
-                    : "bg-white border-[#221C16] text-[#221C16]"
+                      ? "bg-[#DCFCE7] border-[#15803D] text-[#15803D]"
+                      : "bg-[#FEE2E2] border-[#B91C1C] text-[#B91C1C]"
+                    : "bg-[#FFFDF9] border-[#221C16] text-[#221C16] focus:bg-[#FFFDF9]"
                 } disabled:opacity-95`}
               />
               <p
                 aria-live="polite"
                 aria-atomic="true"
-                className={submissionError && !isAnswerChecked ? "text-xs font-bold text-[#B91C1C]" : "wn-sr-only"}
+                className={submissionError && !isAnswerChecked ? "text-xs font-bold text-[#B91C1C] text-center" : "wn-sr-only"}
               >
                 {submissionError && !isAnswerChecked ? submissionError : ""}
               </p>
@@ -710,7 +732,7 @@ export function QuizRunner({
 
               // Styling logic depending on checked state
               let buttonStyle =
-                "bg-[#FFFDF9] text-[#221C16] border-[#221C16] hover:bg-[#FAF6EE] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[4px_4px_0px_#221C16] active:translate-x-[1px] active:translate-y-[1px] shadow-[3px_3px_0px_#221C16]";
+                "bg-[#FFFDF9] text-[#221C16] border-[#221C16] hover:bg-[#FEF8ED] hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[4px_4px_0px_#221C16] active:translate-x-[1px] active:translate-y-[1px] shadow-[3px_3px_0px_#221C16]";
 
               if (isAnswerChecked) {
                 if (isAnswerOptionCorrect) {
@@ -721,7 +743,7 @@ export function QuizRunner({
                     "bg-[#FEE2E2] text-[#B91C1C] border-[#B91C1C] font-black line-through shadow-[3px_3px_0px_#B91C1C] wn-shake-subtle";
                 } else {
                   buttonStyle =
-                    "bg-[#F9FAFB] text-[#9CA3AF] border-gray-300 opacity-50";
+                    "bg-[#FAF6EE] text-[#8C8275] border-[#DCD3C5] opacity-50 shadow-none";
                 }
               }
 
@@ -737,10 +759,12 @@ export function QuizRunner({
                 >
                   <div className="flex items-center gap-3">
                     <span
-                      className={`w-7 h-7 shrink-0 rounded-lg border-2 border-current flex items-center justify-center text-xs font-black ${
+                      className={`w-7 h-7 shrink-0 rounded-lg border-2 border-[#221C16] flex items-center justify-center text-xs font-black transition-colors ${
                         isSelected
-                          ? "bg-current text-white"
-                          : "bg-white/80"
+                          ? "bg-[#221C16] text-[#FFFDF9]"
+                          : isAnswerChecked && isAnswerOptionCorrect
+                          ? "bg-[#15803D] text-[#FFFDF9] border-[#15803D]"
+                          : "bg-[#FAF6EE] text-[#221C16]"
                       }`}
                     >
                       {letter}
@@ -777,17 +801,17 @@ export function QuizRunner({
               {isCorrect ? "Trả lời đúng." : `Trả lời chưa đúng. Đáp án: ${expectedAnswer}.`}
             </p>
             <div
-              className={`p-4 sm:p-5 rounded-xl border-2 space-y-3 shadow-[2px_2px_0px_#221C16] ${
+              className={`p-4 sm:p-5 rounded-xl border-2 space-y-3 shadow-[2.5px_2.5px_0px_#221C16] ${
                 isCorrect
-                  ? "bg-[#F0FDF4] border-[#16A34A] text-[#166534]"
-                  : "bg-[#FEF2F2] border-[#DC2626] text-[#991B1B]"
+                  ? "bg-[#DCFCE7] border-[#15803D] text-[#15803D]"
+                  : "bg-[#FEE2E2] border-[#B91C1C] text-[#B91C1C]"
               }`}
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   {isCorrect ? (
                     <>
-                      <CheckCircle2 className="w-5 h-5 text-[#16A34A] shrink-0" />
+                      <CheckCircle2 className="w-5 h-5 text-[#15803D] shrink-0" />
                       <div className="space-y-0.5">
                         <span className="text-sm sm:text-base font-black block">Chính xác! Giỏi lắm!</span>
                         {currentQuestion.type === "story_cloze" && exp?.term && (
@@ -799,7 +823,7 @@ export function QuizRunner({
                     </>
                   ) : (
                     <>
-                      <XCircle className="w-5 h-5 text-[#DC2626] shrink-0" />
+                      <XCircle className="w-5 h-5 text-[#B91C1C] shrink-0" />
                       <div className="space-y-1">
                         <span className="text-sm sm:text-base font-black block">Chưa chính xác.</span>
                         {isTypedQuestion && (
@@ -829,9 +853,9 @@ export function QuizRunner({
                 )}
               </div>
 
-              {/* Full card explanation preview */}
+              {/* Full card explanation preview (matched with flashcard example block) */}
               {exp && (
-                <div className="bg-white/85 p-3.5 rounded-lg border border-[#DCD3C5] text-xs text-[#221C16] space-y-1 shadow-[1px_1px_0px_#221C16]">
+                <div className="bg-[#FFFDF9] p-3.5 rounded-xl border-2 border-[#221C16] text-xs text-[#221C16] space-y-1.5 shadow-[2px_2px_0px_#221C16]">
                   <p>
                     <strong className="text-[#E06B43]">{exp.term}</strong>
                     {exp.ipa && <span className="font-mono text-[#6B6258] ml-1.5">{exp.ipa}</span>}

@@ -56,6 +56,8 @@ describe("PhysicalFlashcard component", () => {
     expect(html).toContain("CÂU HỎI");
     expect(html).toContain("Hiện đáp án");
     expect(html).toContain("Space");
+    expect(html).toContain("hidden text-[11px]");
+    expect(html).toContain("sm:block");
   });
 
   it("renders back side with meaning and 4 FSRS rating buttons when revealed", () => {

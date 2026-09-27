@@ -18,6 +18,7 @@ import type {
   ProgressRatingCount,
   ProgressStateCount,
 } from "@/services/vocabulary/progress-service";
+import { ReviewActivityHeatmap } from "./ReviewActivityHeatmap";
 
 interface ProgressDashboardProps {
   analytics: ProgressAnalytics;
@@ -534,6 +535,11 @@ export function ProgressDashboard({ analytics }: ProgressDashboardProps) {
           <CalendarCheck className="h-16 w-16 text-[#0D9488]/40" strokeWidth={1.5} />
         </div>
       </section>
+
+      {/* Review Activity Heatmap & Streaks */}
+      {analytics.reviewActivity && (
+        <ReviewActivityHeatmap activityData={analytics.reviewActivity} />
+      )}
 
       {/* Attention & Upcoming Due */}
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">

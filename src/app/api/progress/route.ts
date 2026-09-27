@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { progressService } from "@/services/vocabulary";
+import { getServerStudyTimezone } from "@/lib/study-timezone-server";
 
 export async function GET() {
   try {
-    const summary = await progressService.getGlobalAnalytics();
+    const timezone = await getServerStudyTimezone();
+    const summary = await progressService.getGlobalAnalytics(timezone);
     return NextResponse.json({
       success: true,
       data: summary,

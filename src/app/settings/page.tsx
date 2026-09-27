@@ -3,10 +3,11 @@ import { Header } from "@/components/ui/Header";
 import { WordNestMascot } from "@/components/ui/Mascot";
 import { SpeechSettingsPanel } from "@/components/settings/SpeechSettingsPanel";
 import { SoundSettingsPanel } from "@/components/settings/SoundSettingsPanel";
+import { StudyTimezoneSetting } from "@/components/settings/StudyTimezoneSetting";
 
 export const metadata: Metadata = {
   title: "Cài đặt | WordNest",
-  description: "Tùy chỉnh giọng đọc, âm thanh và tương tác trên WordNest.",
+  description: "Tùy chỉnh giọng đọc, âm thanh và múi giờ học trên WordNest.",
 };
 
 export default function SettingsPage() {
@@ -20,12 +21,13 @@ export default function SettingsPage() {
               Cài đặt
             </h1>
             <p className="mt-1 text-xs font-bold text-[#6B6258] sm:text-sm">
-              Giọng đọc và âm thanh tương tác
+              Múi giờ học, giọng đọc và âm thanh tương tác
             </p>
           </div>
           <WordNestMascot mood="reading" size={72} />
         </section>
 
+        <StudyTimezoneSetting />
         <SoundSettingsPanel />
         <SpeechSettingsPanel />
       </main>

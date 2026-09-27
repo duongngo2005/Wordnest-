@@ -11,7 +11,16 @@ import {
 import { playUISound } from "@/lib/ui-sound";
 import { useToast } from "@/components/ui/ToastProvider";
 
+const subscribeToNothing = () => () => {};
+const getInteractiveClientSnapshot = () => true;
+const getInteractiveServerSnapshot = () => false;
+
 export function SoundSettingsPanel() {
+  const isInteractive = useSyncExternalStore(
+    subscribeToNothing,
+    getInteractiveClientSnapshot,
+    getInteractiveServerSnapshot
+  );
   const preferences = useSyncExternalStore(
     subscribeToUISoundPreferences,
     getUISoundPreferences,
@@ -73,8 +82,9 @@ export function SoundSettingsPanel() {
             <button
               type="button"
               onClick={() => handleToggle(true)}
+              disabled={!isInteractive}
               aria-pressed={preferences.enabled}
-              className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border-2 border-[#221C16] px-3.5 py-2 text-xs font-black transition-all ${
+              className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border-2 border-[#221C16] px-3.5 py-2 text-xs font-black transition-all disabled:cursor-wait disabled:opacity-70 ${
                 preferences.enabled
                   ? "bg-[#DCFCE7] text-[#15803D] shadow-[2px_2px_0px_#221C16]"
                   : "bg-[#FFFDF9] text-[#6B6258] hover:bg-[#FAF6EE]"
@@ -86,8 +96,9 @@ export function SoundSettingsPanel() {
             <button
               type="button"
               onClick={() => handleToggle(false)}
+              disabled={!isInteractive}
               aria-pressed={!preferences.enabled}
-              className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border-2 border-[#221C16] px-3.5 py-2 text-xs font-black transition-all ${
+              className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border-2 border-[#221C16] px-3.5 py-2 text-xs font-black transition-all disabled:cursor-wait disabled:opacity-70 ${
                 !preferences.enabled
                   ? "bg-[#FEE2E2] text-[#B91C1C] shadow-[2px_2px_0px_#221C16]"
                   : "bg-[#FFFDF9] text-[#6B6258] hover:bg-[#FAF6EE]"

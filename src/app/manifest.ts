@@ -7,10 +7,10 @@ export default function manifest(): MetadataRoute.Manifest {
     description:
       "Ứng dụng học từ vựng tiếng Anh cá nhân với flashcard, ôn tập ngắt quãng và luyện nhớ chủ động.",
     start_url: "/",
+    scope: "/",
     display: "standalone",
     background_color: "#FAF6EE",
     theme_color: "#FAF6EE",
-    orientation: "portrait",
     categories: ["education", "productivity"],
     lang: "vi",
     icons: [

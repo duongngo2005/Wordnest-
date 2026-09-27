@@ -92,7 +92,7 @@ export function PhysicalFlashcard({
             >
               <span>Hiện đáp án</span>
             </button>
-            <span className="text-[11px] font-semibold text-[#8C8275] select-none">
+            <span className="hidden text-[11px] font-semibold text-[#8C8275] select-none sm:block">
               Nhấn nút hoặc phím <kbd className="font-mono font-bold text-[#221C16] bg-[#FAF6EE] px-1.5 py-0.5 rounded border border-[#DCD3C5]">Space</kbd>
             </span>
           </div>
