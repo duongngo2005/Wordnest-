@@ -17,7 +17,8 @@
     "verify:phase3": "npx tsx scripts/verify-phase3.ts",
     "verify:all": "npx tsx scripts/verify-phase1.ts && npx tsx scripts/verify-phase2.ts && npx tsx scripts/verify-phase3.ts",
     "db:push": "prisma db push",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "db:migrate:mysql-to-sqlite": "npx tsx scripts/migrate-mysql-to-sqlite.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -43,6 +44,7 @@
     "eslint-config-next": "16.3.5",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^4.1.11"
   }

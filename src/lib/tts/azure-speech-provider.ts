@@ -16,7 +16,7 @@ export class CloudTtsUnavailableError extends Error {
 }
 
 export class CloudTtsSynthesisError extends Error {
-  constructor(status: number) {
+  constructor(status: number, public readonly originalError?: unknown) {
     super("Cloud speech synthesis failed");
     this.name = "CloudTtsSynthesisError";
     this.status = status;

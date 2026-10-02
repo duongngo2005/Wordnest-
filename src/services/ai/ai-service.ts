@@ -27,6 +27,7 @@ import {
   AIInvalidResponseError,
   AIProviderUnavailableError,
 } from "./ai-core";
+import { OllamaAiProvider } from "./ollama-ai-provider";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -718,7 +719,7 @@ export class GeminiAIService implements AIService {
     return error instanceof GeminiHttpError && [502, 503, 504].includes(error.status);
   }
 
-  private parseStructuredResponse<T>(rawText: string, schema?: ZodSchema<T>): T {
+  protected parseStructuredResponse<T>(rawText: string, schema?: ZodSchema<T>): T {
     const parsedJson = cleanAndParseJson<T>(rawText);
 
     if (!schema) {
@@ -1382,5 +1383,78 @@ You MUST respond strictly with a valid JSON object matching this schema:
 
 }
 
+type StructuredGenerationOptions<T> = {
+  prompt: string;
+  schema?: ZodSchema<T>;
+  temperature?: number;
+  maxRetries?: number;
+  timeoutMs?: number;
+  fallback?: () => Promise<T> | T;
+  openRouterResponseFormat?: "json_object" | "none";
+};
 
-export const aiService = new GeminiAIService();
+/**
+ * Reuses WordNest's prompt, validation, and retry flow with a local Ollama
+ * daemon. Local mode deliberately has no cloud fallback so content is not sent
+ * outside the machine when the daemon is unavailable.
+ */
+export class OllamaAIService extends GeminiAIService {
+  private readonly ollama: OllamaAiProvider;
+  private readonly ollamaModel: string;
+
+  constructor(options?: { baseUrl?: string; model?: string; fetcher?: typeof fetch }) {
+    super([]);
+    this.ollamaModel = options?.model?.trim() || "gemma3:4b";
+    this.ollama = new OllamaAiProvider({
+      baseUrl: options?.baseUrl || "http://127.0.0.1:11434",
+      model: this.ollamaModel,
+      fetcher: options?.fetcher,
+    });
+  }
+
+  async callGeminiStructured<T>(options: StructuredGenerationOptions<T>): Promise<T> {
+    const {
+      prompt,
+      schema,
+      temperature = 0.2,
+      maxRetries = 2,
+      timeoutMs = DEFAULT_GEMINI_TIMEOUT_MS,
+    } = options;
+    let malformedAttempts = 0;
+
+    while (true) {
+      try {
+        const rawText = await this.ollama.generateJson({ prompt, temperature, timeoutMs });
+        const result = this.parseStructuredResponse(rawText, schema);
+        console.info(`[AI] provider=ollama model=${this.ollamaModel} result=success`);
+        return result;
+      } catch (error) {
+        const normalizedError = error instanceof Error ? error : new AIError(String(error));
+        if (isMalformedStructuredOutput(normalizedError)) {
+          if (malformedAttempts < Math.min(maxRetries, 1)) {
+            malformedAttempts++;
+            console.warn(
+              `[AI] provider=ollama model=${this.ollamaModel} result=invalid_json retry=${malformedAttempts}`
+            );
+            continue;
+          }
+          throw new AIInvalidResponseError(undefined, normalizedError);
+        }
+        throw normalizedError;
+      }
+    }
+  }
+}
+
+function createAiServiceFromEnvironment(): AIService {
+  if (process.env.AI_PROVIDER?.trim().toLowerCase() === "ollama") {
+    return new OllamaAIService({
+      baseUrl: process.env.OLLAMA_BASE_URL,
+      model: process.env.OLLAMA_MODEL,
+    });
+  }
+
+  return new GeminiAIService();
+}
+
+export const aiService = createAiServiceFromEnvironment();

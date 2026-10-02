@@ -1,0 +1,25 @@
+name: wordnest-local-ai
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+
+  kokoro:
+    image: ghcr.io/openttsgroup/kokoro-open-tts:latest
+    restart: unless-stopped
+    environment:
+      KOKORO_DEVICE: ${KOKORO_DEVICE:-cpu}
+      KOKORO_PRELOAD_LANGS: a,b
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - kokoro-cache:/root/.cache
+
+volumes:
+  ollama-models:
+  kokoro-cache:

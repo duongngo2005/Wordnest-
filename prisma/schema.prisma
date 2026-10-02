@@ -1,5 +1,5 @@
 datasource db {
-  provider = "mysql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -16,7 +16,7 @@ enum FlashcardStatus {
 model Deck {
   id           String        @id @default(cuid())
   name         String
-  description  String?       @db.Text
+  description  String?
   folderId     String?
   folder       Folder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
   position     Int           @default(0)
@@ -36,7 +36,7 @@ model Folder {
   id             String   @id @default(cuid())
   name           String
   normalizedName String   @unique
-  description    String?  @db.Text
+  description    String?
   icon           String   @default("book")
   color          String   @default("orange")
   position       Int      @default(0)
@@ -54,17 +54,17 @@ model Flashcard {
   deck             Deck            @relation(fields: [deckId], references: [id], onDelete: Cascade)
   term             String
   normalizedTerm   String
-  meaningVi        String          @db.Text
-  definitionEn     String?         @db.Text
+  meaningVi        String
+  definitionEn     String?
   ipa              String?
   partOfSpeech     String?
   cefr             String?
-  exampleEn        String?         @db.Text
-  exampleVi        String?         @db.Text
-  imageUrl         String?         @db.Text
+  exampleEn        String?
+  exampleVi        String?
+  imageUrl         String?
   imageSource      String?
   imageSearchQuery String?
-  imagePageUrl     String?         @db.Text
+  imagePageUrl     String?
   imageAuthor      String?
   imageLicense     String?
   status           FlashcardStatus @default(NEW)
@@ -103,7 +103,7 @@ model ReviewLog {
   elapsedDays     Int
   lastElapsedDays Int
   scheduledDays   Int
-  reviewEventId   String?   @unique @db.VarChar(191)
+  reviewEventId   String?   @unique
   review          DateTime  @default(now())
   createdAt       DateTime  @default(now())
 
@@ -117,7 +117,7 @@ model Story {
   deckId      String
   deck        Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
   title       String
-  content     String   @db.Text
+  content     String
   cefr        String
   length      String
   topic       String
@@ -162,15 +162,15 @@ model PracticeAttempt {
   id             String    @id @default(cuid())
   flashcardId    String
   flashcard      Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
-  sessionId      String    @db.VarChar(191)
-  questionId     String?   @db.VarChar(191)
-  prompt         String?   @db.Text
+  sessionId      String
+  questionId     String?
+  prompt         String?
   attemptNumber  Int       @default(1)
-  mode           String    @db.VarChar(32)
-  questionType   String    @db.VarChar(64)
+  mode           String
+  questionType   String
   correct        Boolean
-  answer         String    @db.Text
-  expectedAnswer String    @db.Text
+  answer         String
+  expectedAnswer String
   responseMs     Int?
   createdAt      DateTime  @default(now())
 

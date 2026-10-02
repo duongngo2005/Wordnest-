@@ -24,6 +24,8 @@
 # production
 /build
 /.wordnest-cache/
+/prisma/*.db
+/prisma/*.db-journal
 
 # misc
 .DS_Store
