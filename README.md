@@ -53,6 +53,26 @@ npm run db:migrate:mysql-to-sqlite
 
 The command refuses to overwrite a non-empty SQLite database, rejects schema mismatches or extra application tables, and rolls back the whole SQLite write if any insert fails. MySQL-specific migration SQL is retained under `prisma/mysql-migrations-archive`; SQLite starts from its own baseline migration.
 
+### MySQL backup for transfer or recovery
+
+To create an importable backup of the complete MySQL database (schema, data, triggers, routines, and events), set `MYSQL_DATABASE_URL` in `.env.local` and run:
+
+```bash
+npm run db:export:mysql
+```
+
+The command writes a timestamped `.sql` file under `backups/`; backups are deliberately ignored by Git. The source database is never modified. To choose an explicit filename:
+
+```bash
+npm run db:export:mysql -- backups/wordnest-2026-10-02.sql
+```
+
+Copy that file to another machine and import it with a MySQL account that can create the database:
+
+```bash
+mysql --host=HOST --port=3306 --user=USER --password < backups/wordnest-2026-10-02.sql
+```
+
 ### Local Ollama and Kokoro voices
 
 WordNest can keep generated flashcards, stories, contextual translation, and curated audio entirely on the same Ubuntu machine. The included [docker-compose.local-ai.yml](docker-compose.local-ai.yml) binds both services to loopback only, so they cannot be reached from another device on the network.

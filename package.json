@@ -18,7 +18,8 @@
     "verify:all": "npx tsx scripts/verify-phase1.ts && npx tsx scripts/verify-phase2.ts && npx tsx scripts/verify-phase3.ts",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
-    "db:migrate:mysql-to-sqlite": "npx tsx scripts/migrate-mysql-to-sqlite.ts"
+    "db:migrate:mysql-to-sqlite": "npx tsx scripts/migrate-mysql-to-sqlite.ts",
+    "db:export:mysql": "npx tsx scripts/export-mysql-data.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
