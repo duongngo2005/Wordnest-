@@ -3,6 +3,7 @@
 import React from "react";
 import { FlashcardData } from "../flashcards/FlashcardItem";
 import { PronounceButton } from "../flashcards/PronounceButton";
+import { CefrBadge } from "../flashcards/CefrBadge";
 import { Rating, ReviewSchedulePreview } from "@/lib/fsrs";
 import { HelpCircle, Loader2, RotateCcw, ThumbsUp, Zap } from "lucide-react";
 
@@ -55,12 +56,18 @@ export function PhysicalFlashcard({
               CÂU HỎI
             </span>
             <div onClick={handleAudioClick}>
-              <PronounceButton text={card.term} size="sm" label="Nghe từ" />
+              <PronounceButton text={card.term} size="md" />
             </div>
           </div>
 
           {/* Front Content: Term & Optional Image */}
           <div className="my-auto py-6 text-center space-y-4">
+            {card.cefr ? (
+              <div className="flex justify-center">
+                <CefrBadge level={card.cefr} size="md" showPrefix />
+              </div>
+            ) : null}
+
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-[#221C16] tracking-tight break-words">
               {card.term}
             </h1>
@@ -105,12 +112,15 @@ export function PhysicalFlashcard({
         >
           {/* Back Header: Term reminder, POS & IPA */}
           <div className="flex items-center justify-between border-b border-dashed border-[#DCD3C5] pb-3">
-            <div className="min-w-0 flex items-baseline gap-2">
+            <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
               <span className="truncate text-base sm:text-lg font-black text-[#221C16]">
                 {card.term}
               </span>
+              {card.cefr ? (
+                <CefrBadge level={card.cefr} size="sm" />
+              ) : null}
               {card.partOfSpeech ? (
-                <span className="shrink-0 text-xs font-semibold italic text-[#E06B43]">
+                <span className="shrink-0 text-xs font-semibold italic text-[var(--accent)]">
                   {card.partOfSpeech}
                 </span>
               ) : null}
@@ -122,7 +132,7 @@ export function PhysicalFlashcard({
             </div>
 
             <div onClick={handleAudioClick}>
-              <PronounceButton text={card.term} size="sm" label="Nghe từ" />
+              <PronounceButton text={card.term} size="md" />
             </div>
           </div>
 
@@ -130,7 +140,7 @@ export function PhysicalFlashcard({
           <div className="my-auto py-4 space-y-3.5">
             {/* Vietnamese Meaning */}
             <div className="rounded-xl border-2 border-[#221C16] bg-[#FEF8ED] p-3.5 shadow-[2px_2px_0px_#221C16]">
-              <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#E06B43] mb-0.5">
+              <div className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--accent)] mb-0.5">
                 Nghĩa tiếng Việt
               </div>
               <p className="text-lg sm:text-xl font-black text-[#221C16] break-words">

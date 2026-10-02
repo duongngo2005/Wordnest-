@@ -410,6 +410,7 @@ test("Phase 2C - Scenario A: 10 questions (7 correct, 3 wrong), retry 3 correct,
 
     await page.goto(`/decks/${deck.id}/quiz?mode=typed`);
     await expect(page.getByText("Câu 1 / 10")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Thoát Quiz" })).toHaveCount(0);
 
     const input = page.locator("#typed-recall-input");
 

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Book,
-  ChevronDown,
   ChevronRight,
   Folder as FolderIcon,
   Layers,
@@ -22,7 +21,7 @@ interface FolderLibraryProps {
   uncategorizedDecks: FolderDeckSummary[];
 }
 
-type Composer = "deck" | "folder" | null;
+type Composer = "folder" | null;
 
 async function responseError(response: Response, fallback: string) {
   const data: unknown = await response.json().catch(() => null);
@@ -36,35 +35,33 @@ function DeckRow({
   folders,
   currentFolderId,
   onMove,
-  onReorder,
   onDelete,
 }: {
   deck: FolderDeckSummary;
   folders: FolderDetail[];
   currentFolderId: string | null;
   onMove: (deckId: string, folderId: string | null) => void;
-  onReorder?: (direction: "up" | "down") => void;
   onDelete?: (deck: FolderDeckSummary) => void;
 }) {
   const isDue = deck.dueTodayCount > 0;
   const summary = isDue ? `${deck.dueTodayCount} thẻ cần ôn` : `${deck.totalCards} thẻ`;
 
   return (
-    <li className="wn-tile relative flex min-w-0 flex-col justify-between gap-4 p-3.5 overflow-visible rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] border-t-[3px] border-t-[#E06B43] shadow-[2px_2px_0px_#221C16] transition-transform hover:-translate-y-0.5 focus-within:z-30">
+    <li className="wn-tile relative flex min-w-0 flex-col justify-between gap-4 p-3.5 overflow-visible rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] border-t-[3px] border-t-[var(--accent)] shadow-[2px_2px_0px_#221C16] transition-transform hover:-translate-y-0.5 focus-within:z-30">
       <Link
         href={`/decks/${deck.id}`}
         className="group flex min-w-0 items-start gap-3 rounded-lg p-0.5 transition-transform active:translate-x-0.5"
       >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FAF6EE] shadow-[1.5px_1.5px_0px_#221C16]">
-          <Book className="h-4 w-4 text-[#E06B43]" strokeWidth={2.5} />
+          <Book className="h-4 w-4 text-[var(--accent)]" strokeWidth={2.5} />
         </span>
         <div className="min-w-0">
-          <span className="block truncate font-black text-[#221C16] group-hover:text-[#E06B43] sm:text-base">
+          <span className="block truncate font-black text-[#221C16] group-hover:text-[var(--accent)] sm:text-base">
             {deck.name}
           </span>
           <span
             className={`inline-block text-xs font-bold ${
-              isDue ? "text-[#E06B43]" : "text-[#6B6258]"
+              isDue ? "text-[var(--accent)]" : "text-[#6B6258]"
             }`}
           >
             {summary}
@@ -119,32 +116,6 @@ function DeckRow({
                 ))}
               </select>
             </label>
-            {onReorder ? (
-              <div className="mt-2.5 flex gap-2 border-t border-[#DCD3C5] pt-2.5">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    const details = e.currentTarget.closest("details");
-                    if (details) details.removeAttribute("open");
-                    onReorder("up");
-                  }}
-                  className="brick-button-secondary flex-1 py-2 text-xs font-bold"
-                >
-                  Lên
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    const details = e.currentTarget.closest("details");
-                    if (details) details.removeAttribute("open");
-                    onReorder("down");
-                  }}
-                  className="brick-button-secondary flex-1 py-2 text-xs font-bold"
-                >
-                  Xuống
-                </button>
-              </div>
-            ) : null}
             {onDelete ? (
               <div className="mt-2.5 border-t border-[#DCD3C5] pt-2.5">
                 <button
@@ -170,21 +141,12 @@ function DeckRow({
 export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProps) {
   const router = useRouter();
   const toast = useToast();
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [composer, setComposer] = useState<Composer>(null);
-  const [deckName, setDeckName] = useState("");
-  const [deckFolderId, setDeckFolderId] = useState<string | null>(null);
   const [folderName, setFolderName] = useState("");
   const [editingFolder, setEditingFolder] = useState<FolderDetail | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const refresh = () => startTransition(() => router.refresh());
-
-  const openDeckComposer = (folderId: string | null = null) => {
-    setDeckName("");
-    setDeckFolderId(folderId);
-    setComposer("deck");
-  };
 
   const openFolderComposer = (folder?: FolderDetail) => {
     setFolderName(folder?.name ?? "");
@@ -195,37 +157,6 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
   const closeComposer = () => {
     setComposer(null);
     setEditingFolder(null);
-  };
-
-  const createDeck = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    try {
-      const response = await fetch("/api/decks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: deckName, folderId: deckFolderId }),
-      });
-      if (!response.ok) {
-        toast.error("Không thể tạo bộ từ", { description: await responseError(response, "Thử lại.") });
-        return;
-      }
-      const data: unknown = await response.json();
-      if (
-        typeof data === "object" &&
-        data !== null &&
-        "deck" in data &&
-        typeof data.deck === "object" &&
-        data.deck !== null &&
-        "id" in data.deck &&
-        typeof data.deck.id === "string"
-      ) {
-        router.push(`/decks/${data.deck.id}`);
-        return;
-      }
-      toast.error("Không thể tạo bộ từ", { description: "Thử lại." });
-    } catch {
-      toast.error("Không thể tạo bộ từ", { description: "Kiểm tra kết nối rồi thử lại." });
-    }
   };
 
   const saveFolder = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -322,31 +253,9 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
     }
   };
 
-  const reorderDeck = async (folder: FolderDetail, deckId: string, direction: "up" | "down") => {
-    const currentIndex = folder.decks.findIndex((deck) => deck.id === deckId);
-    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= folder.decks.length) return;
-    const deckIds = folder.decks.map((deck) => deck.id);
-    [deckIds[currentIndex], deckIds[targetIndex]] = [deckIds[targetIndex], deckIds[currentIndex]];
-    try {
-      const response = await fetch(`/api/folders/${folder.id}/decks/order`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deckIds }),
-      });
-      if (!response.ok) {
-        toast.error("Không thể sắp xếp bộ từ", { description: await responseError(response, "Thử lại.") });
-        return;
-      }
-      refresh();
-    } catch {
-      toast.error("Không thể sắp xếp bộ từ", { description: "Kiểm tra kết nối rồi thử lại." });
-    }
-  };
-
   return (
     <section className="wn-section" aria-labelledby="library-heading">
-      {/* Top Header & Prominent Action Buttons */}
+      {/* Top Header & Collection Action */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 id="library-heading" className="text-2xl sm:text-3xl font-black tracking-tight text-[#221C16]">
           Thư viện
@@ -354,76 +263,14 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => openDeckComposer()}
-            className="brick-button-primary px-3.5 py-2 text-xs sm:text-sm font-black"
-          >
-            <Plus className="h-4 w-4" strokeWidth={2.5} />
-            <span>Bộ từ</span>
-          </button>
-          <button
-            type="button"
             onClick={() => openFolderComposer()}
-            className="brick-button-secondary px-3.5 py-2 text-xs sm:text-sm font-black"
+            className="brick-button-primary px-3.5 py-2 text-xs sm:text-sm font-black"
           >
             <Plus className="h-4 w-4" strokeWidth={2.5} />
             <span>Bộ sưu tập</span>
           </button>
         </div>
       </div>
-
-      {/* Composer Modal / Sheet */}
-      {composer === "deck" ? (
-        <form
-          onSubmit={createDeck}
-          className="brick-card wn-form-group bg-[#FFFDF9] p-4 sm:p-5"
-          aria-label="Tạo bộ từ"
-        >
-          <div className="flex items-center gap-2 border-b-2 border-dashed border-[#DCD3C5] pb-3">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FEF3C7] shadow-[1.5px_1.5px_0px_#221C16]">
-              <Plus className="h-4 w-4 text-[#E06B43]" strokeWidth={2.5} />
-            </span>
-            <h2 className="text-base font-black text-[#221C16]">Tạo bộ từ mới</h2>
-          </div>
-          <label className="wn-field-label">
-            <span>Tên bộ từ</span>
-            <input
-              autoFocus
-              required
-              value={deckName}
-              onChange={(event) => setDeckName(event.target.value)}
-              placeholder="VD: 300 từ vựng cốt lõi..."
-              className="wn-field"
-            />
-          </label>
-          <label className="wn-field-label">
-            <span>Bộ sưu tập</span>
-            <select
-              value={deckFolderId ?? ""}
-              onChange={(event) => setDeckFolderId(event.target.value || null)}
-              className="wn-field"
-            >
-              <option value="">Không có (Bộ từ độc lập)</option>
-              {folders.map((folder) => (
-                <option key={folder.id} value={folder.id}>
-                  {folder.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="wn-form-actions">
-            <button disabled={isPending} className="brick-button-primary px-5 py-2 text-sm font-black">
-              Tạo
-            </button>
-            <button
-              type="button"
-              onClick={closeComposer}
-              className="brick-button-secondary px-4 py-2 text-sm font-bold"
-            >
-              Hủy
-            </button>
-          </div>
-        </form>
-      ) : null}
 
       {composer === "folder" ? (
         <form
@@ -469,15 +316,20 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
       {folders.length === 0 && uncategorizedDecks.length === 0 ? (
         <div className="brick-card flex flex-col items-center justify-center p-8 text-center bg-[#FFFDF9] space-y-4">
           <WordNestMascot mood="reading" size={96} />
-          <h2 className="text-xl font-black text-[#221C16]">Chưa có bộ từ</h2>
+          <div className="space-y-1.5">
+            <h2 className="text-xl font-black text-[#221C16]">Chưa có bộ sưu tập</h2>
+            <p className="text-sm font-semibold leading-relaxed text-[#6B6258]">
+              Tạo bộ sưu tập trước, rồi thêm bộ từ bên trong.
+            </p>
+          </div>
           <div className="flex gap-2 pt-2">
             <button
               type="button"
-              onClick={() => openDeckComposer()}
+              onClick={() => openFolderComposer()}
               className="brick-button-primary px-4 py-2.5 text-xs sm:text-sm font-black"
             >
               <Plus className="h-4 w-4" strokeWidth={2.5} />
-              <span>+ Bộ từ</span>
+              <span>+ Bộ sưu tập</span>
             </button>
           </div>
         </div>
@@ -486,7 +338,6 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
       {/* Folders / Collections Grid */}
       <div className="grid gap-4 lg:grid-cols-2">
         {folders.map((folder) => {
-          const isExpanded = expanded.has(folder.id);
           const isDue = folder.progress.dueTodayCount > 0;
           const summary = isDue
             ? `${folder.progress.dueTodayCount} thẻ cần ôn`
@@ -498,139 +349,46 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
               data-collection-card={folder.id}
               className="wn-primary-surface relative scroll-mt-20 overflow-visible rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] border-t-4 border-t-[#D97706] shadow-[3px_3px_0px_#221C16] transition-all hover:shadow-[4px_4px_0px_#221C16] focus-within:z-30"
             >
-              {/* Mobile preserves the compact, expandable collection card with warm binder styling. */}
+              {/* Home stays collection-first: opening a collection reveals its decks. */}
               <div className="lg:hidden">
-                <div
-                  className={`grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-t-[calc(var(--radius-lg)-2px)] bg-[#F8F4EC] p-3 sm:px-4 ${
-                    isExpanded ? "border-b-2 border-dashed border-[#DCD3C5]" : "rounded-b-[calc(var(--radius-lg)-2px)]"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpanded((current) => {
-                        const next = new Set(current);
-                        if (next.has(folder.id)) next.delete(folder.id);
-                        else next.add(folder.id);
-                        return next;
-                      })
-                    }
-                    aria-expanded={isExpanded}
-                    aria-label={`${isExpanded ? "Thu gọn" : "Mở"} ${folder.name}`}
-                    className="wn-button wn-button-quiet wn-icon-button h-11 w-11 rounded-lg"
-                  >
-                    <span className="sr-only">{isExpanded ? "Thu gọn" : "Mở"}</span>
-                    {isExpanded ? (
-                      <ChevronDown className="h-5 w-5 text-[#221C16]" strokeWidth={2.5} />
-                    ) : (
-                      <ChevronRight className="h-5 w-5 text-[#221C16]" strokeWidth={2.5} />
-                    )}
-                  </button>
-
+                <div className="rounded-[calc(var(--radius-lg)-2px)] bg-[#F8F4EC] p-3 sm:px-4">
                   <Link
                     href={`/folders/${folder.id}`}
-                    className="group flex min-w-0 items-center gap-2.5 rounded-lg p-1 transition-transform active:translate-x-0.5"
+                    aria-label={`Mở bộ sưu tập ${folder.name}`}
+                    className="group flex min-w-0 items-center justify-between gap-2.5 rounded-lg p-1 transition-transform active:translate-x-0.5"
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
-                      <Layers className="h-4 w-4 text-[#D97706]" strokeWidth={2.5} />
-                    </span>
-                    <div className="min-w-0">
-                      <span className="block truncate font-black text-[#221C16] group-hover:text-[#E06B43] sm:text-base">
-                        {folder.name}
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
+                        <Layers className="h-4 w-4 text-[#D97706]" strokeWidth={2.5} />
                       </span>
-                      <span className={`inline-block text-xs font-bold ${isDue ? "text-[#E06B43]" : "text-[#6B6258]"}`}>
-                        {summary}
-                      </span>
+                      <div className="min-w-0">
+                        <span className="block truncate font-black text-[#221C16] group-hover:text-[var(--accent)] sm:text-base">
+                          {folder.name}
+                        </span>
+                        <span className={`inline-block text-xs font-bold ${isDue ? "text-[var(--accent)]" : "text-[#6B6258]"}`}>
+                          {summary}
+                        </span>
+                      </div>
                     </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-[#8C8275] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--accent)]" strokeWidth={2.5} />
                   </Link>
-
-                  <button
-                    type="button"
-                    onClick={() => openDeckComposer(folder.id)}
-                    aria-label={`Tạo bộ từ trong ${folder.name}`}
-                    className="brick-button-secondary px-2.5 py-2 text-xs font-black"
-                  >
-                    <Plus className="h-4 w-4 text-[#E06B43]" />
-                    <span>Bộ từ</span>
-                  </button>
-
-                  <details className="relative wn-menu-details">
-                    <summary
-                      aria-label={`Tùy chọn cho ${folder.name}`}
-                      className="wn-icon-button relative z-50 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
-                    >
-                      <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
-                    </summary>
-                    <div
-                      className="fixed inset-0 z-40 cursor-default"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        e.currentTarget.closest("details")?.removeAttribute("open");
-                      }}
-                      onPointerDown={(e) => {
-                        e.stopPropagation();
-                        e.currentTarget.closest("details")?.removeAttribute("open");
-                      }}
-                    />
-                    <div className="absolute right-0 top-full z-50 mt-1.5 w-48 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
-                      <button type="button" onClick={() => openFolderComposer(folder)} className="wn-button wn-button-quiet w-full justify-start text-xs font-bold">
-                        Đổi tên
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.currentTarget.closest("details")?.removeAttribute("open");
-                          deleteFolder(folder);
-                        }}
-                        className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold cursor-pointer"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        <span>Xóa</span>
-                      </button>
-                    </div>
-                  </details>
                 </div>
-
-                {isExpanded ? (
-                  <ul className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {folder.decks.length === 0 ? (
-                      <li className="flex flex-wrap items-center justify-between gap-3 py-4 text-sm font-bold text-[#6B6258]">
-                        <span>Chưa có bộ từ</span>
-                        <button type="button" onClick={() => openDeckComposer(folder.id)} className="brick-button-primary px-3 py-2 text-xs font-black">
-                          <Plus className="h-4 w-4" /> Bộ từ
-                        </button>
-                      </li>
-                    ) : (
-                      folder.decks.map((deck) => (
-                        <DeckRow
-                          key={deck.id}
-                          deck={deck}
-                          folders={folders}
-                          currentFolderId={folder.id}
-                          onMove={moveDeck}
-                          onReorder={(direction) => reorderDeck(folder, deck.id, direction)}
-                          onDelete={deleteDeck}
-                        />
-                      ))
-                    )}
-                  </ul>
-                ) : null}
               </div>
 
-              {/* Desktop: Study binder folder with organic metrics and visible action */}
+              {/* Desktop: Study binder folder with organic metrics. */}
               <div className="hidden min-h-44 flex-col p-5 lg:flex">
                 <div className="flex items-start justify-between gap-3">
                   <Link
                     href={`/folders/${folder.id}`}
                     aria-label={`Mở bộ sưu tập ${folder.name}`}
-                    className="group flex min-w-0 items-start gap-3 rounded-lg transition-transform active:translate-x-0.5"
+                    className="group flex min-w-0 flex-1 items-start gap-3 rounded-lg transition-transform active:translate-x-0.5"
                   >
                     <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FEF3C7] shadow-[1.5px_1.5px_0px_#221C16]">
                       <Layers className="h-5 w-5 text-[#D97706]" strokeWidth={2.5} />
                     </span>
                     <span className="min-w-0">
                       <span className="block text-[11px] font-black uppercase tracking-wider text-[#8A5817]">Bộ sưu tập</span>
-                      <span className="mt-0.5 block break-words text-xl font-black tracking-tight text-[#221C16] group-hover:text-[#C85630]">
+                      <span className="mt-0.5 block break-words text-xl font-black tracking-tight text-[#221C16] group-hover:text-[var(--accent-strong)]">
                         {folder.name}
                       </span>
                       {folder.description ? (
@@ -638,53 +396,6 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
                       ) : null}
                     </span>
                   </Link>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => openDeckComposer(folder.id)}
-                      aria-label={`Tạo bộ từ trong ${folder.name}`}
-                      className="brick-button-secondary px-2.5 py-2 text-xs font-black"
-                    >
-                      <Plus className="h-4 w-4 text-[#E06B43]" />
-                      <span>Bộ từ</span>
-                    </button>
-                    <details className="relative wn-menu-details">
-                      <summary
-                        aria-label={`Tùy chọn bộ sưu tập ${folder.name}`}
-                        className="wn-icon-button relative z-50 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
-                      >
-                        <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
-                      </summary>
-                      <div
-                        className="fixed inset-0 z-40 cursor-default"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.currentTarget.closest("details")?.removeAttribute("open");
-                        }}
-                        onPointerDown={(e) => {
-                          e.stopPropagation();
-                          e.currentTarget.closest("details")?.removeAttribute("open");
-                        }}
-                      />
-                      <div className="absolute right-0 top-full z-50 mt-1.5 w-48 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
-                        <button type="button" onClick={() => openFolderComposer(folder)} className="wn-button wn-button-quiet w-full justify-start text-xs font-bold">
-                          Đổi tên
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.currentTarget.closest("details")?.removeAttribute("open");
-                            deleteFolder(folder);
-                          }}
-                          className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold cursor-pointer"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          <span>Xóa</span>
-                        </button>
-                      </div>
-                    </details>
-                  </div>
                 </div>
 
                 {/* Organic Metrics & Status replacing the rigid 3-box strip */}
@@ -704,7 +415,7 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
                     <dt className="sr-only">Hôm nay</dt>
                     <dd>
                       {isDue ? (
-                        <span className="wn-marker-amber text-xs font-black text-[#C85630]">
+                        <span className="wn-marker-amber text-xs font-black text-[var(--accent-strong)]">
                           {folder.progress.dueTodayCount} thẻ cần ôn
                         </span>
                       ) : (
@@ -725,7 +436,7 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
       {uncategorizedDecks.length > 0 ? (
         <section className="wn-section pt-2" aria-labelledby="independent-decks-heading">
           <div className="flex items-center gap-2">
-            <span className="h-3 w-1.5 rounded-full bg-[#E06B43]" />
+            <span className="h-3 w-1.5 rounded-full bg-[var(--accent)]" />
             <h2 id="independent-decks-heading" className="text-lg font-black text-[#221C16]">
               Bộ từ độc lập
             </h2>

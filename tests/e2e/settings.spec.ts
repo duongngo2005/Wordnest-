@@ -62,3 +62,34 @@ test.describe("voice settings", () => {
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 });
+
+test.describe("mascot settings", () => {
+  test("switches to Dino, persists the choice, and applies its green theme", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/settings");
+
+    const mascotGroup = page.getByRole("group", { name: "Chọn linh vật WordNest" });
+    const dinoRadio = mascotGroup.getByRole("radio", { name: /Dino/ });
+    await expect(dinoRadio).toBeVisible();
+    await dinoRadio.check();
+    await expect(dinoRadio).toBeChecked();
+
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("wordnest.mascot.v1")))
+      .toBe("dino");
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.dataset.mascotTheme))
+      .toBe("dino");
+    await expect
+      .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()))
+      .toBe("#27843d");
+
+    await expect(page.getByRole("button", { name: /Boop the Dino/ })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: "scratch/mascot-settings-desktop.png", fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: "scratch/mascot-settings-mobile.png", fullPage: true });
+  });
+});

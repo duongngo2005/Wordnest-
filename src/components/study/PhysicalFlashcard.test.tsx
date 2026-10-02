@@ -54,6 +54,8 @@ describe("PhysicalFlashcard component", () => {
 
     expect(html).toContain("ephemeral");
     expect(html).toContain("CÂU HỎI");
+    expect(html).toContain("CEFR");
+    expect(html).toContain("C1");
     expect(html).toContain("Hiện đáp án");
     expect(html).toContain("Space");
     expect(html).toContain("hidden text-[11px]");

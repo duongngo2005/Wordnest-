@@ -75,7 +75,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={isButtonDisabled}
         aria-busy={isLoading}
         onClick={handleClick}
-        className={`wn-tactile-btn select-none font-black tracking-tight inline-flex items-center justify-center gap-2 transition-[background-color,transform,box-shadow,opacity] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E06B43] focus-visible:ring-offset-2 ${variantClass} ${sizeClass} ${
+        className={`wn-tactile-btn select-none font-black tracking-tight inline-flex items-center justify-center gap-2 transition-[background-color,transform,box-shadow,opacity] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 ${variantClass} ${sizeClass} ${
           isButtonDisabled ? "cursor-not-allowed opacity-60 pointer-events-none" : ""
         } ${className}`}
         {...props}

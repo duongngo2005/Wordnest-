@@ -137,7 +137,7 @@ export function SpeechSettingsPanel() {
       <div className="border-b-2 border-[#221C16] bg-[#FEF3C7] p-4 sm:p-5">
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] shadow-[2px_2px_0px_#221C16]" aria-hidden="true">
-            <Volume2 className="h-5 w-5 text-[#E06B43]" strokeWidth={2.5} />
+            <Volume2 className="h-5 w-5 text-[var(--accent)]" strokeWidth={2.5} />
           </span>
           <div>
             <h2 id="speech-settings-heading" className="text-base font-black text-[#221C16]">Giọng đọc</h2>

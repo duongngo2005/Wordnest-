@@ -66,7 +66,7 @@ export function StudyTimezoneSetting() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <Globe2 className="h-5 w-5 text-[#E06B43]" strokeWidth={2.5} />
+            <Globe2 className="h-5 w-5 text-[var(--accent)]" strokeWidth={2.5} />
             <h2 id="timezone-heading" className="text-lg font-black text-[#221C16]">
               Múi giờ ngày học
             </h2>
@@ -122,7 +122,7 @@ export function StudyTimezoneSetting() {
               id="study-timezone-select"
               value={selectedTz}
               onChange={(e) => handleTimezoneSelect(e.target.value)}
-              className="w-full appearance-none rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3.5 py-2 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43] pr-8 cursor-pointer"
+              className="w-full appearance-none rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3.5 py-2 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] pr-8 cursor-pointer"
             >
               {COMMON_STUDY_TIMEZONES.map((tz) => (
                 <option key={tz.value} value={tz.value}>

@@ -16,8 +16,8 @@ const folderIcons: Record<string, LucideIcon> = {
 const folderColorClasses: Record<string, { badge: string; border: string; icon: string }> = {
   orange: {
     badge: "bg-[#FEF3C7] text-[#92400E]",
-    border: "border-[#E06B43]",
-    icon: "text-[#E06B43]",
+    border: "border-[var(--accent)]",
+    icon: "text-[var(--accent)]",
   },
   blue: {
     badge: "bg-[#E0F2FE] text-[#0369A1]",

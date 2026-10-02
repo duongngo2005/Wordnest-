@@ -233,7 +233,7 @@ export function TodayPostcard({
                 />
               ) : (
                 <Sparkles
-                  className="wn-postcard__title-icon text-[#E06B43]"
+                  className="wn-postcard__title-icon text-[var(--accent)]"
                   aria-hidden="true"
                   strokeWidth={2.5}
                 />

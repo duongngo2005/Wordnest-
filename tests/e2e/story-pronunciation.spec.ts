@@ -57,7 +57,7 @@ test("keeps the story translation pronunciation control and IPA in fixed regions
   await page.getByRole("button", { name: "Xem nghĩa của association" }).click();
 
   const panel = page.getByLabel("Nghĩa từ trong truyện");
-  const pronunciation = panel.getByRole("button", { name: "Phát âm", exact: true });
+  const pronunciation = panel.getByRole("button", { name: 'Phát âm "association"', exact: true });
   const ipa = panel.getByText("/əˌsəʊ.siˈeɪ.ʃən/", { exact: true });
 
   await expect(pronunciation).toBeVisible();
@@ -65,7 +65,7 @@ test("keeps the story translation pronunciation control and IPA in fixed regions
 
   await pronunciation.click();
   await expect(pronunciation).toHaveAttribute("data-speaking", "true");
-  await expect(pronunciation).toHaveText("Phát âm");
+  await expect(pronunciation).toHaveAccessibleName('Phát âm "association"');
 
   const after = await ipa.boundingBox();
   expect(before).not.toBeNull();

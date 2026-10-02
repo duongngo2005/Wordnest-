@@ -19,7 +19,7 @@ export function RecentDecks({ decks }: RecentDecksProps) {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg sm:text-xl font-black text-[#221C16] flex items-center gap-2">
-          <Layers className="w-5 h-5 text-[#E06B43]" />
+          <Layers className="w-5 h-5 text-[var(--accent)]" />
           Bộ từ vựng gần đây ({decks.length})
         </h3>
       </div>
@@ -40,7 +40,7 @@ export function RecentDecks({ decks }: RecentDecksProps) {
             >
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-2">
-                  <h4 className="text-base sm:text-lg font-black text-[#221C16] group-hover:text-[#E06B43] transition-colors line-clamp-1">
+                  <h4 className="text-base sm:text-lg font-black text-[#221C16] group-hover:text-[var(--accent)] transition-colors line-clamp-1">
                     {deck.name}
                   </h4>
                   <ChevronRight className="w-5 h-5 text-[#6B6258] group-hover:translate-x-1 transition-transform shrink-0" />

@@ -59,10 +59,10 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
             <p className="text-sm font-semibold text-[#6B6258]">
               Hãy thêm từ vựng vào bộ thẻ trước khi bắt đầu luyện nhé.
             </p>
-            <div className="pt-2">
+            <div className="hidden pt-2 sm:block">
               <Link
                 href={`/decks/${deck.id}`}
-                className="brick-button-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-black"
+                className="brick-button-primary items-center gap-2 px-5 py-2.5 text-xs font-black sm:text-sm"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Quay lại bộ từ vựng</span>
@@ -93,13 +93,15 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
                 Hiện chưa có đủ bằng chứng về từ cần luyện thêm trong bộ từ này. Hãy tiếp tục học thẻ hoặc làm bài Quiz thông thường để tích lũy dữ liệu nhé.
               </p>
               <div className="pt-2 flex items-center justify-center gap-3 flex-wrap">
-                <Link
-                  href={`/decks/${deck.id}`}
-                  className="brick-button-secondary inline-flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-black"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Quay lại bộ từ vựng</span>
-                </Link>
+                <div className="hidden sm:block">
+                  <Link
+                    href={`/decks/${deck.id}`}
+                    className="brick-button-secondary items-center gap-2 px-5 py-2.5 text-xs font-black sm:text-sm"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Quay lại bộ từ vựng</span>
+                  </Link>
+                </div>
                 <Link
                   href={`/decks/${deck.id}/quiz`}
                   className="brick-button-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-black"
@@ -151,13 +153,15 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
               {emptyClozeError || "Không có từ phù hợp để tạo bài Cloze từ Story này."}
             </p>
             <div className="pt-2 flex items-center justify-center gap-3 flex-wrap">
-              <Link
-                href={`/decks/${deck.id}/story`}
-                className="brick-button-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-black"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Quay lại trang truyện</span>
-              </Link>
+              <div className="hidden sm:block">
+                <Link
+                  href={`/decks/${deck.id}/story`}
+                  className="brick-button-primary items-center gap-2 px-5 py-2.5 text-xs font-black sm:text-sm"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Quay lại trang truyện</span>
+                </Link>
+              </div>
               <Link
                 href={`/decks/${deck.id}/quiz`}
                 className="brick-button-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-black"

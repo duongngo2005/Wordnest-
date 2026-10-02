@@ -229,7 +229,7 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
         <div className="flex shrink-0 items-center justify-between border-b-2 border-dashed border-[#DCD3C5] bg-[#FEF8ED] px-4 py-3 sm:px-5">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FEF3C7] shadow-[1.5px_1.5px_0px_#221C16]">
-              <Edit3 className="h-4 w-4 text-[#E06B43]" strokeWidth={2.5} />
+              <Edit3 className="h-4 w-4 text-[var(--accent)]" strokeWidth={2.5} />
             </span>
             <h3 id={`edit-card-${card.id}`} className="text-base font-black text-[#221C16]">Chỉnh sửa thẻ</h3>
           </div>
@@ -424,7 +424,7 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
 
   return (
     <article
-      className="wn-index-card wn-vocabulary-card brick-card relative flex flex-col justify-between overflow-visible p-4 sm:p-5 rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] shadow-[3px_3px_0px_#221C16] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_#221C16] transition-all border-t-4 border-t-[#E06B43] focus-within:z-30"
+      className="wn-index-card wn-vocabulary-card brick-card relative flex flex-col justify-between overflow-visible p-4 sm:p-5 rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] shadow-[3px_3px_0px_#221C16] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_#221C16] transition-all border-t-4 border-t-[var(--accent)] focus-within:z-30"
       aria-label={`Thẻ từ vựng: ${card.term}`}
     >
       <div>
@@ -463,7 +463,7 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
                   onClick={startEdit}
                   className="wn-button wn-button-quiet justify-start text-xs font-bold"
                 >
-                  <Edit3 className="h-3.5 w-3.5 text-[#E06B43]" />
+                  <Edit3 className="h-3.5 w-3.5 text-[var(--accent)]" />
                   <span>Chỉnh sửa</span>
                 </button>
                 <button
@@ -481,7 +481,7 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
 
         {/* Vietnamese Meaning Box (Flashcard Accent) */}
         <div className="mt-3 rounded-xl border-2 border-[#221C16] bg-[#FEF8ED] p-3 shadow-[1.5px_1.5px_0px_#221C16]">
-          <span className="text-[10px] font-black uppercase tracking-wider text-[#E06B43] block mb-0.5">
+          <span className="text-[10px] font-black uppercase tracking-wider text-[var(--accent)] block mb-0.5">
             Nghĩa tiếng Việt
           </span>
           <p className="text-base sm:text-lg font-black text-[#221C16] leading-snug break-words">
@@ -511,7 +511,7 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
         <details className="mt-3 border-t-2 border-dashed border-[#DCD3C5] pt-3 group">
           <summary className="cursor-pointer text-xs font-black text-[#6B6258] hover:text-[#221C16] select-none list-none flex items-center justify-between">
             <span>Xem ví dụ và chi tiết</span>
-            <span className="text-[11px] font-bold text-[#E06B43] group-open:rotate-180 transition-transform">
+            <span className="text-[11px] font-bold text-[var(--accent)] group-open:rotate-180 transition-transform">
               ▼
             </span>
           </summary>

@@ -39,7 +39,7 @@ const srsStateColors: Record<string, string> = {
   Mới: "#64748B",
   "Đang học": "#D97706",
   "Đang ôn": "#15803D",
-  "Học lại": "#E06B43",
+  "Học lại": "var(--accent)",
 };
 
 const ratingColors: Record<string, string> = {
@@ -71,7 +71,7 @@ function BarChart({
   title,
   subtitle,
   data,
-  color = "#E06B43",
+  color = "var(--accent)",
   emptyLabel,
 }: {
   title: string;
@@ -99,7 +99,7 @@ function BarChart({
             {hasData ? `${total} thẻ · ${subtitle}` : subtitle}
           </p>
         </div>
-        <BarChart3 className="h-5 w-5 shrink-0 text-[#E06B43]" aria-hidden="true" strokeWidth={2.5} />
+        <BarChart3 className="h-5 w-5 shrink-0 text-[var(--accent)]" aria-hidden="true" strokeWidth={2.5} />
       </figcaption>
 
       {hasData ? (
@@ -374,7 +374,7 @@ function AttentionPanel({
               <li key={card.id} className="min-w-0 py-3 first:pt-0 last:pb-0">
                 <Link
                   href={`/decks/${card.deckId}/quiz?mode=focused_practice`}
-                  className="block min-w-0 overflow-hidden rounded-lg p-1.5 transition-colors hover:bg-[#FEF3C7] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
+                  className="block min-w-0 overflow-hidden rounded-lg p-1.5 transition-colors hover:bg-[#FEF3C7] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                   aria-label={`Luyện tập trung ${card.term} trong ${card.deckName}`}
                 >
                   <div className="flex min-w-0 items-baseline justify-between gap-3">
@@ -406,11 +406,25 @@ function AttentionPanel({
 
 function ScopeBackLink({ analytics }: { analytics: ProgressAnalytics }) {
   if (analytics.scope.kind === "global") return null;
+  const isDeck = analytics.scope.kind === "deck";
+  const href = isDeck && analytics.scope.id
+    ? `/decks/${analytics.scope.id}`
+    : analytics.scope.kind === "folder" && analytics.scope.id
+    ? `/folders/${analytics.scope.id}`
+    : "/progress";
+  const label = isDeck
+    ? `Về bộ từ: ${analytics.scope.name}`
+    : analytics.scope.kind === "folder"
+    ? `Về bộ sưu tập: ${analytics.scope.name}`
+    : "Tiến độ";
+
   return (
-    <Link href="/progress" className="brick-button-secondary w-fit px-3 py-1.5 text-xs font-black">
-      <ArrowLeft className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />
-      <span>Tiến độ</span>
-    </Link>
+    <div className="hidden sm:block">
+      <Link href={href} className="brick-button-secondary w-fit px-3 py-1.5 text-xs font-black">
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />
+        <span>{label}</span>
+      </Link>
+    </div>
   );
 }
 
@@ -431,6 +445,7 @@ function practiceHref(analytics: ProgressAnalytics): string | null {
 
 export function ProgressDashboard({ analytics }: ProgressDashboardProps) {
   const isGlobal = analytics.scope.kind === "global";
+  const isDeck = analytics.scope.kind === "deck";
   const reviewQueueHref = reviewHref(analytics);
   const quizHref = practiceHref(analytics);
   const rated = analytics.reviewRatings.filter((rating) => rating.count > 0);
@@ -447,9 +462,11 @@ export function ProgressDashboard({ analytics }: ProgressDashboardProps) {
       >
         <div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-[#6B6258]">
-            <Sparkles className="h-4 w-4 text-[#E06B43]" aria-hidden="true" strokeWidth={2.5} />
+            <Sparkles className="h-4 w-4 text-[var(--accent)]" aria-hidden="true" strokeWidth={2.5} />
             <span>Tiến độ học</span>
-            <span className="wn-stamp text-[#8C7355]">BÁO CÁO HỌC TẬP</span>
+            <span className="wn-stamp text-[#8C7355]">
+              {isDeck ? "BÁO CÁO BỘ TỪ" : analytics.scope.kind === "folder" ? "BÁO CÁO BỘ SƯU TẬP" : "BÁO CÁO HỌC TẬP"}
+            </span>
           </div>
           <h1
             id="progress-title"
@@ -474,7 +491,7 @@ export function ProgressDashboard({ analytics }: ProgressDashboardProps) {
         className="grid overflow-hidden rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] shadow-[4px_4px_0px_#221C16] sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.3fr)_auto]"
         aria-label="Hôm nay"
       >
-        <div className="flex flex-col justify-between bg-[#E06B43] p-5 text-[#FFFDF9] sm:p-6">
+        <div className="flex flex-col justify-between bg-[var(--accent)] p-5 text-[#FFFDF9] sm:p-6">
           <div>
             <div className="flex items-center gap-2 text-sm font-black uppercase tracking-wider">
               <Clock3 className="h-5 w-5" aria-hidden="true" strokeWidth={2.5} />
@@ -591,129 +608,131 @@ export function ProgressDashboard({ analytics }: ProgressDashboardProps) {
       ) : null}
 
       {/* Scope Navigation & Drilldown */}
-      <section className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <section
-          className="wn-paper-surface min-w-0 rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-4 sm:p-5 shadow-[3px_3px_0px_#221C16]"
-          aria-labelledby="deck-heading"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 id="deck-heading" className="text-lg font-black text-[#221C16]">
-                Bộ từ
-              </h2>
-              <p className="mt-0.5 text-xs font-semibold text-[#6B6258]">Mở phần cần học trước</p>
-            </div>
-            <BookOpen className="h-5 w-5 shrink-0 text-[#0284C7]" aria-hidden="true" strokeWidth={2.5} />
-          </div>
-
-          {analytics.decks.length > 0 ? (
-            <ul className="mt-4 grid min-w-0 gap-2.5 sm:grid-cols-2 lg:grid-cols-1">
-              {analytics.decks.slice(0, 6).map((deck) => {
-                const href =
-                  deck.dueToday > 0 ? `/decks/${deck.id}/study` : `/progress/decks/${deck.id}`;
-                const label =
-                  deck.dueToday > 0
-                    ? `Ôn ${deck.dueToday} thẻ trong ${deck.name}`
-                    : `Xem tiến độ ${deck.name}`;
-                return (
-                  <li key={deck.id} className="min-w-0">
-                    <Link
-                      href={href}
-                      aria-label={label}
-                      className="group grid min-h-16 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-3 shadow-[1.5px_1.5px_0px_#221C16] transition-all hover:-translate-y-0.5 hover:bg-[#FEF3C7] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-black text-[#221C16] group-hover:text-[#E06B43]">
-                          {deck.name}
-                        </p>
-                        <p className="mt-0.5 text-xs font-bold text-[#6B6258]">
-                          {deck.dueToday > 0 ? (
-                            <span className="font-black text-[#C85630]">
-                              {deck.dueToday} cần ôn
-                            </span>
-                          ) : (
-                            `${deck.totalCards} thẻ`
-                          )}
-                          {deck.weakCards > 0 ? ` · ${deck.weakCards} cần luyện` : ""}
-                        </p>
-                      </div>
-                      <ChevronRight
-                        className="h-5 w-5 text-[#6B6258] transition-transform group-hover:translate-x-0.5 group-hover:text-[#E06B43]"
-                        aria-hidden="true"
-                        strokeWidth={2.5}
-                      />
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="mt-4 text-sm font-bold text-[#6B6258]">Chưa có bộ từ.</p>
-          )}
-        </section>
-
-        {isGlobal && analytics.folders.length > 0 ? (
+      {!isDeck && (
+        <section className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <section
             className="wn-paper-surface min-w-0 rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-4 sm:p-5 shadow-[3px_3px_0px_#221C16]"
-            aria-labelledby="folder-heading"
+            aria-labelledby="deck-heading"
           >
             <div className="flex items-center justify-between gap-3">
-              <h2 id="folder-heading" className="min-w-0 text-lg font-black text-[#221C16]">
-                Bộ sưu tập
-              </h2>
-              <Layers className="h-5 w-5 shrink-0 text-[#0D9488]" aria-hidden="true" strokeWidth={2.5} />
+              <div className="min-w-0">
+                <h2 id="deck-heading" className="text-lg font-black text-[#221C16]">
+                  Bộ từ
+                </h2>
+                <p className="mt-0.5 text-xs font-semibold text-[#6B6258]">Mở phần cần học trước</p>
+              </div>
+              <BookOpen className="h-5 w-5 shrink-0 text-[#0284C7]" aria-hidden="true" strokeWidth={2.5} />
             </div>
 
-            <ul className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2">
-              {analytics.folders.map((folder) => {
-                const href =
-                  folder.dueToday > 0
-                    ? `/folders/${folder.id}/review`
-                    : `/progress/folders/${folder.id}`;
-                const label =
-                  folder.dueToday > 0
-                    ? `Ôn ${folder.dueToday} thẻ trong ${folder.name}`
-                    : `Xem tiến độ ${folder.name}`;
-                return (
-                  <li key={folder.id} className="min-w-0">
-                    <Link
-                      href={href}
-                      aria-label={label}
-                      className="block min-w-0 rounded-2xl border-2 border-[#221C16] bg-[#DDF5F1] p-4 shadow-[2.5px_2.5px_0px_#221C16] transition-transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
-                    >
-                      <p className="truncate text-lg font-black text-[#221C16]">{folder.name}</p>
-                      <p className="mt-2 text-xs font-bold text-[#3F6B63]">
-                        {folder.deckCount} bộ từ · {folder.totalCards} thẻ
-                      </p>
-                      <p className="mt-1 text-xs font-black text-[#221C16]">
-                        {folder.dueToday > 0 ? (
-                          <span className="text-[#C85630]">{folder.dueToday} cần ôn</span>
-                        ) : (
-                          <span className="text-[#15803D]">Đã ôn xong</span>
-                        )}
-                        {folder.weakCards > 0 ? ` · ${folder.weakCards} cần luyện` : ""}
-                      </p>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+            {analytics.decks.length > 0 ? (
+              <ul className="mt-4 grid min-w-0 gap-2.5 sm:grid-cols-2 lg:grid-cols-1">
+                {analytics.decks.slice(0, 6).map((deck) => {
+                  const href =
+                    deck.dueToday > 0 ? `/decks/${deck.id}/study` : `/progress/decks/${deck.id}`;
+                  const label =
+                    deck.dueToday > 0
+                      ? `Ôn ${deck.dueToday} thẻ trong ${deck.name}`
+                      : `Xem tiến độ ${deck.name}`;
+                  return (
+                    <li key={deck.id} className="min-w-0">
+                      <Link
+                        href={href}
+                        aria-label={label}
+                        className="group grid min-h-16 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-3 shadow-[1.5px_1.5px_0px_#221C16] transition-all hover:-translate-y-0.5 hover:bg-[#FEF3C7] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-black text-[#221C16] group-hover:text-[var(--accent)]">
+                            {deck.name}
+                          </p>
+                          <p className="mt-0.5 text-xs font-bold text-[#6B6258]">
+                            {deck.dueToday > 0 ? (
+                              <span className="font-black text-[var(--accent-strong)]">
+                                {deck.dueToday} cần ôn
+                              </span>
+                            ) : (
+                              `${deck.totalCards} thẻ`
+                            )}
+                            {deck.weakCards > 0 ? ` · ${deck.weakCards} cần luyện` : ""}
+                          </p>
+                        </div>
+                        <ChevronRight
+                          className="h-5 w-5 text-[#6B6258] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--accent)]"
+                          aria-hidden="true"
+                          strokeWidth={2.5}
+                        />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="mt-4 text-sm font-bold text-[#6B6258]">Chưa có bộ từ.</p>
+            )}
           </section>
-        ) : (
-          <section
-            className="wn-paper-surface min-w-0 rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-4 sm:p-5 shadow-[3px_3px_0px_#221C16]"
-            aria-labelledby="scope-summary-heading"
-          >
-            <h2 id="scope-summary-heading" className="text-lg font-black text-[#221C16]">
-              Phạm vi hiện tại
-            </h2>
-            <p className="mt-2 text-sm font-bold leading-relaxed text-[#6B6258]">
-              Xem các tín hiệu học ở cấp bộ từ để quyết định lượt ôn tiếp theo. Chỉ dữ liệu thực từ FSRS và
-              bài kiểm tra mới được tổng hợp.
-            </p>
-          </section>
-        )}
-      </section>
+
+          {isGlobal && analytics.folders.length > 0 ? (
+            <section
+              className="wn-paper-surface min-w-0 rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-4 sm:p-5 shadow-[3px_3px_0px_#221C16]"
+              aria-labelledby="folder-heading"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <h2 id="folder-heading" className="min-w-0 text-lg font-black text-[#221C16]">
+                  Bộ sưu tập
+                </h2>
+                <Layers className="h-5 w-5 shrink-0 text-[#0D9488]" aria-hidden="true" strokeWidth={2.5} />
+              </div>
+
+              <ul className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2">
+                {analytics.folders.map((folder) => {
+                  const href =
+                    folder.dueToday > 0
+                      ? `/folders/${folder.id}/review`
+                      : `/progress/folders/${folder.id}`;
+                  const label =
+                    folder.dueToday > 0
+                      ? `Ôn ${folder.dueToday} thẻ trong ${folder.name}`
+                      : `Xem tiến độ ${folder.name}`;
+                  return (
+                    <li key={folder.id} className="min-w-0">
+                      <Link
+                        href={href}
+                        aria-label={label}
+                        className="block min-w-0 rounded-2xl border-2 border-[#221C16] bg-[#DDF5F1] p-4 shadow-[2.5px_2.5px_0px_#221C16] transition-transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                      >
+                        <p className="truncate text-lg font-black text-[#221C16]">{folder.name}</p>
+                        <p className="mt-2 text-xs font-bold text-[#3F6B63]">
+                          {folder.deckCount} bộ từ · {folder.totalCards} thẻ
+                        </p>
+                        <p className="mt-1 text-xs font-black text-[#221C16]">
+                          {folder.dueToday > 0 ? (
+                            <span className="text-[var(--accent-strong)]">{folder.dueToday} cần ôn</span>
+                          ) : (
+                            <span className="text-[#15803D]">Đã ôn xong</span>
+                          )}
+                          {folder.weakCards > 0 ? ` · ${folder.weakCards} cần luyện` : ""}
+                        </p>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : (
+            <section
+              className="wn-paper-surface min-w-0 rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-4 sm:p-5 shadow-[3px_3px_0px_#221C16]"
+              aria-labelledby="scope-summary-heading"
+            >
+              <h2 id="scope-summary-heading" className="text-lg font-black text-[#221C16]">
+                Phạm vi hiện tại
+              </h2>
+              <p className="mt-2 text-sm font-bold leading-relaxed text-[#6B6258]">
+                Xem các tín hiệu học ở cấp bộ từ để quyết định lượt ôn tiếp theo. Chỉ dữ liệu thực từ FSRS và
+                bài kiểm tra mới được tổng hợp.
+              </p>
+            </section>
+          )}
+        </section>
+      )}
     </div>
   );
 }

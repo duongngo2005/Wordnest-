@@ -150,7 +150,7 @@ export function PwaRegister() {
       {canShowUpdate ? (
         <aside className="wn-pwa-float" aria-label="Cập nhật WordNest">
           <div className="flex min-w-0 items-center gap-3">
-            <RefreshCw className="h-5 w-5 shrink-0 text-[#E06B43]" aria-hidden="true" />
+            <RefreshCw className="h-5 w-5 shrink-0 text-[var(--accent)]" aria-hidden="true" />
             <p className="min-w-0 text-sm font-black text-[#221C16]">Có phiên bản WordNest mới</p>
           </div>
           <button
@@ -167,7 +167,7 @@ export function PwaRegister() {
       {showInstallHint ? (
         <aside className="wn-pwa-install-hint" aria-label="Cài WordNest lên Màn hình chính">
           <div className="flex min-w-0 items-center gap-3">
-            <Download className="h-5 w-5 shrink-0 text-[#E06B43]" aria-hidden="true" />
+            <Download className="h-5 w-5 shrink-0 text-[var(--accent)]" aria-hidden="true" />
             <div className="min-w-0">
               <p className="text-sm font-black text-[#221C16]">Thêm WordNest vào Màn hình chính</p>
               <p className="mt-0.5 text-xs font-semibold leading-relaxed text-[#6B6258]">

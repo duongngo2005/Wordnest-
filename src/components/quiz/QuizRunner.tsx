@@ -14,7 +14,6 @@ import {
   XCircle,
   HelpCircle,
   ArrowRight,
-  Volume2,
   Keyboard,
   ListCheck,
   BookOpen,
@@ -460,9 +459,11 @@ export function QuizRunner({
         <p className="text-sm font-semibold text-[#6B6258]">
           Bộ từ vựng cần có ít nhất một từ để tạo câu hỏi luyện tập.
         </p>
-        <Link href={`/decks/${deck.id}`} className="brick-button-primary inline-flex text-xs px-4 py-2">
-          Quay lại bộ thẻ
-        </Link>
+        <div className="hidden sm:block">
+          <Link href={`/decks/${deck.id}`} className="brick-button-primary px-4 py-2 text-xs">
+            Quay lại bộ thẻ
+          </Link>
+        </div>
       </div>
     );
   }
@@ -500,7 +501,7 @@ export function QuizRunner({
           <Link
             href={`/decks/${deck.id}`}
             onClick={() => playUISound("softTap")}
-            className="inline-flex w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-all hover:bg-[#FAF6EE] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none"
+            className="hidden w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-all hover:bg-[#FAF6EE] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none sm:inline-flex"
           >
             <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
             <span>Thoát Quiz</span>
@@ -535,7 +536,7 @@ export function QuizRunner({
               aria-pressed={currentMode === "typed"}
               className={`inline-flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
                 currentMode === "typed"
-                  ? "bg-[#E06B43] text-white border-2 border-[#221C16] shadow-[2px_2px_0px_#221C16] -translate-y-0.5"
+                  ? "bg-[var(--accent)] text-white border-2 border-[#221C16] shadow-[2px_2px_0px_#221C16] -translate-y-0.5"
                   : "bg-transparent text-[#6B6258] border-2 border-transparent hover:text-[#221C16] hover:bg-[#FFFDF9] hover:border-[#DCD3C5]"
               }`}
             >
@@ -594,7 +595,7 @@ export function QuizRunner({
         {/* Retro Toy-brick Progress Bar */}
         <div className="h-3 w-full overflow-hidden rounded-full border-2 border-[#221C16] bg-[#FAF6EE] p-0.5 shadow-inner">
           <div
-            className="h-full rounded-full bg-[#E06B43] transition-all duration-300 ease-out"
+            className="h-full rounded-full bg-[var(--accent)] transition-all duration-300 ease-out"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
@@ -605,7 +606,7 @@ export function QuizRunner({
         {/* Question Type Tag & Selection Reason */}
         <div className="flex items-center justify-between gap-2 flex-wrap border-b border-dashed border-[#DCD3C5] pb-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="inline-flex items-center gap-1.5 text-xs font-black text-[#E06B43] bg-[#FEF8ED] px-2.5 py-1 rounded-lg border-2 border-[#221C16] shadow-[1.5px_1.5px_0px_#221C16]">
+            <div className="inline-flex items-center gap-1.5 text-xs font-black text-[var(--accent)] bg-[#FEF8ED] px-2.5 py-1 rounded-lg border-2 border-[#221C16] shadow-[1.5px_1.5px_0px_#221C16]">
               {isRetrying ? <RotateCcw className="w-3.5 h-3.5 stroke-[2.5]" /> : <HelpCircle className="w-3.5 h-3.5 stroke-[2.5]" />}
               <span>
                 {isRetrying
@@ -626,7 +627,7 @@ export function QuizRunner({
 
           {/* Do NOT leak audio pronunciation before answering if question is recalling English! */}
           {currentQuestion.type === "multiple_choice_en_vi" && exp && (
-            <PronounceButton text={exp.term} size="sm" label="Phát âm" />
+            <PronounceButton text={exp.term} size="sm" />
           )}
         </div>
 
@@ -657,7 +658,7 @@ export function QuizRunner({
             >
               <label
                 htmlFor="typed-recall-input"
-                className="block text-xs font-black uppercase tracking-wider text-[#E06B43] text-center"
+                className="block text-xs font-black uppercase tracking-wider text-[var(--accent)] text-center"
               >
                 {currentQuestion.type === "story_cloze"
                   ? "Điền từ thích hợp vào chỗ trống trong câu trên:"
@@ -682,7 +683,7 @@ export function QuizRunner({
                     ? "Nhập dạng từ thích hợp trong ngữ cảnh..."
                     : "Ví dụ: allocate..."
                 }
-                className={`w-full text-center px-4 py-3.5 rounded-xl border-2 text-base sm:text-xl font-black placeholder-[#8C8275] shadow-[2px_2px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43] min-h-[48px] transition-colors ${
+                className={`w-full text-center px-4 py-3.5 rounded-xl border-2 text-base sm:text-xl font-black placeholder-[#8C8275] shadow-[2px_2px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] min-h-[48px] transition-colors ${
                   isAnswerChecked
                     ? isCorrect
                       ? "bg-[#DCFCE7] border-[#15803D] text-[#15803D]"
@@ -846,8 +847,7 @@ export function QuizRunner({
                 </div>
 
                 {exp && (
-                  <div className="flex items-center gap-1 text-xs font-bold text-[#6B6258]">
-                    <Volume2 className="w-3.5 h-3.5 text-[#E06B43]" />
+                  <div className="flex items-center">
                     <PronounceButton text={exp.term} size="sm" />
                   </div>
                 )}
@@ -857,7 +857,7 @@ export function QuizRunner({
               {exp && (
                 <div className="bg-[#FFFDF9] p-3.5 rounded-xl border-2 border-[#221C16] text-xs text-[#221C16] space-y-1.5 shadow-[2px_2px_0px_#221C16]">
                   <p>
-                    <strong className="text-[#E06B43]">{exp.term}</strong>
+                    <strong className="text-[var(--accent)]">{exp.term}</strong>
                     {exp.ipa && <span className="font-mono text-[#6B6258] ml-1.5">{exp.ipa}</span>}
                     {exp.partOfSpeech && <span className="text-[#6B6258] ml-1">({exp.partOfSpeech})</span>}
                     : {exp.meaningVi}

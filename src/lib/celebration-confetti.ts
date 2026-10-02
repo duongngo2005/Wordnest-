@@ -11,8 +11,15 @@ export function fireSessionCompletionConfetti(): void {
   if (getPrefersReducedMotion()) return;
 
   try {
+    const style =
+      typeof window.getComputedStyle === "function" && typeof document !== "undefined" && document?.documentElement
+        ? window.getComputedStyle(document.documentElement)
+        : null;
+    const accent = style?.getPropertyValue("--accent")?.trim() || "#E06B43";
+    const accentStrong = style?.getPropertyValue("--accent-strong")?.trim() || "#C85630";
     const colors = [
-      "#E06B43", // Terracotta
+      accent,
+      accentStrong,
       "#F59E0B", // Vintage Brick Gold
       "#15803D", // Brick Green
       "#0284C7", // Soft Blue

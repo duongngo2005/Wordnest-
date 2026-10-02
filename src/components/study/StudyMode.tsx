@@ -237,7 +237,7 @@ export function StudyMode({
               ? "Hiện không có thẻ đến hạn trong hàng đợi ôn tập."
               : "Bộ từ vựng này chưa có thẻ nào."}
           </p>
-          <div className="flex justify-center gap-3 pt-2">
+          <div className="hidden justify-center gap-3 pt-2 sm:flex">
             <Link
               href={backHref ?? `/decks/${deckId}`}
               onClick={() => playUISound("softTap")}
@@ -279,7 +279,7 @@ export function StudyMode({
           <Link
             href={backHref ?? `/decks/${deckId}`}
             onClick={() => playUISound("softTap")}
-            className="inline-flex w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-all hover:bg-[#FAF6EE] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none"
+            className="hidden w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-all hover:bg-[#FAF6EE] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none sm:inline-flex"
           >
             <ArrowLeft className="w-4 h-4" strokeWidth={2.5} />
             <span>{backHref ? backLabel : "Thoát study"}</span>
@@ -300,7 +300,7 @@ export function StudyMode({
         {/* Tactile Progress Bar */}
         <div className="h-2.5 w-full overflow-hidden rounded-full border-2 border-[#221C16] bg-[#EDE6D8] p-0.5">
           <div
-            className="h-full rounded-full bg-[#E06B43] transition-all duration-300"
+            className="h-full rounded-full bg-[var(--accent)] transition-all duration-300"
             style={{ width: `${((currentIndex + 1) / totalCards) * 100}%` }}
           />
         </div>

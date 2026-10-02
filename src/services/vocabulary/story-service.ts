@@ -300,21 +300,31 @@ export class StoryService {
   async addCardFromStory(data: AddCardFromStoryRequest) {
     const normalized = normalizeTerm(data.term);
 
-    // 1. Check if card with this term already exists in the deck
-    const existing = await db.flashcard.findUnique({
+    // 1. Check if card with this term already exists anywhere in the system
+    const existing = await db.flashcard.findFirst({
       where: {
-        deckId_normalizedTerm: {
-          deckId: data.deckId,
-          normalizedTerm: normalized,
+        normalizedTerm: normalized,
+      },
+      include: {
+        deck: {
+          select: {
+            name: true,
+            folder: { select: { name: true } },
+          },
         },
       },
     });
 
     if (existing) {
+      const isSameDeck = existing.deckId === data.deckId;
+      const message = isSameDeck
+        ? `Từ "${data.term}" đã có trong bộ thẻ này rồi.`
+        : `Từ "${data.term}" đã tồn tại trong bộ thẻ "${existing.deck.name}"${existing.deck.folder ? ` (bộ sưu tập "${existing.deck.folder.name}")` : ""}.`;
+
       return {
         success: false,
         alreadyExists: true,
-        message: `Từ "${data.term}" đã có trong bộ thẻ này rồi.`,
+        message,
         card: existing,
       };
     }

@@ -4,6 +4,7 @@ import { WordNestMascot } from "@/components/ui/Mascot";
 import { SpeechSettingsPanel } from "@/components/settings/SpeechSettingsPanel";
 import { SoundSettingsPanel } from "@/components/settings/SoundSettingsPanel";
 import { StudyTimezoneSetting } from "@/components/settings/StudyTimezoneSetting";
+import { MascotSettingsPanel } from "@/components/settings/MascotSettingsPanel";
 
 export const metadata: Metadata = {
   title: "Cài đặt | WordNest",
@@ -21,12 +22,13 @@ export default function SettingsPage() {
               Cài đặt
             </h1>
             <p className="mt-1 text-xs font-bold text-[#6B6258] sm:text-sm">
-              Múi giờ học, giọng đọc và âm thanh tương tác
+              Linh vật, màu sắc, múi giờ học, giọng đọc và âm thanh
             </p>
           </div>
-          <WordNestMascot mood="reading" size={72} />
+          <WordNestMascot mood="reading" size={72} interactive />
         </section>
 
+        <MascotSettingsPanel />
         <StudyTimezoneSetting />
         <SoundSettingsPanel />
         <SpeechSettingsPanel />

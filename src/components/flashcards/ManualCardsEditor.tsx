@@ -66,6 +66,17 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
             : "Không thể lưu thẻ.";
         throw new Error(message);
       }
+
+      if (typeof data === "object" && data !== null && "data" in data) {
+        const payload = (data as { data?: { cardsCreated?: number; message?: string; skippedDuplicates?: Array<{ reason: string }> } }).data;
+        if (payload?.cardsCreated === 0) {
+          const reason = payload.skippedDuplicates?.[0]?.reason || payload.message || "Từ này đã tồn tại trong hệ thống.";
+          setError(reason);
+          toast.error("Không thể thêm thẻ", { description: reason });
+          return;
+        }
+      }
+
       toast.success("Đã thêm thẻ mới");
       onSaved();
     } catch (reason) {
@@ -105,7 +116,7 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
       <details className="rounded-xl border-2 border-dashed border-[#DCD3C5] bg-[#FAF6EE] p-3 group">
         <summary className="cursor-pointer text-xs font-black text-[#6B6258] hover:text-[#221C16] flex items-center justify-between select-none list-none">
           <span>Thông tin thêm (IPA, ví dụ, hình ảnh...)</span>
-          <ChevronDown className="h-4 w-4 text-[#E06B43] group-open:rotate-180 transition-transform" />
+          <ChevronDown className="h-4 w-4 text-[var(--accent)] group-open:rotate-180 transition-transform" />
         </summary>
         <div className="wn-form-group pt-3">
           <div className="grid gap-3 sm:grid-cols-2">

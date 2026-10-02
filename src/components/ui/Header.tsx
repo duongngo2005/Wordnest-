@@ -19,13 +19,13 @@ export function Header() {
         <Link
           href="/"
           onClick={() => playUISound("softTap")}
-          className="flex min-w-0 items-center gap-1.5 sm:gap-2 rounded-xl p-1 transition-transform active:translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E06B43]"
+          className="flex min-w-0 items-center gap-1.5 sm:gap-2 rounded-xl p-1 transition-transform active:translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
         >
           <span className="flex-shrink-0">
             <WordNestMascot size={32} mood="reading" />
           </span>
           <span className="truncate text-lg sm:text-xl font-black tracking-tight text-[#221C16]">
-            Word<span className="text-[#E06B43]">Nest</span>
+            Word<span className="text-[var(--accent)]">Nest</span>
           </span>
         </Link>
 
@@ -39,7 +39,7 @@ export function Header() {
               isCurrent(pathname, "/") ? "border-2 border-[#221C16] bg-[#FEF3C7] shadow-[2px_2px_0px_#221C16]" : ""
             }`}
           >
-            <BookOpen className="h-4 w-4 shrink-0 text-[#E06B43]" aria-hidden="true" strokeWidth={2.5} />
+            <BookOpen className="h-4 w-4 shrink-0 text-[var(--accent)]" aria-hidden="true" strokeWidth={2.5} />
             <span className="wn-nav-label">Thư viện</span>
           </Link>
           <Link

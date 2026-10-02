@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  BarChart3,
   Book,
   Layers,
   MoreHorizontal,
@@ -134,7 +133,7 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
       {/* Back button */}
       <Link
         href="/"
-        className="inline-flex w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-transform active:translate-y-0.5"
+        className="hidden w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-transform active:translate-y-0.5 sm:inline-flex"
       >
         <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
         <span>Thư viện</span>
@@ -163,41 +162,14 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
               </span>
             )}
 
-            <details className="relative wn-menu-details">
-              <summary
-                aria-label={`Tùy chọn cho ${folder.name}`}
-                className="wn-icon-button flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
-              >
-                <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
-              </summary>
-              <div
-                className="fixed inset-0 z-40 cursor-default"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.currentTarget.closest("details")?.removeAttribute("open");
-                }}
-              />
-              <div className="absolute right-0 top-full z-50 mt-1.5 grid w-48 gap-1 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
-                <Link
-                  href={`/progress/folders/${folder.id}`}
-                  className="wn-button wn-button-quiet justify-start text-xs font-bold"
-                >
-                  <BarChart3 className="h-4 w-4" aria-hidden="true" />
-                  <span>Tiến độ</span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.currentTarget.closest("details")?.removeAttribute("open");
-                    setIsConfirmingDelete(true);
-                  }}
-                  className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold cursor-pointer"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Xóa bộ sưu tập</span>
-                </button>
-              </div>
-            </details>
+            <button
+              type="button"
+              onClick={() => setIsConfirmingDelete(true)}
+              aria-label={`Xóa bộ sưu tập ${folder.name}`}
+              className="wn-icon-button flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#B91C1C] bg-[#FFF0EC] text-[#B91C1C] shadow-[1.5px_1.5px_0px_#221C16] transition-transform hover:bg-[#FEE2E2] active:translate-y-0.5"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />
+            </button>
           </div>
         </div>
 
@@ -240,7 +212,7 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
               aria-label="Tạo bộ từ"
               className="brick-button-secondary px-4 py-2 text-xs sm:text-sm font-black"
             >
-              <Plus className="h-4 w-4 text-[#E06B43]" strokeWidth={2.5} />
+              <Plus className="h-4 w-4 text-[var(--accent)]" strokeWidth={2.5} />
               <span>Bộ từ</span>
             </button>
           </div>
@@ -320,7 +292,7 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
         >
           <div className="flex items-center gap-2 border-b-2 border-dashed border-[#DCD3C5] pb-3">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FEF3C7] shadow-[1.5px_1.5px_0px_#221C16]">
-              <Plus className="h-4 w-4 text-[#E06B43]" strokeWidth={2.5} />
+              <Plus className="h-4 w-4 text-[var(--accent)]" strokeWidth={2.5} />
             </span>
             <h2 className="text-base font-black text-[#221C16]">
               Thêm bộ từ vào &ldquo;{folder.name}&rdquo;
@@ -359,7 +331,7 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
       <section className="wn-section" aria-labelledby="collection-decks">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="h-3 w-1.5 rounded-full bg-[#E06B43]" />
+            <span className="h-3 w-1.5 rounded-full bg-[var(--accent)]" />
             <h2 id="collection-decks" className="text-lg font-black text-[#221C16]">
               Bộ từ
             </h2>
@@ -390,14 +362,14 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
                   <li key={deck.id} className="relative min-w-0 overflow-visible focus-within:z-30">
                     <Link
                       href={`/decks/${deck.id}`}
-                      className="group flex min-h-36 min-w-0 flex-col rounded-xl border-2 border-[#221C16] border-t-4 border-t-[#E06B43] bg-[#FAF6EE] p-4 pr-14 shadow-[2px_2px_0px_#221C16] transition-transform hover:-translate-y-0.5 hover:bg-[#FEF3C7] focus:outline-none focus:ring-2 focus:ring-[#E06B43] active:translate-y-0.5"
+                      className="group flex min-h-36 min-w-0 flex-col rounded-xl border-2 border-[#221C16] border-t-4 border-t-[var(--accent)] bg-[#FAF6EE] p-4 pr-14 shadow-[2px_2px_0px_#221C16] transition-transform hover:-translate-y-0.5 hover:bg-[#FEF3C7] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] active:translate-y-0.5"
                     >
                       <div className="flex min-w-0 items-start gap-3">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
-                          <Book className="h-4 w-4 text-[#E06B43]" strokeWidth={2.5} />
+                          <Book className="h-4 w-4 text-[var(--accent)]" strokeWidth={2.5} />
                         </span>
                         <div className="min-w-0">
-                          <h3 className="truncate text-base font-black text-[#221C16] group-hover:text-[#E06B43]">
+                          <h3 className="truncate text-base font-black text-[#221C16] group-hover:text-[var(--accent)]">
                             {deck.name}
                           </h3>
                           {deck.description ? (

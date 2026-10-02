@@ -71,7 +71,7 @@ export function StoryPageContainer({ deck, initialStories, deckWords }: StoryPag
   return (
     <div className={`mx-auto space-y-5 ${isReadingMode ? "max-w-6xl" : "max-w-5xl"}`}>
       {!isReadingMode ? <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href={`/decks/${deck.id}`} className="inline-flex w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-transform active:translate-y-0.5">
+        <Link href={`/decks/${deck.id}`} className="hidden w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-transform active:translate-y-0.5 sm:inline-flex">
           <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
           <span>Về bộ từ</span>
         </Link>
@@ -102,7 +102,7 @@ export function StoryPageContainer({ deck, initialStories, deckWords }: StoryPag
                 aria-pressed={isActive}
                 className={`wn-story-tab shrink-0 ${isActive ? "wn-story-tab--active" : ""}`}
               >
-                <BookOpen className={`h-3.5 w-3.5 ${isActive ? "text-[#E06B43]" : "text-[#8C8275]"}`} />
+                <BookOpen className={`h-3.5 w-3.5 ${isActive ? "text-[var(--accent)]" : "text-[#8C8275]"}`} />
                 <span className="truncate max-w-[200px] sm:max-w-xs">{story.title}</span>
               </button>
             );

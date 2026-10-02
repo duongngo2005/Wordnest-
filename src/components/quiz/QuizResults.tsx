@@ -92,7 +92,7 @@ export function QuizResults({
         </div>
 
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 text-xs font-black text-[#E06B43] bg-[#FEF3C7] px-3.5 py-1 rounded-full border border-[#221C16]">
+            <div className="inline-flex items-center gap-1.5 text-xs font-black text-[var(--accent)] bg-[#FEF3C7] px-3.5 py-1 rounded-full border border-[#221C16]">
               <Sparkles className="w-3.5 h-3.5" />
               <span>WORDNEST PRACTICE SLIP</span>
             </div>
@@ -120,7 +120,7 @@ export function QuizResults({
             <p className="text-[11px] font-extrabold uppercase text-[#6B6258] tracking-wider">
               Độ chính xác
             </p>
-            <p className="text-2xl sm:text-3xl font-black text-[#E06B43] mt-0.5">
+            <p className="text-2xl sm:text-3xl font-black text-[var(--accent)] mt-0.5">
               {accuracy}%
             </p>
           </div>
@@ -176,13 +176,15 @@ export function QuizResults({
             <span>Làm lại bài Quiz</span>
           </button>
 
-          <Link
-            href={`/decks/${deck.id}`}
-            className="brick-button-secondary px-5 py-3 text-xs sm:text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16]"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Về bộ thẻ</span>
-          </Link>
+          <div className="hidden sm:block">
+            <Link
+              href={`/decks/${deck.id}`}
+              className="brick-button-secondary gap-2 px-5 py-3 text-xs font-black shadow-[3px_3px_0px_#221C16] sm:text-sm"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Về bộ thẻ</span>
+            </Link>
+          </div>
 
           <Link
             href="/progress"
@@ -198,7 +200,7 @@ export function QuizResults({
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <h2 className="text-lg sm:text-xl font-black text-[#221C16] flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-[#E06B43]" />
+            <BookOpen className="w-5 h-5 text-[var(--accent)]" />
             <span>Xem lại chi tiết từng câu ({records.length})</span>
           </h2>
 
@@ -344,7 +346,7 @@ export function QuizResults({
                 {exp && (
                   <div className="mt-3 bg-white/70 p-3 rounded-lg border border-black/10 text-xs space-y-1">
                     <p className="font-semibold text-[#221C16]">
-                      <strong className="text-[#E06B43]">{exp.term}</strong>: {exp.meaningVi}
+                      <strong className="text-[var(--accent)]">{exp.term}</strong>: {exp.meaningVi}
                     </p>
                     {exp.exampleEn && <p className="italic text-[#4A4036]">&ldquo;{exp.exampleEn}&rdquo;</p>}
                     {exp.exampleVi && <p className="text-[#6B6258]">{exp.exampleVi}</p>}

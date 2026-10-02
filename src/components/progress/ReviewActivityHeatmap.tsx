@@ -15,8 +15,8 @@ const INTENSITY_CLASSES: Record<number, string> = {
   0: "bg-[#FAF6EE] border-[#DCD3C5]/80 hover:border-[#221C16]",
   1: "bg-[#FFEDD5] border-[#FDBA74] hover:border-[#221C16]",
   2: "bg-[#FCD34D] border-[#F59E0B] hover:border-[#221C16]",
-  3: "bg-[#E06B43] border-[#C85630] hover:border-[#221C16]",
-  4: "bg-[#C85630] border-[#9A3412] hover:border-[#221C16]",
+  3: "bg-[var(--accent)] border-[var(--accent-strong)] hover:border-[#221C16]",
+  4: "bg-[var(--accent-strong)] border-[var(--accent-ink)] hover:border-[#221C16]",
 };
 
 export function ReviewActivityHeatmap({ activityData }: ReviewActivityHeatmapProps) {
@@ -68,7 +68,7 @@ export function ReviewActivityHeatmap({ activityData }: ReviewActivityHeatmapPro
             <h2 id="review-activity-heading" className="text-base font-black text-[#221C16] sm:text-lg">
               Hoạt động ôn tập
             </h2>
-            <span className="wn-stamp text-[10px] text-[#E06B43] border-[#E06B43]">
+            <span className="wn-stamp text-[10px] text-[var(--accent)] border-[var(--accent)]">
               LỊCH SỬ FSRS
             </span>
           </div>
@@ -152,7 +152,7 @@ export function ReviewActivityHeatmap({ activityData }: ReviewActivityHeatmapPro
                         : "";
 
                       const selectedIndicator = isSelected
-                        ? "outline-2 outline-[#E06B43] outline-offset-1 z-20 scale-125"
+                        ? "outline-2 outline-[var(--accent)] outline-offset-1 z-20 scale-125"
                         : "";
 
                       return (
@@ -183,8 +183,8 @@ export function ReviewActivityHeatmap({ activityData }: ReviewActivityHeatmapPro
               <span className="h-3 w-3 rounded-xs border border-[#DCD3C5] bg-[#FAF6EE]" aria-hidden="true" />
               <span className="h-3 w-3 rounded-xs border border-[#FDBA74] bg-[#FFEDD5]" aria-hidden="true" />
               <span className="h-3 w-3 rounded-xs border border-[#F59E0B] bg-[#FCD34D]" aria-hidden="true" />
-              <span className="h-3 w-3 rounded-xs border border-[#C85630] bg-[#E06B43]" aria-hidden="true" />
-              <span className="h-3 w-3 rounded-xs border border-[#9A3412] bg-[#C85630]" aria-hidden="true" />
+              <span className="h-3 w-3 rounded-xs border border-[var(--accent-strong)] bg-[var(--accent)]" aria-hidden="true" />
+              <span className="h-3 w-3 rounded-xs border border-[var(--accent-ink)] bg-[var(--accent-strong)]" aria-hidden="true" />
             </div>
             <span>Nhiều</span>
           </div>

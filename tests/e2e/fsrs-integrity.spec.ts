@@ -52,7 +52,7 @@ test.describe("FSRS integrity UI", () => {
     await expect(page.getByText("Lượt ôn chưa được lưu:")).toBeVisible();
   });
 
-  test("Free Practice has no Scheduled Review controls or scheduler request", async ({ page }) => {
+  test("Flashcard Practice has no Scheduled Review controls or scheduler request", async ({ page }) => {
     const schedulerBefore = await db.flashcard.findUniqueOrThrow({ where: { id: cardId } });
     let reviewRequests = 0;
     await page.route(`**/api/cards/${cardId}/review`, async (route) => {
@@ -61,9 +61,10 @@ test.describe("FSRS integrity UI", () => {
     });
 
     await page.goto(`/decks/${deckId}/practice`);
+    await page.getByRole("button", { name: "Bắt đầu luyện" }).click();
     await page.getByRole("button", { name: "Hiện đáp án" }).click();
     await expect(page.getByRole("button", { name: /Again/ })).toHaveCount(0);
-    await page.getByRole("button", { name: "Thẻ tiếp theo" }).click();
+    await page.getByRole("button", { name: /^Đã nhớ/ }).click();
 
     expect(reviewRequests).toBe(0);
     const schedulerAfter = await db.flashcard.findUniqueOrThrow({ where: { id: cardId } });

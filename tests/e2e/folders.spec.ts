@@ -69,18 +69,18 @@ test.afterEach(async () => {
 });
 
 test.describe("learning collections", () => {
-  test("creates a collection, creates a deck in it, supports expand/collapse, and persists data after refresh", async ({ page }, testInfo) => {
+  test("creates a collection, then creates and opens its deck from the collection page", async ({ page }, testInfo) => {
     const folderName = uniqueName(testInfo.testId, "create");
     const deckName = `${folderName} Day 01`;
 
-    // Expand/collapse remains the compact mobile-library interaction. Desktop
-    // now exposes collection context directly and opens the collection page.
+    // Home is collection-first on every viewport; decks are accessed from the
+    // collection page rather than by expanding a home-card toggle.
     await page.setViewportSize({ width: 430, height: 932 });
     await page.goto("/");
     await page.getByRole("button", { name: "Bộ sưu tập", exact: true }).click();
     await page.getByLabel("Tên bộ sưu tập").fill(folderName);
     await page.getByRole("button", { name: "Lưu", exact: true }).click();
-    await expect(page.getByRole("link", { name: new RegExp(folderName) })).toBeVisible();
+    await expect(page.getByRole("link", { name: `Mở bộ sưu tập ${folderName}` })).toBeVisible();
 
     await expect.poll(async () => {
       return db.folder.findUnique({ where: { normalizedName: folderName.toLocaleLowerCase() } });
@@ -88,8 +88,9 @@ test.describe("learning collections", () => {
     const createdFolder = await db.folder.findUniqueOrThrow({ where: { normalizedName: folderName.toLocaleLowerCase() } });
     folderIds.push(createdFolder.id);
 
-    await page.getByLabel(`Mở ${folderName}`).click();
-    await page.getByRole("button", { name: `Tạo bộ từ trong ${folderName}` }).click();
+    await page.getByRole("link", { name: `Mở bộ sưu tập ${folderName}` }).click();
+    await expect(page.getByRole("link", { name: "Thư viện" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Tạo bộ từ", exact: true }).click();
     await page.getByLabel("Tên bộ từ").fill(deckName);
     await page.getByRole("button", { name: "Tạo", exact: true }).click();
     await expect(page).toHaveURL(/\/decks\/[a-z0-9]+$/);
@@ -101,15 +102,11 @@ test.describe("learning collections", () => {
     deckIds.push(deck.id);
 
     await page.goto("/");
-    await expect(page.getByRole("link", { name: deckName })).toBeHidden();
-    await page.getByLabel(`Mở ${folderName}`).click();
+    await expect(page.getByRole("link", { name: deckName })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: `Mở ${folderName}` })).toHaveCount(0);
+    await page.getByRole("link", { name: `Mở bộ sưu tập ${folderName}` }).click();
     await expect(page.getByRole("link", { name: deckName })).toBeVisible();
-    await page.getByLabel(`Thu gọn ${folderName}`).click();
-    await expect(page.getByRole("link", { name: deckName })).toBeHidden();
-    await page.getByLabel(`Mở ${folderName}`).click();
     await page.reload();
-    await expect(page.getByRole("link", { name: deckName })).toBeHidden();
-    await page.getByLabel(`Mở ${folderName}`).click();
     await expect(page.getByRole("link", { name: deckName })).toBeVisible();
   });
 
@@ -249,41 +246,19 @@ test.describe("learning collections", () => {
     expect(deleteBox!.y + deleteBox!.height).toBeLessThanOrEqual(cardBox!.y + cardBox!.height);
   });
 
-  test("moves, reorders, and safely deletes collections", async ({ page }, testInfo) => {
+  test("safely deletes a collection from the library", async ({ page }, testInfo) => {
     const source = await createFolder(uniqueName(testInfo.testId, "source"));
-    const destination = await createFolder(uniqueName(testInfo.testId, "destination"));
     const safeDeck = await createDeck(source.id, `${source.name} keep`, 0);
-    const movableDeck = await createDeck(source.id, `${source.name} move`, 1);
-    const firstDestinationDeck = await createDeck(destination.id, `${destination.name} first`, 0);
-    const secondDestinationDeck = await createDeck(destination.id, `${destination.name} second`, 1);
     await createCard(safeDeck.id, `${source.id}-card`);
 
-    // Deck-level library management is available from the compact mobile card;
-    // the desktop catalogue card intentionally has no per-collection toggle.
+    // Home no longer renders or expands a deck list for each collection.
     await page.setViewportSize({ width: 430, height: 932 });
     await page.goto("/");
-    await page.getByLabel(`Mở ${source.name}`).click();
-    await page.getByLabel(`Tùy chọn cho ${movableDeck.name}`, { exact: true }).click();
-    await page
-      .getByLabel(`Chuyển ${movableDeck.name} tới bộ sưu tập`)
-      .selectOption(destination.id);
-    await expect.poll(async () => (await db.deck.findUniqueOrThrow({ where: { id: movableDeck.id } })).folderId).toBe(destination.id);
-
-    await page.getByLabel(`Mở ${destination.name}`).click();
-    await page.getByLabel(`Tùy chọn cho ${secondDestinationDeck.name}`, { exact: true }).click();
-    await page.getByRole("button", { name: "Lên", exact: true }).click();
-    await expect.poll(async () => {
-      const decks = await db.deck.findMany({ where: { folderId: destination.id }, orderBy: { position: "asc" }, select: { id: true } });
-      return decks.map((deck) => deck.id);
-    }).toEqual([secondDestinationDeck.id, firstDestinationDeck.id, movableDeck.id]);
-
-    // Wait for router.refresh() to complete DOM reconciliation
-    await expect(page.locator(`[data-collection-card="${destination.id}"]`).locator("li.wn-tile").first()).toContainText(secondDestinationDeck.name);
-
     const sourceCard = page.locator(`[data-collection-card="${source.id}"]`);
-    await sourceCard.scrollIntoViewIfNeeded();
-    await sourceCard.getByLabel(`Tùy chọn cho ${source.name}`, { exact: true }).click();
-    await page.getByRole("button", { name: "Xóa", exact: true }).click();
+    await expect(sourceCard.getByText(safeDeck.name, { exact: true })).toHaveCount(0);
+    await expect(sourceCard.getByRole("button", { name: `Xóa bộ sưu tập ${source.name}` })).toHaveCount(0);
+    await sourceCard.click();
+    await page.getByRole("button", { name: `Xóa bộ sưu tập ${source.name}` }).click();
     const deleteDialog = page.getByRole("alertdialog");
     await expect(deleteDialog.getByRole("heading", { name: `Xóa bộ sưu tập “${source.name}”?` })).toBeVisible();
     await deleteDialog.getByRole("button", { name: "Xóa bộ sưu tập" }).click();

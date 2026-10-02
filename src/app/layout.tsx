@@ -25,7 +25,15 @@ const sourceSerif = Source_Serif_4({
 });
 
 import { PwaRegister } from "@/components/pwa/PwaRegister";
+import { MascotThemeProvider } from "@/components/ui/MascotThemeProvider";
 import { ToastProvider } from "@/components/ui/ToastProvider";
+
+const mascotThemeBootstrap = `(() => {
+  try {
+    const mascot = localStorage.getItem("wordnest.mascot.v1");
+    document.documentElement.dataset.mascotTheme = mascot === "dino" || mascot === "knight" ? mascot : "nesty";
+  } catch {}
+})();`;
 
 export const metadata: Metadata = {
   title: "WordNest — Thêm từ, học và ôn tập.",
@@ -75,8 +83,11 @@ export default function RootLayout({
         className="min-h-full flex flex-col bg-[#FAF6EE] text-[#221C16]"
         suppressHydrationWarning
       >
-        <ToastProvider>{children}</ToastProvider>
-        <PwaRegister />
+        <script dangerouslySetInnerHTML={{ __html: mascotThemeBootstrap }} />
+        <MascotThemeProvider>
+          <ToastProvider>{children}</ToastProvider>
+          <PwaRegister />
+        </MascotThemeProvider>
       </body>
     </html>
   );

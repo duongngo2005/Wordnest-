@@ -514,7 +514,7 @@ export function StoryGeneratorModal({
                   disabled={isSubmitting}
                 >
                   <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#E06B43] text-white shadow-[1px_1px_0_#221C16]">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[var(--accent)] text-white shadow-[1px_1px_0_#221C16]">
                       <Sparkles className="h-4 w-4" />
                     </div>
                     <div>
@@ -593,7 +593,7 @@ export function StoryGeneratorModal({
                         >
                           <span
                             className={`flex h-4 w-4 items-center justify-center rounded-[3px] border border-[#221C16] text-[10px] ${
-                              isSelected ? "bg-[#C85630] text-white" : "bg-white"
+                              isSelected ? "bg-[var(--accent-strong)] text-white" : "bg-white"
                             }`}
                           >
                             {isSelected ? <Check className="h-3 w-3 stroke-[3]" /> : null}
@@ -625,7 +625,7 @@ export function StoryGeneratorModal({
                         <Clock className="h-4 w-4 text-[#0D9488]" /> Độ dài truyện
                       </legend>
                     </div>
-                    <p className="mt-1 text-[11px] font-bold text-[#C85630]">
+                    <p className="mt-1 text-[11px] font-bold text-[var(--accent-strong)]">
                       {guidance.description}
                     </p>
                     <p className="text-[10px] text-[#6B6258] font-medium">
@@ -900,7 +900,7 @@ export function StoryGeneratorModal({
                 {/* 3-Step Playful Guide */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-[#221C16]/15">
                   <div className="flex items-center gap-2 text-xs font-bold text-[#6B6258]">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#E06B43] text-[10px] font-black text-white">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-black text-white">
                       1
                     </span>
                     <span>Sao chép prompt ở trên</span>
@@ -927,7 +927,7 @@ export function StoryGeneratorModal({
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#E06B43] text-white shadow-[1px_1px_0_#221C16]">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[var(--accent)] text-white shadow-[1px_1px_0_#221C16]">
                       <Braces className="h-4 w-4" />
                     </span>
                     <div>
@@ -962,7 +962,7 @@ export function StoryGeneratorModal({
                   <button
                     type="button"
                     onClick={handleValidateAndPreview}
-                    className="inline-flex items-center gap-2 rounded-xl border-2 border-[#221C16] bg-[#E06B43] hover:bg-[#C85630] px-4 py-2.5 text-xs sm:text-sm font-black text-white shadow-[2px_2px_0_#221C16] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    className="inline-flex items-center gap-2 rounded-xl border-2 border-[#221C16] bg-[var(--accent)] hover:bg-[var(--accent-strong)] px-4 py-2.5 text-xs sm:text-sm font-black text-white shadow-[2px_2px_0_#221C16] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     disabled={isSubmitting || !rawStory.trim()}
                   >
                     <Sparkles className="h-4 w-4" />
@@ -1014,7 +1014,7 @@ export function StoryGeneratorModal({
                           {validatedStory.usage.map((u, i) => (
                             <span
                               key={i}
-                              className="inline-flex items-center gap-1 rounded-lg border-1.5 border-[#221C16] bg-[#FFD8C8] px-2.5 py-1 text-xs font-black text-[#7C2D12] shadow-[1px_1px_0_#221C16]"
+                              className="inline-flex items-center gap-1 rounded-lg border-1.5 border-[#221C16] bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-black text-[#7C2D12] shadow-[1px_1px_0_#221C16]"
                             >
                               <span>{u.term}</span>
                               {u.usedAs !== u.term ? (
@@ -1046,7 +1046,7 @@ export function StoryGeneratorModal({
 
           {/* Status and Error banners */}
           {status ? (
-            <p aria-live="polite" className="text-xs sm:text-sm font-black text-[#C85630]">
+            <p aria-live="polite" className="text-xs sm:text-sm font-black text-[var(--accent-strong)]">
               {status}
             </p>
           ) : null}

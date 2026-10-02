@@ -433,18 +433,13 @@ export class ProgressService {
     const deckIds = deckRecords.map((deck) => deck.id);
     const isGlobal = scope.kind === "global";
 
-    const [scopedLogs, allTimeLogs, practiceAttempts, quizAttempts] = await Promise.all([
+    const [scopedLogs, practiceAttempts, quizAttempts] = await Promise.all([
       cardIds.length > 0
         ? db.reviewLog.findMany({
             where: isGlobal ? undefined : { cardId: { in: cardIds } },
             select: { cardId: true, rating: true, review: true },
           })
         : [],
-      isGlobal
-        ? Promise.resolve(null)
-        : db.reviewLog.findMany({
-            select: { cardId: true, rating: true, review: true },
-          }),
       cardIds.length > 0
         ? db.practiceAttempt.findMany({
             where: { flashcardId: { in: cardIds } },
@@ -457,7 +452,7 @@ export class ProgressService {
     ]);
 
     const reviewLogs = scopedLogs;
-    const allTimeReviewLogs = isGlobal ? scopedLogs : (allTimeLogs ?? scopedLogs);
+    const allTimeReviewLogs = scopedLogs;
 
     return buildProgressAnalytics({
       scope,

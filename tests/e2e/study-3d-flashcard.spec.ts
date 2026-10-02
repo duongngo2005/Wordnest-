@@ -55,7 +55,7 @@ test.describe("Study 3D Flashcard & Completion Reform", () => {
     await expect(page.getByRole("button", { name: "Hiện đáp án" })).toBeVisible();
 
     // 1. Audio button click should NOT reveal card
-    const audioBtn = page.getByRole("button", { name: "Nghe từ" }).first();
+    const audioBtn = page.getByRole("button", { name: /Phát âm "resilient"/ }).first();
     await audioBtn.click();
     // Card should still NOT be revealed
     await expect(page.locator(".wn-flashcard-3d-card")).not.toHaveClass(/is-flipped/);
@@ -115,6 +115,7 @@ test.describe("Study 3D Flashcard & Completion Reform", () => {
   }) => {
     await page.setViewportSize({ width: 430, height: 932 });
     await page.goto(`/decks/${deckId}/study`);
+    await expect(page.getByRole("link", { name: "Thoát study" })).toHaveCount(0);
 
     // Check no horizontal overflow on front
     let fits = await page.evaluate(

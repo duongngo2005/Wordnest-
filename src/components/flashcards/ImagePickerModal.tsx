@@ -264,12 +264,12 @@ export function ImagePickerModal({
         {/* Modal Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b-2 border-[#221C16] bg-[#FAF6EE]">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#E06B43] border-2 border-[#221C16] flex items-center justify-center text-white shadow-[2px_2px_0px_#221C16]">
+            <div className="w-8 h-8 rounded-lg bg-[var(--accent)] border-2 border-[#221C16] flex items-center justify-center text-white shadow-[2px_2px_0px_#221C16]">
               <ImageIcon className="w-4 h-4" />
             </div>
             <div>
               <h2 className="text-base font-black text-[#221C16] tracking-tight">
-                Chọn ảnh cho: <span className="text-[#E06B43]">&ldquo;{term}&rdquo;</span>
+                Chọn ảnh cho: <span className="text-[var(--accent)]">&ldquo;{term}&rdquo;</span>
               </h2>
               <p className="text-xs text-[#6B6258] font-medium">
                 Tìm ảnh web, tải ảnh từ máy tính hoặc nhấn <kbd className="px-1.5 py-0.5 bg-white border border-[#221C16] rounded font-mono text-[10px] font-bold">Ctrl + V</kbd> để dán
@@ -292,7 +292,7 @@ export function ImagePickerModal({
             onClick={() => setActiveTab("search")}
             className={`py-2.5 text-xs font-bold border-b-3 transition-all flex items-center gap-1.5 ${
               activeTab === "search"
-                ? "border-[#E06B43] text-[#221C16]"
+                ? "border-[var(--accent)] text-[#221C16]"
                 : "border-transparent text-[#6B6258] hover:text-[#221C16]"
             }`}
           >
@@ -303,7 +303,7 @@ export function ImagePickerModal({
             onClick={() => setActiveTab("upload")}
             className={`py-2.5 text-xs font-bold border-b-3 transition-all flex items-center gap-1.5 ${
               activeTab === "upload"
-                ? "border-[#E06B43] text-[#221C16]"
+                ? "border-[var(--accent)] text-[#221C16]"
                 : "border-transparent text-[#6B6258] hover:text-[#221C16]"
             }`}
           >
@@ -314,7 +314,7 @@ export function ImagePickerModal({
             onClick={() => setActiveTab("custom")}
             className={`py-2.5 text-xs font-bold border-b-3 transition-all flex items-center gap-1.5 ${
               activeTab === "custom"
-                ? "border-[#E06B43] text-[#221C16]"
+                ? "border-[var(--accent)] text-[#221C16]"
                 : "border-transparent text-[#6B6258] hover:text-[#221C16]"
             }`}
           >
@@ -336,7 +336,7 @@ export function ImagePickerModal({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Nhập từ khóa tìm ảnh..."
-                    className="w-full pl-9 pr-3 py-2 text-sm bg-[#FAF6EE] border-2 border-[#221C16] rounded-xl shadow-[2px_2px_0px_#221C16] font-medium text-[#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
+                    className="w-full pl-9 pr-3 py-2 text-sm bg-[#FAF6EE] border-2 border-[#221C16] rounded-xl shadow-[2px_2px_0px_#221C16] font-medium text-[#221C16] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                   />
                 </div>
                 <button
@@ -356,7 +356,7 @@ export function ImagePickerModal({
               {/* Quick suggestion pills */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-[11px] font-bold text-[#6B6258] flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-[#E06B43]" /> Gợi ý:
+                  <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Gợi ý:
                 </span>
                 {quickPills.map((pill) => (
                   <button
@@ -368,7 +368,7 @@ export function ImagePickerModal({
                     }}
                     className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border border-[#221C16] transition-all ${
                       searchQuery.toLowerCase() === pill.query.toLowerCase()
-                        ? "bg-[#E06B43] text-white shadow-[1px_1px_0px_#221C16]"
+                        ? "bg-[var(--accent)] text-white shadow-[1px_1px_0px_#221C16]"
                         : "bg-[#FAF6EE] text-[#221C16] hover:bg-[#FEF3C7]"
                     }`}
                   >
@@ -380,7 +380,7 @@ export function ImagePickerModal({
               {/* Content states */}
               {isLoading ? (
                 <div className="py-14 flex flex-col items-center justify-center gap-2.5 text-[#6B6258]">
-                  <Loader2 className="w-8 h-8 animate-spin text-[#E06B43]" />
+                  <Loader2 className="w-8 h-8 animate-spin text-[var(--accent)]" />
                   <p className="text-xs font-bold">Đang tìm ảnh minh họa trên web...</p>
                 </div>
               ) : error ? (
@@ -400,8 +400,8 @@ export function ImagePickerModal({
                         onClick={() => !isApplying && handleSelect(cand)}
                         className={`group relative rounded-xl overflow-hidden border-2 cursor-pointer transition-all duration-150 aspect-4/3 bg-[#F4EFE6] ${
                           isSelected
-                            ? "border-[#E06B43] ring-3 ring-[#E06B43]/30 shadow-[3px_3px_0px_#221C16]"
-                            : "border-[#221C16] hover:border-[#E06B43] hover:shadow-[3px_3px_0px_#221C16]"
+                            ? "border-[var(--accent)] ring-3 ring-[var(--accent)]/30 shadow-[3px_3px_0px_#221C16]"
+                            : "border-[#221C16] hover:border-[var(--accent)] hover:shadow-[3px_3px_0px_#221C16]"
                         }`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -413,7 +413,7 @@ export function ImagePickerModal({
                         />
                         {/* Selected badge */}
                         {isSelected && (
-                          <div className="absolute top-1.5 left-1.5 bg-[#E06B43] text-white p-1 rounded-full border border-[#221C16] shadow-sm">
+                          <div className="absolute top-1.5 left-1.5 bg-[var(--accent)] text-white p-1 rounded-full border border-[#221C16] shadow-sm">
                             <Check className="w-3.5 h-3.5 stroke-[3]" />
                           </div>
                         )}
@@ -448,7 +448,7 @@ export function ImagePickerModal({
               >
                 <div className="w-12 h-12 rounded-xl bg-white border-2 border-[#221C16] shadow-[2px_2px_0px_#221C16] flex items-center justify-center group-hover:scale-105 transition-transform">
                   {isUploading ? (
-                    <Loader2 className="w-6 h-6 text-[#E06B43] animate-spin" />
+                    <Loader2 className="w-6 h-6 text-[var(--accent)] animate-spin" />
                   ) : (
                     <Upload className="w-6 h-6 text-[#221C16]" />
                   )}
@@ -463,7 +463,7 @@ export function ImagePickerModal({
                   </p>
                 </div>
 
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#221C16] rounded-lg text-xs font-bold text-[#E06B43] shadow-[1px_1px_0px_#221C16] mt-1">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#221C16] rounded-lg text-xs font-bold text-[var(--accent)] shadow-[1px_1px_0px_#221C16] mt-1">
                   <Clipboard className="w-3.5 h-3.5" />
                   Mẹo: Bạn có thể nhấn Ctrl + V ngay lúc này để dán ảnh đã copy
                 </div>
@@ -488,7 +488,7 @@ export function ImagePickerModal({
                     value={customUrl}
                     onChange={(e) => setCustomUrl(e.target.value)}
                     placeholder="https://images.unsplash.com/..."
-                    className="flex-1 px-3 py-2 text-sm bg-[#FAF6EE] border-2 border-[#221C16] rounded-xl shadow-[2px_2px_0px_#221C16] font-medium text-[#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43]"
+                    className="flex-1 px-3 py-2 text-sm bg-[#FAF6EE] border-2 border-[#221C16] rounded-xl shadow-[2px_2px_0px_#221C16] font-medium text-[#221C16] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                   />
                   <button
                     type="button"

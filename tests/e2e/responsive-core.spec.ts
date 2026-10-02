@@ -13,6 +13,10 @@ async function expectNoHorizontalOverflow(page: import("@playwright/test").Page)
 }
 
 test("keeps core learning screens reachable across narrow and wide viewports", async ({ page }, testInfo) => {
+  // This intentionally traverses 24 server-rendered screens in one test.
+  // Keep every viewport assertion, while allowing normal two-worker suite contention.
+  test.setTimeout(60_000);
+
   const deck = await db.deck.create({
     data: {
       name: `Responsive core ${testInfo.testId.slice(-8)}`,

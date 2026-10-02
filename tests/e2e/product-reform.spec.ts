@@ -11,7 +11,7 @@ test.afterEach(async () => {
   folderId = null;
 });
 
-test("keeps collection and empty-deck creation actions visible", async ({ page }, testInfo) => {
+test("keeps collection creation visible and makes its delete control direct", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 430, height: 932 });
   const folder = await db.folder.create({
     data: { name: `Collection ${testInfo.testId}`, normalizedName: `collection-${testInfo.testId}`.toLowerCase() },
@@ -26,8 +26,11 @@ test("keeps collection and empty-deck creation actions visible", async ({ page }
   await expect(createDeckButton).toBeVisible();
   await expect(createDeckButton).toHaveText("Bộ từ");
   await expect(collectionHeader.getByRole("link", { name: "Tiến độ" })).toHaveCount(0);
-  await collectionHeader.getByLabel(`Tùy chọn cho ${folder.name}`).click();
-  await expect(collectionHeader.getByRole("link", { name: "Tiến độ" })).toHaveAttribute("href", `/progress/folders/${folder.id}`);
+  await expect(collectionHeader.getByLabel(`Tùy chọn cho ${folder.name}`)).toHaveCount(0);
+  await collectionHeader.getByRole("button", { name: `Xóa bộ sưu tập ${folder.name}` }).click();
+  const deleteDialog = page.getByRole("alertdialog");
+  await expect(deleteDialog.getByRole("heading", { name: `Xóa bộ sưu tập “${folder.name}”?` })).toBeVisible();
+  await deleteDialog.getByRole("button", { name: "Hủy bỏ" }).click();
 
   await page.goto(`/decks/${deck.id}`);
   await expect(page.getByRole("button", { name: "Thêm thẻ", exact: true })).toBeVisible();
@@ -59,26 +62,24 @@ test("keeps deck progress in the contextual menu and gives search its own icon s
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("keeps the collection overflow menu visible outside its card", async ({ page }, testInfo) => {
+test("keeps collection deletion inside the collection view rather than on the library cards", async ({ page }, testInfo) => {
   const folder = await db.folder.create({
-    data: { name: `Overflow ${testInfo.testId}`, normalizedName: `overflow-${testInfo.testId}`.toLowerCase() },
+    data: { name: `InsideDelete ${testInfo.testId}`, normalizedName: `insidedelete-${testInfo.testId}`.toLowerCase() },
   });
 
   try {
     await page.setViewportSize({ width: 430, height: 932 });
     await page.goto("/");
-    await page.getByLabel(`Tùy chọn cho ${folder.name}`).click();
-    const renameButton = page.getByRole("button", { name: "Đổi tên" });
-    await expect(renameButton).toBeVisible();
-    await expect
-      .poll(() =>
-        renameButton.evaluate((button) => {
-          const bounds = button.getBoundingClientRect();
-          const target = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
-          return target === button || button.contains(target);
-        })
-      )
-      .toBe(true);
+    await expect(page.getByRole("button", { name: `Xóa bộ sưu tập ${folder.name}` })).toHaveCount(0);
+    await expect(page.getByLabel(`Tùy chọn cho ${folder.name}`)).toHaveCount(0);
+
+    await page.goto(`/folders/${folder.id}`);
+    const deleteButton = page.getByRole("button", { name: `Xóa bộ sưu tập ${folder.name}` });
+    await expect(deleteButton).toBeVisible();
+    await deleteButton.click();
+    const deleteDialog = page.getByRole("alertdialog");
+    await expect(deleteDialog.getByRole("heading", { name: `Xóa bộ sưu tập “${folder.name}”?` })).toBeVisible();
+    await deleteDialog.getByRole("button", { name: "Hủy bỏ" }).click();
   } finally {
     await db.folder.deleteMany({ where: { id: folder.id } });
   }

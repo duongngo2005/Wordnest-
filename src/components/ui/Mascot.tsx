@@ -1,21 +1,94 @@
 "use client";
 
-import React from "react";
+import React, { useSyncExternalStore } from "react";
 import { motion, useReducedMotion } from "motion/react";
+import { Mascot as PageMascot } from "page-mascot";
+import {
+  DEFAULT_MASCOT_ID,
+  getMascotId,
+  subscribeToMascotId,
+  type MascotId,
+} from "@/lib/mascot-preferences";
 
-interface MascotProps {
+export interface MascotProps {
   mood?: "happy" | "thinking" | "celebrating" | "reading";
   className?: string;
   size?: number;
   ariaHidden?: boolean;
+  mascot?: MascotId;
+  interactive?: boolean;
 }
 
 export function WordNestMascot({
+  mascot,
+  ...props
+}: MascotProps) {
+  const selectedMascot = useSyncExternalStore(
+    subscribeToMascotId,
+    getMascotId,
+    () => DEFAULT_MASCOT_ID
+  );
+
+  const activeMascot = mascot ?? selectedMascot;
+
+  if (activeMascot === "dino" || activeMascot === "knight") {
+    return <SpriteMascot mascot={activeMascot} {...props} />;
+  }
+
+  return <NestyMascot {...props} />;
+}
+
+function SpriteMascot({
+  mascot,
+  className = "",
+  size = 120,
+  ariaHidden = false,
+  interactive = false,
+}: Omit<MascotProps, "mood"> & { mascot: "dino" | "knight" }) {
+  const character = mascot === "dino"
+    ? { label: "Dino, linh vật WordNest", slug: "dino" }
+    : { label: "Knight, linh vật WordNest", slug: "knight" };
+  const directions = `/mascots/${character.slug}-directions.webp`;
+  const reactions = `/mascots/${character.slug}-reactions.webp`;
+
+  if (interactive && !ariaHidden) {
+    return (
+      <PageMascot
+        directions={directions}
+        reactions={reactions}
+        size={size}
+        label={character.label}
+        className={`drop-shadow-md ${className}`}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center justify-center select-none ${className}`}
+      style={{ width: size, height: size }}
+      {...(ariaHidden ? { "aria-hidden": "true" } : { role: "img", "aria-label": character.label })}
+    >
+      <span
+        className="block h-full w-full drop-shadow-md"
+        aria-hidden="true"
+        style={{
+          backgroundImage: `url('${directions}')`,
+          backgroundPosition: "50% 50%",
+          backgroundRepeat: "no-repeat",
+          backgroundSize: "300% 300%",
+        }}
+      />
+    </span>
+  );
+}
+
+function NestyMascot({
   mood = "happy",
   className = "",
   size = 120,
   ariaHidden = false,
-}: MascotProps) {
+}: Omit<MascotProps, "mascot" | "interactive">) {
   const shouldReduceMotion = useReducedMotion();
 
   // Character body idle breathing / bounce
@@ -82,13 +155,15 @@ export function WordNestMascot({
       style={{ width: size, height: size }}
       {...(ariaHidden
         ? { "aria-hidden": "true" }
-        : { "aria-label": `Linh vật WordNest: ${accessibleMoodLabel}` })}
+        : { role: "img", "aria-label": `Linh vật WordNest: ${accessibleMoodLabel}` })}
     >
       <svg
         viewBox="0 0 160 160"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         className="w-full h-full drop-shadow-md overflow-visible"
+        aria-hidden="true"
+        focusable="false"
       >
         {/* Soft Retro Shadow */}
         <ellipse cx="80" cy="146" rx="55" ry="10" fill="#2E241E" fillOpacity="0.15" />

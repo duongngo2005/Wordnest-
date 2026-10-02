@@ -111,7 +111,7 @@ export function StoryNarrationControls({ content, compact = false }: { content: 
       <button
         type="button"
         onClick={togglePlayback}
-        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border-2 border-[#221C16] bg-[#E06B43] px-3 py-1.5 text-xs font-black text-white shadow-[2px_2px_0px_#221C16] transition-transform hover:-translate-y-0.5 active:translate-y-0.5"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border-2 border-[#221C16] bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-white shadow-[2px_2px_0px_#221C16] transition-transform hover:-translate-y-0.5 active:translate-y-0.5"
       >
         {status === "playing" ? <Pause className="h-3.5 w-3.5" aria-hidden="true" /> : status === "paused" ? <Play className="h-3.5 w-3.5" aria-hidden="true" /> : <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />}
         {primaryLabel}

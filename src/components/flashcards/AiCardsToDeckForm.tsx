@@ -71,15 +71,17 @@ export function AiCardsToDeckForm({
       const result = data.data as {
         cards?: GeneratedCard[];
         skippedExistingTerms?: string[];
+        skippedDuplicates?: Array<{ term: string; reason: string }>;
         duplicateInputCount?: number;
       };
       if (!Array.isArray(result.cards) || result.cards.length === 0) {
         throw new Error("AI chưa trả về thẻ hợp lệ. Hãy thử lại.");
       }
       setCards(result.cards);
+      const duplicateCount = result.skippedDuplicates?.length ?? result.skippedExistingTerms?.length ?? 0;
       const notes = [
-        result.duplicateInputCount ? `Đã bỏ ${result.duplicateInputCount} từ trùng.` : "",
-        result.skippedExistingTerms?.length ? `${result.skippedExistingTerms.length} từ đã có trong bộ.` : "",
+        result.duplicateInputCount ? `Đã bỏ ${result.duplicateInputCount} từ trùng trong input.` : "",
+        duplicateCount ? `${duplicateCount} từ đã có trong hệ thống (bỏ qua).` : "",
       ].filter(Boolean);
       toast.success("Đã tạo bản xem trước", { description: notes.join(" ") || `${result.cards.length} thẻ sẵn sàng để thêm.` });
     } catch (reason) {
@@ -105,10 +107,23 @@ export function AiCardsToDeckForm({
       if (!response.ok || !data || typeof data !== "object" || !("success" in data) || data.success !== true) {
         throw new Error(messageFrom(data, "Không thể thêm thẻ AI."));
       }
-      const created = "data" in data && data.data && typeof data.data === "object" && "cardsCreated" in data.data && typeof data.data.cardsCreated === "number"
-        ? data.data.cardsCreated
+      const resultData = "data" in data && data.data && typeof data.data === "object" ? data.data : null;
+      const created = resultData && "cardsCreated" in resultData && typeof resultData.cardsCreated === "number"
+        ? resultData.cardsCreated
         : cards.length;
-      toast.success("Đã thêm thẻ", { description: `${created} thẻ đã được thêm vào bộ từ.` });
+      const skippedCount = resultData && "skippedDuplicates" in resultData && Array.isArray(resultData.skippedDuplicates)
+        ? resultData.skippedDuplicates.length
+        : 0;
+
+      if (created > 0) {
+        toast.success("Đã thêm thẻ", {
+          description: `${created} thẻ đã được thêm vào bộ từ.${skippedCount > 0 ? ` (Bỏ qua ${skippedCount} từ trùng)` : ""}`,
+        });
+      } else {
+        toast.info("Không có thẻ mới", {
+          description: "Các từ này đã tồn tại trong hệ thống.",
+        });
+      }
       onSaved();
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "Không thể thêm thẻ AI.";

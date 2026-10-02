@@ -18,7 +18,7 @@ export function ReviewStreakSummary({ metrics, periodLabel }: ReviewStreakSummar
       <div className="group relative flex items-center justify-between rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-3.5 shadow-[2px_2px_0px_#221C16] transition-transform hover:-translate-y-0.5">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-[#6B6258]">
-            <Flame className="h-4 w-4 shrink-0 text-[#E06B43]" strokeWidth={2.5} />
+            <Flame className="h-4 w-4 shrink-0 text-[var(--accent)]" strokeWidth={2.5} />
             <span>Chuỗi hiện tại</span>
           </div>
           <div className="mt-1 flex items-baseline gap-1.5">

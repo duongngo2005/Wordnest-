@@ -25,9 +25,18 @@ export class JsonFlashcardImportError extends Error {
   }
 }
 
+export interface SkippedDuplicateCard {
+  term: string;
+  normalizedTerm: string;
+  reason: string;
+  existingDeckId?: string;
+  existingDeckName?: string;
+  existingFolderName?: string;
+}
+
 export class DuplicateFlashcardTermError extends Error {
-  constructor() {
-    super("Thuật ngữ này đã có trong bộ thẻ. Hãy chọn một thuật ngữ khác.");
+  constructor(message = "Thuật ngữ này đã có trong bộ thẻ. Hãy chọn một thuật ngữ khác.") {
+    super(message);
     this.name = "DuplicateFlashcardTermError";
   }
 }
@@ -243,9 +252,37 @@ export class DeckService {
       };
       const existingCard = await db.flashcard.findUnique({
         where: { id: cardId },
-        select: { partOfSpeech: true, cefr: true, imageUrl: true },
+        select: { deckId: true, partOfSpeech: true, cefr: true, imageUrl: true },
       });
       if (!existingCard) throw new ResourceNotFoundError("Không tìm thấy thẻ từ vựng.");
+
+      // Check system-wide uniqueness when term is updated
+      if (lexicalData.term) {
+        const normalized = normalizeTerm(lexicalData.term);
+        const duplicate = await db.flashcard.findFirst({
+          where: {
+            normalizedTerm: normalized,
+            id: { not: cardId },
+          },
+          include: {
+            deck: {
+              select: {
+                name: true,
+                folder: { select: { name: true } },
+              },
+            },
+          },
+        });
+        if (duplicate) {
+          const isSameDeck = duplicate.deckId === existingCard.deckId;
+          const location = isSameDeck
+            ? "bộ thẻ này"
+            : `bộ thẻ "${duplicate.deck.name}"${duplicate.deck.folder ? ` (bộ sưu tập "${duplicate.deck.folder.name}")` : ""}`;
+          throw new DuplicateFlashcardTermError(
+            `Thuật ngữ "${lexicalData.term}" đã tồn tại trong ${location}. Hãy chọn một thuật ngữ khác.`
+          );
+        }
+      }
 
       // Preserve an untouched legacy free-form value, but only permit the
       // controlled list when a user supplies a different value.
@@ -288,6 +325,15 @@ export class DeckService {
         },
       });
     } catch (error) {
+      if (error instanceof DuplicateFlashcardTermError) {
+        throw error;
+      }
+      if (error instanceof CardValidationError) {
+        throw error;
+      }
+      if (error instanceof ResourceNotFoundError) {
+        throw error;
+      }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
         throw new ResourceNotFoundError("Không tìm thấy thẻ từ vựng.");
       }
@@ -338,8 +384,8 @@ export class DeckService {
     cards: ManualFlashcardItem[];
   }) {
     const { deckName, folderId, cards } = options;
-    const cardsToCreate = this.getUniqueManualCards(cards);
-    if (cardsToCreate.length === 0) {
+    const validCards = cards.filter((card) => card.term.trim() && card.meaningVi.trim());
+    if (validCards.length === 0) {
       throw new Error("Vui lòng nhập ít nhất một thẻ có từ và nghĩa tiếng Việt.");
     }
 
@@ -358,7 +404,7 @@ export class DeckService {
         },
       });
 
-      await this.persistManualCards(tx, createdDeck.id, cardsToCreate);
+      await this.persistManualCards(tx, createdDeck.id, validCards);
       return createdDeck;
     });
 
@@ -367,8 +413,8 @@ export class DeckService {
 
   /** Adds user-authored cards to an existing deck without invoking AI or image search. */
   async createManualCards(deckId: string, cards: ManualFlashcardItem[]) {
-    const cardsToCreate = this.getUniqueManualCards(cards);
-    if (cardsToCreate.length === 0) {
+    const validCards = cards.filter((card) => card.term.trim() && card.meaningVi.trim());
+    if (validCards.length === 0) {
       throw new Error("Vui lòng nhập ít nhất một thẻ có từ và nghĩa tiếng Việt.");
     }
 
@@ -379,52 +425,48 @@ export class DeckService {
       });
       if (!deck) throw new ResourceNotFoundError("Không tìm thấy bộ thẻ đã chọn.");
 
-      const cardsCreated = await this.persistManualCards(tx, deck.id, cardsToCreate);
+      const result = await this.persistManualCards(tx, deck.id, validCards);
       return {
         deckId: deck.id,
         deckName: deck.name,
-        cardsCreated,
-        ...(cardsCreated === 0
-          ? { message: "Tất cả các từ vựng này đã tồn tại trong bộ thẻ." }
+        cardsCreated: result.cardsCreated,
+        skippedDuplicates: result.skippedDuplicates,
+        ...(result.cardsCreated === 0 && result.skippedDuplicates.length > 0
+          ? { message: result.skippedDuplicates[0].reason }
           : {}),
       };
     });
   }
 
   /**
-   * Commits an accepted AI preview as one strict transaction. Unlike manual
-   * entry, a stale preview is rejected as a whole instead of quietly adding
-   * only a subset after another tab has created a duplicate.
+   * Commits accepted AI card drafts, skipping any system-wide duplicate terms gracefully.
    */
   async persistAiCardDrafts(deckId: string, cards: ManualFlashcardItem[]) {
-    const uniqueCards = this.getUniqueManualCards(cards);
-    if (uniqueCards.length !== cards.length) {
-      throw new CardValidationError("Bản xem trước có thẻ trùng hoặc thiếu nội dung. Hãy tạo lại.");
+    const validCards = cards.filter((card) => card.term.trim() && card.meaningVi.trim());
+    if (validCards.length === 0) {
+      throw new CardValidationError("Bản xem trước không có thẻ hợp lệ. Hãy tạo lại.");
     }
 
     return db.$transaction(async (tx) => {
       const deck = await tx.deck.findUnique({
         where: { id: deckId },
-        select: { id: true, name: true, cards: { select: { normalizedTerm: true } } },
+        select: { id: true, name: true },
       });
       if (!deck) throw new ResourceNotFoundError("Không tìm thấy bộ thẻ đã chọn.");
 
-      const existingTerms = new Set(deck.cards.map((card) => card.normalizedTerm));
-      if (uniqueCards.some((card) => existingTerms.has(normalizeTerm(card.term)))) {
-        throw new CardValidationError("Một thẻ trong bản xem trước đã có trong bộ từ. Hãy tạo lại.");
-      }
-
-      const cardsCreated = await this.persistManualCards(tx, deck.id, uniqueCards);
-      if (cardsCreated !== uniqueCards.length) {
-        throw new CardValidationError("Không thể lưu trọn vẹn bản xem trước. Hãy tạo lại.");
-      }
-      return { deckId: deck.id, deckName: deck.name, cardsCreated };
+      const result = await this.persistManualCards(tx, deck.id, validCards);
+      return {
+        deckId: deck.id,
+        deckName: deck.name,
+        cardsCreated: result.cardsCreated,
+        skippedDuplicates: result.skippedDuplicates,
+      };
     });
   }
 
   /**
    * Generates a reviewable lexical draft for an existing deck. This does not
-   * write Flashcards, does not search images, and is safe to retry.
+   * write Flashcards, does not search images, and checks system-wide uniqueness.
    */
   async generateAiCardDrafts(deckId: string, rawInput: string) {
     const parsed = parseVocabularyInput(rawInput, AI_CARD_GENERATION_LIMIT);
@@ -435,16 +477,40 @@ export class DeckService {
 
     const deck = await db.deck.findUnique({
       where: { id: deckId },
-      select: { id: true, cards: { select: { normalizedTerm: true } } },
+      select: { id: true },
     });
     if (!deck) throw new ResourceNotFoundError("Không tìm thấy bộ thẻ đã chọn.");
 
-    const existingTerms = new Set(deck.cards.map((card) => card.normalizedTerm));
-    const termsToGenerate = parsed.terms.filter((term) => !existingTerms.has(normalizeTerm(term)));
-    const skippedExistingTerms = parsed.terms.filter((term) => existingTerms.has(normalizeTerm(term)));
+    const candidateTerms = parsed.terms.map(normalizeTerm).filter(Boolean);
+    const existingSystemMap = await this.findSystemDuplicates(db, candidateTerms);
+
+    const termsToGenerate: string[] = [];
+    const skippedDuplicates: SkippedDuplicateCard[] = [];
+
+    for (const term of parsed.terms) {
+      const normalized = normalizeTerm(term);
+      const existing = existingSystemMap.get(normalized);
+      if (existing) {
+        const isSameDeck = existing.deckId === deckId;
+        const locationInfo = isSameDeck
+          ? "trong bộ thẻ này"
+          : `trong bộ thẻ "${existing.deckName}"${existing.folderName ? ` (bộ sưu tập "${existing.folderName}")` : ""}`;
+        skippedDuplicates.push({
+          term,
+          normalizedTerm: normalized,
+          reason: `Đã tồn tại ${locationInfo}.`,
+          existingDeckId: existing.deckId,
+          existingDeckName: existing.deckName,
+          existingFolderName: existing.folderName ?? undefined,
+        });
+      } else {
+        termsToGenerate.push(term);
+      }
+    }
 
     if (termsToGenerate.length === 0) {
-      throw new CardValidationError("Các từ này đã có trong bộ từ.");
+      const sampleReasons = skippedDuplicates.slice(0, 2).map((s) => `"${s.term}": ${s.reason}`).join("; ");
+      throw new CardValidationError(`Tất cả các từ này đã có trong hệ thống (${sampleReasons}).`);
     }
 
     const generated = await aiService.generateFlashcards(termsToGenerate);
@@ -468,39 +534,48 @@ export class DeckService {
 
     return {
       cards,
-      skippedExistingTerms,
+      skippedExistingTerms: skippedDuplicates.map((s) => s.term),
+      skippedDuplicates,
       duplicateInputCount: parsed.duplicateCount,
     };
   }
 
-  /** Validates a JSON import against the destination deck without changing data. */
+  /** Validates a JSON import against the destination deck and entire system without changing data. */
   async previewJsonFlashcardImport(deckId: string, rawJson: string) {
     const parsed = parseJsonFlashcardImport(rawJson);
     if (!parsed.valid) {
-      return { valid: false, cards: [], errors: parsed.errors };
+      return { valid: false, cards: [], skippedCards: [], errors: parsed.errors };
     }
 
     const deck = await db.deck.findUnique({
       where: { id: deckId },
-      select: { cards: { select: { normalizedTerm: true } } },
+      select: { id: true },
     });
     if (!deck) throw new ResourceNotFoundError("Không tìm thấy bộ thẻ đã chọn.");
 
-    const existingTerms = new Set(deck.cards.map((card) => card.normalizedTerm));
-    const errors = this.getJsonImportDuplicateErrors(parsed.payload.cards, existingTerms);
-    return { valid: errors.length === 0, cards: parsed.payload.cards, errors };
+    const candidateTerms = parsed.payload.cards.map((c) => normalizeTerm(c.term)).filter(Boolean);
+    const existingSystemMap = await this.findSystemDuplicates(db, candidateTerms);
+    const { uniqueCards, skippedDuplicates } = this.partitionCardsBySystemDuplicates(
+      parsed.payload.cards,
+      deckId,
+      existingSystemMap
+    );
+
+    return {
+      valid: true,
+      cards: uniqueCards,
+      skippedCards: skippedDuplicates,
+      errors: [],
+    };
   }
 
   /**
-   * Revalidates and writes an entire JSON import in one database transaction.
-   * There is no AI, image search, or partial-success path in this method.
+   * Revalidates and writes non-duplicate JSON flashcards in one database transaction.
+   * Duplicate words are skipped gracefully with friendly logs/reasons without aborting the import.
    */
   async importJsonFlashcards(deckId: string, rawJson: string) {
     const parsed = parseJsonFlashcardImport(rawJson);
     if (!parsed.valid) throw new JsonFlashcardImportError(parsed.errors);
-
-    const incomingErrors = this.getJsonImportDuplicateErrors(parsed.payload.cards, new Set());
-    if (incomingErrors.length > 0) throw new JsonFlashcardImportError(incomingErrors);
 
     return db.$transaction(async (tx) => {
       const deck = await tx.deck.findUnique({
@@ -509,53 +584,116 @@ export class DeckService {
       });
       if (!deck) throw new ResourceNotFoundError("Không tìm thấy bộ thẻ đã chọn.");
 
-      const existingCards = await tx.flashcard.findMany({
-        where: { deckId },
-        select: { normalizedTerm: true },
-      });
-      const existingTerms = new Set(existingCards.map((card) => card.normalizedTerm));
-      const duplicateErrors = this.getJsonImportDuplicateErrors(parsed.payload.cards, existingTerms);
-      if (duplicateErrors.length > 0) throw new JsonFlashcardImportError(duplicateErrors);
+      const candidateTerms = parsed.payload.cards.map((c) => normalizeTerm(c.term)).filter(Boolean);
+      const existingSystemMap = await this.findSystemDuplicates(tx, candidateTerms);
+      const { uniqueCards, skippedDuplicates } = this.partitionCardsBySystemDuplicates(
+        parsed.payload.cards,
+        deckId,
+        existingSystemMap
+      );
 
-      await tx.flashcard.createMany({
-        data: parsed.payload.cards.map((card) => this.toJsonImportCardData(deck.id, card)),
-      });
+      if (uniqueCards.length > 0) {
+        await tx.flashcard.createMany({
+          data: uniqueCards.map((card) => this.toJsonImportCardData(deck.id, card)),
+        });
+      }
 
-      return { deckId: deck.id, deckName: deck.name, cardsCreated: parsed.payload.cards.length };
+      return {
+        deckId: deck.id,
+        deckName: deck.name,
+        cardsCreated: uniqueCards.length,
+        skippedDuplicates,
+      };
     });
   }
 
-  private getUniqueManualCards(cards: ManualFlashcardItem[]): ManualFlashcardItem[] {
-    const seenTerms = new Set<string>();
+  /**
+   * Finds existing cards across the entire database matching the given normalized terms.
+   */
+  private async findSystemDuplicates(
+    tx: Prisma.TransactionClient | typeof db,
+    candidateNormalizedTerms: string[]
+  ): Promise<Map<string, { deckId: string; deckName: string; folderName: string | null }>> {
+    if (candidateNormalizedTerms.length === 0) return new Map();
 
-    return cards.filter((card) => {
-      const normalizedTerm = normalizeTerm(card.term);
-      if (!normalizedTerm || !card.meaningVi.trim() || seenTerms.has(normalizedTerm)) {
-        return false;
-      }
-      seenTerms.add(normalizedTerm);
-      return true;
+    const matches = await tx.flashcard.findMany({
+      where: {
+        normalizedTerm: { in: candidateNormalizedTerms },
+      },
+      select: {
+        normalizedTerm: true,
+        deckId: true,
+        deck: {
+          select: {
+            name: true,
+            folder: { select: { name: true } },
+          },
+        },
+      },
     });
+
+    const map = new Map<string, { deckId: string; deckName: string; folderName: string | null }>();
+    for (const match of matches) {
+      if (!map.has(match.normalizedTerm)) {
+        map.set(match.normalizedTerm, {
+          deckId: match.deckId,
+          deckName: match.deck.name,
+          folderName: match.deck.folder?.name ?? null,
+        });
+      }
+    }
+    return map;
   }
 
-  private getJsonImportDuplicateErrors(cards: JsonFlashcard[], existingTerms: Set<string>): string[] {
-    const seenTerms = new Map<string, number>();
-    const errors: string[] = [];
+  /**
+   * Partitions candidate cards into unique (to be created) and skipped duplicates (already exist
+   * either in the same batch or anywhere in the system database).
+   */
+  private partitionCardsBySystemDuplicates<T extends { term: string }>(
+    cards: T[],
+    targetDeckId: string,
+    existingInSystem: Map<string, { deckId: string; deckName: string; folderName: string | null }>
+  ): { uniqueCards: T[]; skippedDuplicates: SkippedDuplicateCard[] } {
+    const seenInBatch = new Set<string>();
+    const uniqueCards: T[] = [];
+    const skippedDuplicates: SkippedDuplicateCard[] = [];
 
-    cards.forEach((card, index) => {
-      const normalizedTerm = normalizeTerm(card.term);
-      const firstIndex = seenTerms.get(normalizedTerm);
-      if (firstIndex !== undefined) {
-        errors.push(`cards[${index}].term: Duplicate of cards[${firstIndex}].term.`);
-        return;
-      }
-      seenTerms.set(normalizedTerm, index);
-      if (existingTerms.has(normalizedTerm)) {
-        errors.push(`cards[${index}].term: This term already exists in the destination deck.`);
-      }
-    });
+    for (const card of cards) {
+      const normalized = normalizeTerm(card.term);
+      if (!normalized) continue;
 
-    return errors;
+      if (seenInBatch.has(normalized)) {
+        skippedDuplicates.push({
+          term: card.term,
+          normalizedTerm: normalized,
+          reason: "Trùng lặp với từ khác trong danh sách đang nhập.",
+        });
+        continue;
+      }
+      seenInBatch.add(normalized);
+
+      const existing = existingInSystem.get(normalized);
+      if (existing) {
+        const isSameDeck = existing.deckId === targetDeckId;
+        const locationInfo = isSameDeck
+          ? "trong bộ thẻ này"
+          : `trong bộ thẻ "${existing.deckName}"${existing.folderName ? ` (bộ sưu tập "${existing.folderName}")` : ""}`;
+
+        skippedDuplicates.push({
+          term: card.term,
+          normalizedTerm: normalized,
+          reason: `Đã tồn tại ${locationInfo}.`,
+          existingDeckId: existing.deckId,
+          existingDeckName: existing.deckName,
+          existingFolderName: existing.folderName ?? undefined,
+        });
+        continue;
+      }
+
+      uniqueCards.push(card);
+    }
+
+    return { uniqueCards, skippedDuplicates };
   }
 
   private toJsonImportCardData(deckId: string, card: JsonFlashcard): Prisma.FlashcardCreateManyInput {
@@ -586,15 +724,18 @@ export class DeckService {
     tx: Prisma.TransactionClient,
     deckId: string,
     cards: ManualFlashcardItem[]
-  ): Promise<number> {
-    const existingCards = await tx.flashcard.findMany({
-      where: { deckId },
-      select: { normalizedTerm: true },
-    });
-    const existingTerms = new Set(existingCards.map((card) => card.normalizedTerm));
-    const uniqueCards = cards.filter((card) => !existingTerms.has(normalizeTerm(card.term)));
+  ): Promise<{ cardsCreated: number; skippedDuplicates: SkippedDuplicateCard[] }> {
+    const candidateTerms = cards.map((card) => normalizeTerm(card.term)).filter(Boolean);
+    const existingSystemMap = await this.findSystemDuplicates(tx, candidateTerms);
+    const { uniqueCards, skippedDuplicates } = this.partitionCardsBySystemDuplicates(
+      cards,
+      deckId,
+      existingSystemMap
+    );
 
-    if (uniqueCards.length === 0) return 0;
+    if (uniqueCards.length === 0) {
+      return { cardsCreated: 0, skippedDuplicates };
+    }
 
     await tx.flashcard.createMany({
       data: uniqueCards.map((card) => ({
@@ -620,7 +761,7 @@ export class DeckService {
       })),
     });
 
-    return uniqueCards.length;
+    return { cardsCreated: uniqueCards.length, skippedDuplicates };
   }
 
   private async getNextFolderDeckPosition(

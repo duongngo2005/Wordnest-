@@ -77,7 +77,7 @@ export function StudyCompletionPostcard({
 
           <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 rounded-full border border-[#D8CFC0] bg-[#EFE8DC] px-3 py-0.5 text-[11px] font-mono font-bold uppercase tracking-wider text-[#6E6356]">
-              <Sparkles className="h-3 w-3 text-[#E06B43]" />
+              <Sparkles className="h-3 w-3 text-[var(--accent)]" />
               <span>{mode === "scheduled-review" ? "Phiên ôn tập" : "Luyện tự do"}</span>
             </div>
             <h1 id="completion-heading" className="text-2xl sm:text-3xl font-black text-[#221C16] tracking-tight">
@@ -158,14 +158,16 @@ export function StudyCompletionPostcard({
 
         {/* Action Buttons */}
         <div className="mt-6 flex flex-col gap-2.5 pt-4 border-t border-dashed border-[#DCD3C5]">
-          <Link
-            href={backHref ?? `/decks/${deckId}`}
-            onClick={() => playUISound("softTap")}
-            className="brick-button-primary w-full min-h-[44px] py-3 text-sm font-black inline-flex items-center justify-center gap-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>{backLabel ?? "Quay lại bộ từ"}</span>
-          </Link>
+          <div className="hidden sm:block">
+            <Link
+              href={backHref ?? `/decks/${deckId}`}
+              onClick={() => playUISound("softTap")}
+              className="brick-button-primary w-full min-h-[44px] items-center justify-center gap-2 py-3 text-sm font-black"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>{backLabel ?? "Quay lại bộ từ"}</span>
+            </Link>
+          </div>
 
           <button
             type="button"

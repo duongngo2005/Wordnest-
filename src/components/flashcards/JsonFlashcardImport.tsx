@@ -20,9 +20,18 @@ interface PreviewCard {
   imageUrl?: string | null;
 }
 
+interface SkippedCardInfo {
+  term: string;
+  normalizedTerm: string;
+  reason: string;
+  existingDeckName?: string;
+  existingFolderName?: string;
+}
+
 interface JsonImportPreview {
   valid: boolean;
   cards: PreviewCard[];
+  skippedCards?: SkippedCardInfo[];
   errors: string[];
 }
 
@@ -177,14 +186,28 @@ export function JsonFlashcardImport({
         throw new Error(getErrorMessage(data, "Không thể nhập JSON flashcard."));
       }
 
-      const cardsCreated = "data" in data && data.data && typeof data.data === "object" && "cardsCreated" in data.data && typeof data.data.cardsCreated === "number"
-        ? data.data.cardsCreated
+      const resultData = "data" in data && data.data && typeof data.data === "object" ? data.data : null;
+      const cardsCreated = resultData && "cardsCreated" in resultData && typeof resultData.cardsCreated === "number"
+        ? resultData.cardsCreated
         : preview?.cards.length ?? 0;
+      const skippedCount = resultData && "skippedDuplicates" in resultData && Array.isArray(resultData.skippedDuplicates)
+        ? resultData.skippedDuplicates.length
+        : preview?.skippedCards?.length ?? 0;
+
       setRawJson("");
       setPreview(null);
       setImageStates({});
       setExpandedPreviewRows({});
-      toast.success("Đã nhập flashcard", { description: `${cardsCreated} thẻ đã được thêm vào bộ “${deckName}”.` });
+
+      if (cardsCreated > 0) {
+        toast.success("Đã nhập flashcard", {
+          description: `${cardsCreated} thẻ đã được thêm vào bộ “${deckName}”.${skippedCount > 0 ? ` (Đã bỏ qua ${skippedCount} từ trùng lặp)` : ""}`,
+        });
+      } else {
+        toast.info("Không có thẻ mới", {
+          description: `Tất cả ${skippedCount} từ đều đã tồn tại trong hệ thống.`,
+        });
+      }
       onSaved();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Không thể nhập JSON flashcard.";
@@ -209,7 +232,7 @@ export function JsonFlashcardImport({
       <div className="wn-paper-surface space-y-3 bg-[#FFFDF7] border-2 border-[#221C16] p-4 shadow-[2px_2px_0px_#221C16]">
         <div className="flex items-center justify-between border-b border-dashed border-[#DCD3C5] pb-2">
           <div className="flex items-center gap-2">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E06B43] text-[10px] font-black text-white">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-black text-white">
               1
             </span>
             <span className="text-xs font-black uppercase tracking-wider text-[#221C16]">
@@ -303,7 +326,7 @@ export function JsonFlashcardImport({
             onChange={(event) => changeJson(event.target.value)}
             disabled={isValidating || isImporting}
             placeholder={'{\n  "schemaVersion": 1,\n  "cards": [\n    {\n      "term": "example",\n      "meaningVi": "ví dụ"\n    }\n  ]\n}'}
-            className="mt-1.5 w-full resize-y rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-3 font-mono text-xs leading-5 text-[#221C16] shadow-[1.5px_1.5px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[#E06B43] disabled:opacity-60"
+            className="mt-1.5 w-full resize-y rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-3 font-mono text-xs leading-5 text-[#221C16] shadow-[1.5px_1.5px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:opacity-60"
           />
         </label>
 
@@ -362,6 +385,26 @@ export function JsonFlashcardImport({
             <PreviewStat label="Có ảnh" value={imageCards.length} />
             <PreviewStat label="Không ảnh" value={preview.cards.length - imageCards.length} />
           </div>
+          {preview.skippedCards && preview.skippedCards.length > 0 ? (
+            <div className="rounded-xl border-2 border-[#D97706] bg-[#FEF3C7] p-3 text-xs text-[#92400E]">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-[#D97706]" />
+                <div className="space-y-1.5 flex-1">
+                  <p className="font-extrabold text-[#78350F]">
+                    Phát hiện {preview.skippedCards.length} từ đã có trong hệ thống (sẽ tự động bỏ qua khi import):
+                  </p>
+                  <ul className="max-h-36 overflow-y-auto space-y-1 divide-y divide-[#FDE68A]/60 font-medium">
+                    {preview.skippedCards.map((sc, i) => (
+                      <li key={`${sc.term}-${i}`} className="pt-1 first:pt-0 flex items-center justify-between gap-2">
+                        <span className="font-bold text-[#1F2937]">“{sc.term}”</span>
+                        <span className="text-[#92400E] text-[11px]">{sc.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {pendingImages.length > 0 ? <p className="text-xs font-bold text-[#B45309]">Đang kiểm tra {pendingImages.length} ảnh trước khi cho phép import.</p> : null}
           {failedImages.length > 0 ? <ImportError errors={failedImages.map(({ card }) => `Ảnh của “${card.term}” không tải được. Hãy bỏ hoặc thay imageUrl.`)} /> : null}
           <div className="overflow-x-auto rounded-lg border border-[#221C16]/30">
@@ -382,9 +425,28 @@ export function JsonFlashcardImport({
               </tbody>
             </table>
           </div>
-          {preview.valid ? <button type="button" onClick={importCards} disabled={!canImport} className="brick-button-primary w-full px-4 py-3 text-sm font-black disabled:opacity-50">
-              {isImporting ? <><Loader2 className="h-4 w-4 animate-spin" /> Đang nhập toàn bộ thẻ...</> : `Import ${preview.cards.length} flashcard`}
-            </button> : null}
+          {preview.valid ? (
+            preview.cards.length > 0 ? (
+              <button
+                type="button"
+                onClick={importCards}
+                disabled={!canImport}
+                className="brick-button-primary w-full px-4 py-3 text-sm font-black disabled:opacity-50"
+              >
+                {isImporting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Đang nhập toàn bộ thẻ...
+                  </>
+                ) : (
+                  `Import ${preview.cards.length} flashcard`
+                )}
+              </button>
+            ) : (
+              <div className="rounded-xl border border-dashed border-[#6B6258] bg-[#FAF6EE] p-3 text-center text-xs font-bold text-[#6B6258]">
+                Tất cả các từ trong JSON đều đã có trong hệ thống. Không có thẻ mới để nhập.
+              </div>
+            )
+          ) : null}
         </div>
       ) : null}
     </div>

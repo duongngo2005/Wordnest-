@@ -229,7 +229,7 @@ function VocabularyNoteContent({
           {ipa || partOfSpeech ? <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#756A5D]">{ipa ? <span className="font-mono font-semibold">{ipa}</span> : null}{partOfSpeech ? <span className="italic">{partOfSpeech}</span> : null}</p> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <PronounceButton text={panel.selectedText} size="sm" variant="story" label="Phát âm" className="min-h-11" />
+          <PronounceButton text={panel.selectedText} size="sm" />
           <button ref={closeButtonRef} type="button" onClick={onClose} className="wn-story-icon-control" aria-label="Đóng bảng nghĩa">
             <X className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />
           </button>
@@ -349,7 +349,7 @@ function OverflowMenu({ title, onDelete }: { title: string; onDelete?: () => voi
     <div ref={menuRef} className="relative shrink-0">
       <button type="button" onClick={() => setOpen((current) => !current)} className="wn-story-icon-control" aria-label="Tùy chọn truyện" aria-expanded={open}><MoreHorizontal className="h-4 w-4" aria-hidden="true" /></button>
       <AnimatePresence>{open ? <motion.div className="wn-story-overflow" initial={panelVariants.hidden} animate={panelVariants.visible} exit={panelVariants.exit}>
-        <PronounceButton text={title} size="sm" variant="story" label="Đọc tiêu đề" className="w-full justify-start" />
+        <PronounceButton text={title} variant="menu-item" label="Đọc tiêu đề" />
         {onDelete ? <button type="button" onClick={() => { setOpen(false); onDelete(); }} className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold"><Trash2 className="h-3.5 w-3.5" aria-hidden="true" />Xóa truyện</button> : null}
       </motion.div> : null}</AnimatePresence>
     </div>
@@ -481,7 +481,13 @@ export function StoryReader({
         ) : (
           <>
             <div className="wn-story-masthead"><span>WordNest · Reading file</span><span aria-hidden="true">✦</span><span>{vocabularyCount} từ mục tiêu</span></div>
-            <div className="mt-3"><h1 id="story-heading" className="wn-story-title text-[#221C16]">{story.title}</h1><div className="wn-story-metadata mt-3" aria-label="Thông tin truyện"><span>{story.topic}</span><span aria-hidden="true">•</span><span>CEFR {story.cefr}</span><span aria-hidden="true">•</span><span>{story.length === "short" ? "Ngắn" : story.length === "medium" ? "Vừa" : story.length === "long" ? "Dài" : story.length}</span></div></div>
+            <div className="mt-3">
+              <div className="flex items-center gap-2.5">
+                <h1 id="story-heading" className="wn-story-title text-[#221C16]">{story.title}</h1>
+                <PronounceButton text={story.title} size="sm" />
+              </div>
+              <div className="wn-story-metadata mt-3" aria-label="Thông tin truyện"><span>{story.topic}</span><span aria-hidden="true">•</span><span>CEFR {story.cefr}</span><span aria-hidden="true">•</span><span>{story.length === "short" ? "Ngắn" : story.length === "medium" ? "Vừa" : story.length === "long" ? "Dài" : story.length}</span></div>
+            </div>
             <div className="mt-5 flex items-center justify-between gap-2 border-t border-dashed border-[#CFC2AF] pt-3">
               <div className="flex min-w-0 flex-wrap items-center gap-1.5"><StoryNarrationControls content={story.content} />{vocabularyCount ? <button type="button" onClick={(event) => openTrail(event.currentTarget)} className="wn-story-secondary-control" aria-expanded={isMobile ? mobileTrailOpen : trailOpen} aria-controls={isMobile ? "story-vocabulary-trail-title" : "story-vocabulary-trail"}><BookMarked className="h-4 w-4" aria-hidden="true" /><span>Từ trong bài <b>· {vocabularyCount}</b></span></button> : null}<button type="button" onClick={() => onReadingModeChange?.(true)} className="wn-story-secondary-control wn-story-reading-toggle" aria-label="Chế độ đọc" aria-pressed={readingMode}><Maximize2 className="h-4 w-4" aria-hidden="true" /><span>Chế độ đọc</span></button></div>
               <OverflowMenu title={story.title} onDelete={onDelete} />

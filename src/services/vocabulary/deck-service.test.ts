@@ -83,9 +83,9 @@ describe("DeckService Integration with MySQL", () => {
     const generateFlashcards = vi.spyOn(aiService, "generateFlashcards").mockResolvedValue([generated]);
 
     try {
-      const draft = await deckService.generateAiCardDrafts(deck.id, "allocate");
+      const draft = await deckService.generateAiCardDrafts(deck.id, "synthesize-test-word");
       expect(draft.cards).toHaveLength(1);
-      expect(draft.cards[0]).toMatchObject({ term: "allocate", meaningVi: "phân bổ" });
+      expect(draft.cards[0]).toMatchObject({ term: "synthesize-test-word", meaningVi: "phân bổ" });
       expect(await db.flashcard.count({ where: { deckId: deck.id } })).toBe(0);
 
       await expect(deckService.persistAiCardDrafts(deck.id, draft.cards)).resolves.toMatchObject({ cardsCreated: 1 });
@@ -113,19 +113,21 @@ describe("DeckService Integration with MySQL", () => {
     }
   });
 
-  it("rejects a stale AI preview as a whole instead of writing a partial batch", async () => {
-    const deck = await db.deck.create({ data: { name: "AI stale preview" } });
-    await deckService.createManualCards(deck.id, [{ term: "allocate", meaningVi: "phân bổ" }]);
+  it("skips duplicate terms gracefully when persisting AI drafts", async () => {
+    const deck = await db.deck.create({ data: { name: "AI duplicate skip" } });
+    await deckService.createManualCards(deck.id, [{ term: "persist-draft-a", meaningVi: "phân bổ" }]);
 
     try {
-      await expect(
-        deckService.persistAiCardDrafts(deck.id, [
-          { term: "allocate", meaningVi: "phân bổ" },
-          { term: "resilient", meaningVi: "kiên cường" },
-        ])
-      ).rejects.toThrow("đã có trong bộ từ");
+      const result = await deckService.persistAiCardDrafts(deck.id, [
+        { term: "persist-draft-a", meaningVi: "phân bổ" },
+        { term: "persist-draft-b", meaningVi: "kiên cường" },
+      ]);
+      expect(result.cardsCreated).toBe(1);
+      expect(result.skippedDuplicates).toHaveLength(1);
+      expect(result.skippedDuplicates[0].term).toBe("persist-draft-a");
       expect(await db.flashcard.findMany({ where: { deckId: deck.id }, orderBy: { term: "asc" } })).toMatchObject([
-        { term: "allocate" },
+        { term: "persist-draft-a" },
+        { term: "persist-draft-b" },
       ]);
     } finally {
       await db.deck.delete({ where: { id: deck.id } });
@@ -138,8 +140,8 @@ describe("DeckService Integration with MySQL", () => {
     const rawJson = JSON.stringify({
       schemaVersion: 1,
       cards: [
-        { term: "apple", meaningVi: "quả táo", cefr: "A1", imageUrl: "https://images.example.com/apple.jpg" },
-        { term: "perspective", meaningVi: "quan điểm; góc nhìn", cefr: null, imageUrl: null },
+        { term: "json-import-apple", meaningVi: "quả táo", cefr: "A1", imageUrl: "https://images.example.com/apple.jpg" },
+        { term: "json-import-pineapple", meaningVi: "quả dứa", cefr: null, imageUrl: null },
       ],
     });
 
@@ -158,17 +160,9 @@ describe("DeckService Integration with MySQL", () => {
     }
   });
 
-  it("rejects JSON duplicates and invalid cards without writing a partial import", async () => {
-    const deck = await db.deck.create({ data: { name: "JSON import errors" } });
+  it("rejects invalid cards when JSON schema validation fails", async () => {
+    const deck = await db.deck.create({ data: { name: "JSON import schema errors" } });
     try {
-      await expect(deckService.importJsonFlashcards(deck.id, JSON.stringify({
-        schemaVersion: 1,
-        cards: [
-          { term: "apple", meaningVi: "quả táo" },
-          { term: " Apple ", meaningVi: "táo" },
-        ],
-      }))).rejects.toThrow("Duplicate");
-
       await expect(deckService.importJsonFlashcards(deck.id, JSON.stringify({
         schemaVersion: 1,
         cards: [
@@ -183,19 +177,49 @@ describe("DeckService Integration with MySQL", () => {
     }
   });
 
-  it("treats terms already in the destination deck as a hard JSON import error", async () => {
-    const deck = await db.deck.create({ data: { name: "JSON existing duplicate" } });
-    await deckService.createManualCards(deck.id, [{ term: "apple", meaningVi: "quả táo" }]);
-
+  it("skips batch duplicate cards gracefully during JSON import and logs the duplicate", async () => {
+    const deck = await db.deck.create({ data: { name: "JSON batch duplicate" } });
     try {
-      await expect(deckService.importJsonFlashcards(deck.id, JSON.stringify({
+      const result = await deckService.importJsonFlashcards(deck.id, JSON.stringify({
         schemaVersion: 1,
-        cards: [{ term: " Apple ", meaningVi: "táo" }],
-      }))).rejects.toThrow("already exists");
+        cards: [
+          { term: "apple", meaningVi: "quả táo" },
+          { term: " Apple ", meaningVi: "táo" },
+        ],
+      }));
 
+      expect(result.cardsCreated).toBe(1);
+      expect(result.skippedDuplicates).toHaveLength(1);
+      expect(result.skippedDuplicates[0].term).toBe("Apple");
+      expect(result.skippedDuplicates[0].reason).toContain("Trùng lặp với từ khác trong danh sách đang nhập");
       expect(await db.flashcard.count({ where: { deckId: deck.id } })).toBe(1);
     } finally {
       await db.deck.delete({ where: { id: deck.id } });
+    }
+  });
+
+  it("skips terms already in the system gracefully during JSON import with friendly logs", async () => {
+    const deck1 = await db.deck.create({ data: { name: "Deck A" } });
+    const deck2 = await db.deck.create({ data: { name: "Deck B" } });
+    await deckService.createManualCards(deck1.id, [{ term: "apple", meaningVi: "quả táo" }]);
+
+    try {
+      const result = await deckService.importJsonFlashcards(deck2.id, JSON.stringify({
+        schemaVersion: 1,
+        cards: [
+          { term: " Apple ", meaningVi: "táo" },
+          { term: "banana", meaningVi: "quả chuối" },
+        ],
+      }));
+
+      expect(result.cardsCreated).toBe(1);
+      expect(result.skippedDuplicates).toHaveLength(1);
+      expect(result.skippedDuplicates[0].term).toBe("Apple");
+      expect(result.skippedDuplicates[0].reason).toContain('Đã tồn tại trong bộ thẻ "Deck A"');
+      expect(await db.flashcard.count({ where: { deckId: deck2.id } })).toBe(1);
+    } finally {
+      await db.deck.delete({ where: { id: deck1.id } });
+      await db.deck.delete({ where: { id: deck2.id } });
     }
   });
 
@@ -291,7 +315,7 @@ describe("DeckService Integration with MySQL", () => {
       const storyBefore = await db.story.findUniqueOrThrow({ where: { id: story.id } });
 
       const updated = await deckService.updateCard(card.id, {
-        term: " allocate ",
+        term: " alocate-refined ",
         meaningVi: "phân bổ nguồn lực",
         partOfSpeech: "verb",
         cefr: "B2",
@@ -302,7 +326,7 @@ describe("DeckService Integration with MySQL", () => {
         imageUrl: "https://images.example.com/allocate.jpg",
       });
 
-      expect(updated).toMatchObject({ term: "allocate", normalizedTerm: "allocate", meaningVi: "phân bổ nguồn lực", partOfSpeech: "verb", cefr: "B2" });
+      expect(updated).toMatchObject({ term: "alocate-refined", normalizedTerm: "alocate-refined", meaningVi: "phân bổ nguồn lực", partOfSpeech: "verb", cefr: "B2" });
       const after = await db.flashcard.findUniqueOrThrow({ where: { id: card.id } });
       for (const field of ["due", "state", "status", "stability", "difficulty", "elapsedDays", "scheduledDays", "learningSteps", "reps", "lapses", "lastReviewAt", "schedulerVersion"] as const) {
         expect(after[field]).toEqual(schedulerBefore[field]);
@@ -319,9 +343,75 @@ describe("DeckService Integration with MySQL", () => {
         data: { deckId: deck.id, term: "duplicate", normalizedTerm: "duplicate", meaningVi: "trùng" },
       });
       await expect(deckService.updateCard(card.id, { term: duplicate.term })).rejects.toBeInstanceOf(DuplicateFlashcardTermError);
-      expect((await db.flashcard.findUniqueOrThrow({ where: { id: card.id } })).term).toBe("allocate");
+      expect((await db.flashcard.findUniqueOrThrow({ where: { id: card.id } })).term).toBe("alocate-refined");
+
+      const deck2 = await db.deck.create({ data: { name: "Deck Other" } });
+      try {
+        await db.flashcard.create({
+          data: { deckId: deck2.id, term: "unique-word", normalizedTerm: "unique-word", meaningVi: "từ độc nhất" },
+        });
+        await expect(deckService.updateCard(card.id, { term: "unique-word" })).rejects.toThrow('đã tồn tại trong bộ thẻ "Deck Other"');
+      } finally {
+        await db.deck.delete({ where: { id: deck2.id } });
+      }
     } finally {
       await db.deck.delete({ where: { id: deck.id } });
     }
   });
+
+  it("skips terms already in another deck when manually adding cards and provides friendly reasons", async () => {
+    const deckA = await db.deck.create({ data: { name: "Vocabulary A" } });
+    const deckB = await db.deck.create({ data: { name: "Vocabulary B" } });
+    try {
+      await deckService.createManualCards(deckA.id, [{ term: "persist-manual-unique", meaningVi: "độc nhất" }]);
+
+      const result = await deckService.createManualCards(deckB.id, [
+        { term: "persist-manual-unique", meaningVi: "độc nhất" },
+        { term: "persist-manual-second", meaningVi: "thứ hai" },
+      ]);
+
+      expect(result.cardsCreated).toBe(1);
+      expect(result.skippedDuplicates).toHaveLength(1);
+      expect(result.skippedDuplicates[0].term).toBe("persist-manual-unique");
+      expect(result.skippedDuplicates[0].reason).toContain('Đã tồn tại trong bộ thẻ "Vocabulary A"');
+      expect(result.skippedDuplicates[0].existingDeckName).toBe("Vocabulary A");
+
+      const cardsB = await db.flashcard.findMany({ where: { deckId: deckB.id } });
+      expect(cardsB).toHaveLength(1);
+      expect(cardsB[0].term).toBe("persist-manual-second");
+    } finally {
+      await db.deck.delete({ where: { id: deckA.id } });
+      await db.deck.delete({ where: { id: deckB.id } });
+    }
+  });
+
+  it("previews JSON import identifying system-wide duplicates without failing preview validity", async () => {
+    const deckA = await db.deck.create({ data: { name: "Source Deck" } });
+    const deckB = await db.deck.create({ data: { name: "Target Deck" } });
+    try {
+      await deckService.createManualCards(deckA.id, [{ term: "existing-system-word", meaningVi: "đã có" }]);
+
+      const preview = await deckService.previewJsonFlashcardImport(
+        deckB.id,
+        JSON.stringify({
+          schemaVersion: 1,
+          cards: [
+            { term: "existing-system-word", meaningVi: "nghĩa khác" },
+            { term: "new-system-word", meaningVi: "từ mới" },
+          ],
+        })
+      );
+
+      expect(preview.valid).toBe(true);
+      expect(preview.cards).toHaveLength(1);
+      expect(preview.cards[0].term).toBe("new-system-word");
+      expect(preview.skippedCards).toHaveLength(1);
+      expect(preview.skippedCards?.[0].term).toBe("existing-system-word");
+      expect(preview.skippedCards?.[0].reason).toContain('Đã tồn tại trong bộ thẻ "Source Deck"');
+    } finally {
+      await db.deck.delete({ where: { id: deckA.id } });
+      await db.deck.delete({ where: { id: deckB.id } });
+    }
+  });
 });
+

@@ -54,7 +54,7 @@ export function SoundSettingsPanel() {
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] shadow-[2px_2px_0px_#221C16]"
             aria-hidden="true"
           >
-            <Music className="h-5 w-5 text-[#E06B43]" strokeWidth={2.5} />
+            <Music className="h-5 w-5 text-[var(--accent)]" strokeWidth={2.5} />
           </span>
           <div>
             <h2 id="sound-settings-heading" className="text-base font-black text-[#221C16]">
@@ -121,7 +121,7 @@ export function SoundSettingsPanel() {
               onClick={() => handleTestSound("softTap")}
               className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[1.5px_1.5px_0px_#221C16] transition-transform active:translate-y-0.5 hover:bg-[#FAF6EE]"
             >
-              <Play className="h-3.5 w-3.5 text-[#E06B43]" fill="currentColor" />
+              <Play className="h-3.5 w-3.5 text-[var(--accent)]" fill="currentColor" />
               <span>Chạm nhẹ</span>
             </button>
 

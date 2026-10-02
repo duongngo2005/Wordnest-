@@ -153,14 +153,14 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
       {/* Top back navigation */}
       <Link
         href="/"
-        className="inline-flex w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-transform active:translate-y-0.5"
+        className="hidden w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-transform active:translate-y-0.5 sm:inline-flex"
       >
         <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
         <span>Thư viện</span>
       </Link>
 
       {/* Deck Header Card */}
-      <section className="wn-primary-surface brick-card relative overflow-visible border-l-[6px] border-l-[#E06B43] bg-[#FFFDF9] rounded-2xl shadow-[4px_4px_0px_#221C16] focus-within:z-30" aria-labelledby="deck-name">
+      <section className="wn-primary-surface brick-card relative overflow-visible border-l-[6px] border-l-[var(--accent)] bg-[#FFFDF9] rounded-2xl shadow-[4px_4px_0px_#221C16] focus-within:z-30" aria-labelledby="deck-name">
         <div className="flex items-center justify-between rounded-t-[calc(var(--radius-lg)-2px)] border-b-2 border-dashed border-[#DCD3C5] bg-[#FEF8ED] px-4 py-2.5 sm:px-5">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
@@ -217,7 +217,7 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
                 className="wn-button wn-button-quiet justify-start text-xs font-bold"
               >
                 <GraduationCap className="h-4 w-4" />
-                <span>Luyện tự do</span>
+                <span>Luyện thẻ</span>
               </Link>
               <button
                 type="button"
@@ -275,7 +275,7 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
               aria-expanded={isAddingCards}
               className="brick-button-secondary px-4 py-2.5 text-sm font-black border-[#221C16]"
             >
-              <Plus className="h-4 w-4 text-[#E06B43]" strokeWidth={2.5} />
+              <Plus className="h-4 w-4 text-[var(--accent)]" strokeWidth={2.5} />
               <span>Thêm thẻ</span>
             </button>
           </div>
@@ -347,7 +347,7 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
       <section className="wn-section" aria-labelledby="cards-heading">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="h-3 w-1.5 rounded-full bg-[#E06B43]" />
+            <span className="h-3 w-1.5 rounded-full bg-[var(--accent)]" />
             <h2 id="cards-heading" className="text-lg font-black text-[#221C16]">
               Thẻ từ vựng
             </h2>
