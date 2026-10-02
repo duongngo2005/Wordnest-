@@ -25,6 +25,7 @@
 /build
 /.wordnest-cache/
 /prisma/*.db
+!/prisma/wordnest.db
 /prisma/*.db-journal
 /backups/*.sql
 

@@ -33,6 +33,8 @@ npx playwright test
 
 The app uses Next.js, TypeScript, Prisma/SQLite, Vitest and Playwright. `DATABASE_URL` is a local SQLite file; do not use `prisma migrate reset` against a database that contains your study history.
 
+The repository intentionally includes `prisma/wordnest.db`, the shared WordNest data snapshot. After cloning on another machine, copy `.env.example` to `.env` (or set `DATABASE_URL="file:./wordnest.db"`) before starting the app. Treat changes to this file as data changes: coordinate before pushing a replacement snapshot, because SQLite files cannot be meaningfully merged in Git.
+
 ### One-time MySQL to SQLite transfer
 
 The transfer creates and verifies a fresh SQLite file. It never writes to or deletes the MySQL source. It checks the exact current app schema, copies all eight application tables in a single SQLite transaction, then compares a normalized SHA-256 digest of every field in every row.
