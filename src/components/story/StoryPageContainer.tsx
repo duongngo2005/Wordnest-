@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, BookOpen, Plus, Sparkles, Trash2 } from "lucide-react";
 import { StoryGeneratorModal, type DeckStoryWord } from "./StoryGeneratorModal";
 import { StoryReader, type StoryData } from "./StoryReader";
+import { ShadowingPlayer } from "@/components/shadowing/ShadowingPlayer";
 import { playUISound } from "@/lib/ui-sound";
 
 interface StoryPageContainerProps {
@@ -34,6 +35,7 @@ export function StoryPageContainer({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [isReadingMode, setIsReadingMode] = useState(false);
+  const [isShadowing, setIsShadowing] = useState(false);
   const activeStory = stories.find((story) => story.id === activeStoryId) ?? stories[0] ?? null;
 
   useEffect(() => {
@@ -72,6 +74,7 @@ export function StoryPageContainer({
       setStories(remainingStories);
       setActiveStoryId((current) => current === deletedStory.id ? remainingStories[0]?.id ?? null : current);
       setStoryPendingDelete(null);
+      setIsShadowing(false);
       setStatus(`Đã xóa “${deletedStory.title}”.`);
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Không thể xóa truyện. Hãy thử lại.");
@@ -82,7 +85,7 @@ export function StoryPageContainer({
 
   return (
     <div className={`mx-auto space-y-5 ${isReadingMode ? "max-w-6xl" : "max-w-5xl"}`}>
-      {!isReadingMode ? <div className="flex flex-wrap items-center justify-between gap-3">
+      {!isReadingMode && !isShadowing ? <div className="flex flex-wrap items-center justify-between gap-3">
         <Link href={`/decks/${deck.id}`} className="hidden w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-transform active:translate-y-0.5 sm:inline-flex">
           <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
           <span>Về bộ từ</span>
@@ -98,7 +101,7 @@ export function StoryPageContainer({
         {status}
       </p>
 
-      {!isReadingMode && stories.length > 1 ? (
+      {!isReadingMode && !isShadowing && stories.length > 1 ? (
         <nav aria-label="Chọn truyện đã lưu" className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5">
           {stories.map((story) => {
             const isActive = story.id === activeStory?.id;
@@ -110,6 +113,7 @@ export function StoryPageContainer({
                   setActiveStoryId(story.id);
                   setStoryPendingDelete(null);
                   setDeleteError(null);
+                  setIsShadowing(false);
                 }}
                 aria-pressed={isActive}
                 className={`wn-story-tab shrink-0 ${isActive ? "wn-story-tab--active" : ""}`}
@@ -122,7 +126,19 @@ export function StoryPageContainer({
         </nav>
       ) : null}
 
-      {activeStory ? (
+      {isShadowing && activeStory ? (
+        <ShadowingPlayer
+          source={{
+            id: activeStory.id,
+            deckId: deck.id,
+            title: activeStory.title,
+            content: activeStory.content,
+            type: "story",
+            cefr: activeStory.cefr,
+          }}
+          onExit={() => setIsShadowing(false)}
+        />
+      ) : activeStory ? (
         <StoryReader
           key={`${activeStory.id}-${isGeneratorOpen ? "generator-open" : "generator-closed"}`}
           story={activeStory}
@@ -133,6 +149,7 @@ export function StoryPageContainer({
           }}
           readingMode={isReadingMode}
           onReadingModeChange={setReadingMode}
+          onStartShadowing={() => setIsShadowing(true)}
           storyActionNotice={
             storyPendingDelete?.id === activeStory.id ? (
               <section

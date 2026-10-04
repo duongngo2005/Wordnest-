@@ -58,7 +58,9 @@ export function isTypedAnswerMatch(answer: string, expectedAnswer: string): bool
 export type ChoiceQuestionType =
   | "multiple_choice_en_vi"
   | "multiple_choice_vi_en"
-  | "fill_in_blank";
+  | "fill_in_blank"
+  | "story_comprehension"
+  | "story_contextual_vocab";
 
 export type QuizQuestionType =
   | ChoiceQuestionType
@@ -213,13 +215,15 @@ export interface QuizSubmissionResult {
 
 const storedQuizQuestionSchema = z.object({
   id: z.string(),
-  cardId: z.string(),
+  cardId: z.string().optional().default(""),
   type: z.enum([
     "multiple_choice_en_vi",
     "multiple_choice_vi_en",
     "fill_in_blank",
     "typed_vi_en",
     "story_cloze",
+    "story_comprehension",
+    "story_contextual_vocab",
   ]),
   prompt: z.string().optional(),
   correctAnswer: z.string(),
@@ -992,23 +996,31 @@ export class QuizService {
       });
 
       const allResults = [...firstPassResults, ...retryResults];
-      const practiceAttempts = await tx.practiceAttempt.createMany({
-        data: allResults.map((result) => ({
-          flashcardId: result.cardId,
-          sessionId: session.id,
-          questionId: result.questionId,
-          prompt: result.prompt,
-          attemptNumber: result.attemptNumber,
-          mode: result.mode ?? "quiz",
-          questionType: result.questionType,
-          correct: result.correct,
-          answer: result.answer,
-          expectedAnswer: result.expectedAnswer,
-          responseMs: result.responseMs,
-        })),
-      });
+      const practiceResults = allResults.filter(
+        (r) => Boolean(r.cardId && r.cardId.trim().length > 0)
+      );
 
-      if (practiceAttempts.count !== allResults.length) {
+      let createdCount = 0;
+      if (practiceResults.length > 0) {
+        const practiceAttempts = await tx.practiceAttempt.createMany({
+          data: practiceResults.map((result) => ({
+            flashcardId: result.cardId,
+            sessionId: session.id,
+            questionId: result.questionId,
+            prompt: result.prompt,
+            attemptNumber: result.attemptNumber,
+            mode: result.mode ?? "quiz",
+            questionType: result.questionType,
+            correct: result.correct,
+            answer: result.answer,
+            expectedAnswer: result.expectedAnswer,
+            responseMs: result.responseMs,
+          })),
+        });
+        createdCount = practiceAttempts.count;
+      }
+
+      if (createdCount !== practiceResults.length) {
         throw new QuizSubmissionError("Không thể lưu đầy đủ bằng chứng luyện tập.");
       }
 
@@ -1036,6 +1048,22 @@ export class QuizService {
       orderBy: { createdAt: "desc" },
       take: 10,
     });
+  }
+
+  /**
+   * Generates a story practice quiz session delegating to storyExerciseService.
+   */
+  async getStoryPracticeQuiz(deckId: string, storyId: string) {
+    const { storyExerciseService } = await import("./story-exercise-service");
+    return storyExerciseService.createStoryPracticeSession(storyId, deckId);
+  }
+
+  /**
+   * Generates a lesson practice quiz session delegating to storyExerciseService.
+   */
+  async getLessonPracticeQuiz(deckId: string, lessonId: string) {
+    const { storyExerciseService } = await import("./story-exercise-service");
+    return storyExerciseService.createLessonPracticeSession(lessonId, deckId);
   }
 }
 

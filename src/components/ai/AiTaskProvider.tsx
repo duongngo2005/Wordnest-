@@ -66,33 +66,41 @@ export function AiTaskProvider({ children }: { children: React.ReactNode }) {
       for (const job of fetchedJobs) {
         if (notifiedIdsRef.current.has(job.id)) continue;
 
+        const isLesson = job.type === "lesson_generation";
+
         if (job.status === "completed") {
           notifiedIdsRef.current.add(job.id);
           saveNotifiedJobId(job.id);
 
           playUISound("success");
-          toast.success("✨ Truyện của bạn đã sẵn sàng", {
-            description: `${job.input?.targetWords?.length || 0} từ · ${job.input?.cefr || "B1"} · ${job.input?.topic || "Story"}`,
-            duration: 8000,
-            action: job.resultUrl
-              ? {
-                  label: "Xem truyện",
-                  onClick: () => {
-                    playUISound("softTap");
-                    router.push(job.resultUrl!);
-                  },
-                }
-              : undefined,
-          });
+          toast.success(
+            isLesson ? "✨ Bài học AI của bạn đã sẵn sàng" : "✨ Truyện của bạn đã sẵn sàng",
+            {
+              description: `${job.input?.targetWords?.length || 0} từ · ${job.input?.cefr || "B1"} · ${job.input?.topic || (isLesson ? "Bài học" : "Story")}`,
+              duration: 8000,
+              action: job.resultUrl
+                ? {
+                    label: isLesson ? "Xem bài học" : "Xem truyện",
+                    onClick: () => {
+                      playUISound("softTap");
+                      router.push(job.resultUrl!);
+                    },
+                  }
+                : undefined,
+            }
+          );
         } else if (job.status === "failed") {
           notifiedIdsRef.current.add(job.id);
           saveNotifiedJobId(job.id);
 
           playUISound("error");
-          toast.error("Không thể hoàn tất tạo truyện", {
-            description: job.errorMessage || "AI gặp lỗi trong quá trình xử lý.",
-            duration: 7000,
-          });
+          toast.error(
+            isLesson ? "Không thể hoàn tất tạo bài học AI" : "Không thể hoàn tất tạo truyện",
+            {
+              description: job.errorMessage || "AI gặp lỗi trong quá trình xử lý.",
+              duration: 7000,
+            }
+          );
         }
       }
     } catch (err) {

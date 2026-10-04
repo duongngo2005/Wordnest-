@@ -22,10 +22,14 @@ function getStageLabel(stage: AiJobStage, status: AiJobStatus, queuePosition?: n
   switch (stage) {
     case "generating_story":
       return "Đang viết truyện...";
+    case "generating_lesson":
+      return "Đang tạo bài học AI...";
     case "validating_vocabulary":
       return "Đang kiểm tra từ vựng...";
     case "repairing_story":
       return "Đang tinh chỉnh truyện...";
+    case "repairing_lesson":
+      return "Đang tinh chỉnh bài học...";
     case "generating_translations":
       return "Đang dịch nghĩa ngữ cảnh...";
     case "generating_narration":
@@ -127,7 +131,8 @@ export function AiTaskIndicator() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="font-bold truncate">
-                        Truyện {job.input?.cefr} · {job.input?.targetWords?.length || 0} từ · {job.input?.topic}
+                        {job.type === "lesson_generation" ? "Bài học AI" : "Truyện"}{" "}
+                        {job.input?.cefr} · {job.input?.targetWords?.length || 0} từ · {job.input?.topic || ""}
                       </p>
                       <p className="text-[11px] text-[#6B6258] mt-0.5">
                         {getStageLabel(job.stage, job.status, job.queuePosition)}

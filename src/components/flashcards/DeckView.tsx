@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   ArrowLeft,
   BookOpen,
   Download,
@@ -21,6 +22,7 @@ import { FlashcardItem, FlashcardData } from "./FlashcardItem";
 import { FlashcardStatus } from "@/lib/flashcards/status";
 import { SerializedPracticeEvidenceSummary } from "@/services/vocabulary";
 import { useToast } from "@/components/ui/ToastProvider";
+import { LessonGeneratorModal } from "@/components/lesson/LessonGeneratorModal";
 
 interface DeckViewProps {
   initialDeck: {
@@ -47,6 +49,7 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
   const [page, setPage] = useState(1);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
 
   useEffect(() => {
     if (!isConfirmingDelete) return;
@@ -213,11 +216,25 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
                 <span>Story</span>
               </Link>
               <Link
+                href={`/decks/${deck.id}/lesson`}
+                className="wn-button wn-button-quiet justify-start text-xs font-bold"
+              >
+                <Sparkles className="h-4 w-4 text-[var(--accent)]" />
+                <span>Bài học AI</span>
+              </Link>
+              <Link
                 href={`/decks/${deck.id}/practice`}
                 className="wn-button wn-button-quiet justify-start text-xs font-bold"
               >
                 <GraduationCap className="h-4 w-4" />
                 <span>Luyện thẻ</span>
+              </Link>
+              <Link
+                href={`/decks/${deck.id}/mistakes`}
+                className="wn-button wn-button-quiet justify-start text-xs font-bold text-rose-700 hover:text-rose-900"
+              >
+                <AlertCircle className="h-4 w-4 text-rose-600" />
+                <span>Sổ tay câu sai</span>
               </Link>
               <button
                 type="button"
@@ -338,6 +355,22 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
                 className="brick-button-secondary px-3 py-1.5 text-xs font-black"
               >
                 Xem thẻ
+              </button>
+              <Link
+                href={`/decks/${deck.id}/mistakes`}
+                className="brick-button-secondary px-3 py-1.5 text-xs font-black text-rose-700 hover:text-rose-800 flex items-center gap-1.5"
+              >
+                <AlertCircle className="h-3.5 w-3.5 text-rose-600" />
+                <span>Sổ tay câu sai</span>
+              </Link>
+              <button
+                data-testid="btn-create-lesson-from-weak"
+                type="button"
+                onClick={() => setIsLessonModalOpen(true)}
+                className="brick-button-secondary px-3 py-1.5 text-xs font-black text-amber-800 hover:text-amber-900 flex items-center gap-1.5"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                <span>Tạo bài học AI</span>
               </button>
               <Link
                 data-testid="btn-start-focused-practice"
@@ -533,6 +566,25 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
           </div>
         </div>
       ) : null}
+
+      <LessonGeneratorModal
+        open={isLessonModalOpen}
+        deck={{ id: deck.id, name: deck.name }}
+        words={deck.cards.map((c) => ({
+          id: c.id,
+          term: c.term,
+          meaningVi: c.meaningVi,
+          partOfSpeech: c.partOfSpeech,
+          cefr: c.cefr,
+        }))}
+        weakWordIds={needPracticeCardIds}
+        initialSelectedIds={needPracticeCardIds}
+        onClose={() => setIsLessonModalOpen(false)}
+        onLessonCreated={() => {
+          setIsLessonModalOpen(false);
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

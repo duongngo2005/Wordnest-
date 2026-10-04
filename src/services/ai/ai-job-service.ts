@@ -9,7 +9,7 @@ import { AICancelledError, AITimeoutError, AIOomError } from "./ai-core";
 import { AI_CONFIG } from "./ai-config";
 import type { CloudTtsVoiceId } from "@/lib/tts/voice-catalog";
 
-export type AiJobType = "story_generation";
+export type AiJobType = "story_generation" | "lesson_generation";
 export type AiJobStatus =
   | "queued"
   | "running"
@@ -21,8 +21,10 @@ export type AiJobStatus =
 export type AiJobStage =
   | "queued"
   | "generating_story"
+  | "generating_lesson"
   | "validating_vocabulary"
   | "repairing_story"
+  | "repairing_lesson"
   | "generating_translations"
   | "generating_narration"
   | "saving"
@@ -37,13 +39,20 @@ export type StoryJobInput = {
   narrationVoiceId?: CloudTtsVoiceId;
 };
 
+export type LessonJobInput = {
+  deckId: string;
+  targetWords: string[];
+  cefr?: StoryCefr;
+  topic?: string;
+};
+
 export type AiJobSummary = {
   id: string;
   type: string;
   status: AiJobStatus;
   stage: AiJobStage;
   progress: number;
-  input: StoryJobInput;
+  input: StoryJobInput | LessonJobInput;
   resultId: string | null;
   resultUrl: string | null;
   errorCode: string | null;
@@ -112,6 +121,29 @@ class AiJobQueueManager {
     const job = await db.aiJob.create({
       data: {
         type: "story_generation",
+        status: "queued",
+        stage: "queued",
+        progress: 0,
+        input,
+      },
+    });
+
+    this.memoryQueue.push(job.id);
+    this.processNext();
+
+    const position = this.getQueuePosition(job.id);
+    return this.serializeJob(job, position);
+  }
+
+  /**
+   * Enqueues a new AI lesson generation job. Returns created job immediately.
+   */
+  async createLessonJob(input: LessonJobInput): Promise<AiJobSummary> {
+    await this.recoverInterruptedJobs();
+
+    const job = await db.aiJob.create({
+      data: {
+        type: "lesson_generation",
         status: "queued",
         stage: "queued",
         progress: 0,
@@ -210,17 +242,17 @@ class AiJobQueueManager {
     this.activeAbortController = new AbortController();
 
     try {
+      const isLesson = job.type === "lesson_generation";
+
       await db.aiJob.update({
         where: { id: jobId },
         data: {
           status: "running",
-          stage: "generating_story",
+          stage: isLesson ? "generating_lesson" : "generating_story",
           progress: 10,
           startedAt: new Date(),
         },
       });
-
-      const input = job.input as StoryJobInput;
 
       // Overall job timeout timer
       const timeoutTimer = setTimeout(() => {
@@ -230,37 +262,72 @@ class AiJobQueueManager {
       }, AI_CONFIG.job.maxDurationMs);
 
       try {
-        const result = await executeStoryPipeline({
-          deckId: input.deckId,
-          targetWords: input.targetWords,
-          cefr: input.cefr,
-          length: input.length,
-          topic: input.topic,
-          narrationVoiceId: input.narrationVoiceId,
-          signal: this.activeAbortController.signal,
-          onStageChange: async (stage, progress) => {
-            await db.aiJob.update({
-              where: { id: jobId },
-              data: { stage, progress },
-            });
-          },
-        });
+        if (isLesson) {
+          const input = job.input as LessonJobInput;
+          const { lessonService } = await import("@/services/vocabulary/lesson-service");
+          const lesson = await lessonService.createLesson({
+            deckId: input.deckId,
+            targetWords: input.targetWords,
+            cefr: input.cefr,
+            topic: input.topic,
+            signal: this.activeAbortController.signal,
+            onStageChange: async (stage, progress) => {
+              await db.aiJob.update({
+                where: { id: jobId },
+                data: { stage, progress },
+              });
+            },
+          });
 
-        clearTimeout(timeoutTimer);
+          clearTimeout(timeoutTimer);
 
-        const resultUrl = `/decks/${input.deckId}/story?storyId=${result.story.id}`;
+          const resultUrl = `/decks/${input.deckId}/lesson?lessonId=${lesson.id}`;
 
-        await db.aiJob.update({
-          where: { id: jobId },
-          data: {
-            status: "completed",
-            stage: "completed",
-            progress: 100,
-            resultId: result.story.id,
-            resultUrl,
-            completedAt: new Date(),
-          },
-        });
+          await db.aiJob.update({
+            where: { id: jobId },
+            data: {
+              status: "completed",
+              stage: "completed",
+              progress: 100,
+              resultId: lesson.id,
+              resultUrl,
+              completedAt: new Date(),
+            },
+          });
+        } else {
+          const input = job.input as StoryJobInput;
+          const result = await executeStoryPipeline({
+            deckId: input.deckId,
+            targetWords: input.targetWords,
+            cefr: input.cefr,
+            length: input.length,
+            topic: input.topic,
+            narrationVoiceId: input.narrationVoiceId,
+            signal: this.activeAbortController.signal,
+            onStageChange: async (stage, progress) => {
+              await db.aiJob.update({
+                where: { id: jobId },
+                data: { stage, progress },
+              });
+            },
+          });
+
+          clearTimeout(timeoutTimer);
+
+          const resultUrl = `/decks/${input.deckId}/story?storyId=${result.story.id}`;
+
+          await db.aiJob.update({
+            where: { id: jobId },
+            data: {
+              status: "completed",
+              stage: "completed",
+              progress: 100,
+              resultId: result.story.id,
+              resultUrl,
+              completedAt: new Date(),
+            },
+          });
+        }
       } catch (pipelineErr) {
         clearTimeout(timeoutTimer);
         throw pipelineErr;
@@ -272,14 +339,20 @@ class AiJobQueueManager {
       const isOom = err instanceof AIOomError;
 
       let errorCode = "AI_UNKNOWN_ERROR";
-      let errorMessage = "Không thể hoàn tất tạo truyện do lỗi không xác định.";
+      let errorMessage =
+        job.type === "lesson_generation"
+          ? "Không thể hoàn tất tạo bài học do lỗi không xác định."
+          : "Không thể hoàn tất tạo truyện do lỗi không xác định.";
 
       if (isCancelled) {
         errorCode = "AI_CANCELLED";
         errorMessage = "Tác vụ đã bị người dùng hủy.";
       } else if (isTimeout) {
         errorCode = "AI_TIMEOUT";
-        errorMessage = "AI mất quá nhiều thời gian để hoàn tất truyện (quá giới hạn xử lý).";
+        errorMessage =
+          job.type === "lesson_generation"
+            ? "AI mất quá nhiều thời gian để hoàn tất bài học (quá giới hạn xử lý)."
+            : "AI mất quá nhiều thời gian để hoàn tất truyện (quá giới hạn xử lý).";
       } else if (isOom) {
         errorCode = "AI_OUT_OF_MEMORY";
         errorMessage = "AI local không đủ bộ nhớ cho cấu hình hiện tại.";
@@ -334,7 +407,7 @@ class AiJobQueueManager {
       status: job.status as AiJobStatus,
       stage: (job.stage || "queued") as AiJobStage,
       progress: job.progress,
-      input: job.input as StoryJobInput,
+      input: job.input as StoryJobInput | LessonJobInput,
       resultId: job.resultId,
       resultUrl: job.resultUrl,
       errorCode: job.errorCode,

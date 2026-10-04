@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { WordNestMascot } from "../ui/Mascot";
 import { PronounceButton } from "../flashcards/PronounceButton";
+import { ExplainAnswerButton } from "@/components/ai/ExplainAnswerButton";
 import { QuizQuestion, QuizQuestionExplanation, QuizSubmissionResult } from "@/services/vocabulary/quiz-service";
 import { playUISound } from "@/lib/ui-sound";
 import {
@@ -350,6 +351,18 @@ export function QuizResults({
                     </p>
                     {exp.exampleEn && <p className="italic text-[#4A4036]">&ldquo;{exp.exampleEn}&rdquo;</p>}
                     {exp.exampleVi && <p className="text-[#6B6258]">{exp.exampleVi}</p>}
+                  </div>
+                )}
+
+                {/* AI Explanation for incorrect answers */}
+                {!isCorrect && (
+                  <div className="mt-3 pt-1">
+                    <ExplainAnswerButton
+                      flashcardId={question.cardId}
+                      userAnswer={userAnswer}
+                      expectedAnswer={expectedAnswer}
+                      size="sm"
+                    />
                   </div>
                 )}
               </div>

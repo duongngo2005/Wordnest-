@@ -163,3 +163,17 @@ CREATE TABLE "ai_jobs" (
 
 CREATE INDEX "ai_jobs_status_idx" ON "ai_jobs"("status");
 CREATE INDEX "ai_jobs_type_status_idx" ON "ai_jobs"("type", "status");
+
+CREATE TABLE "lessons" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "deckId" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "cefr" TEXT NOT NULL DEFAULT 'B1',
+    "targetWords" JSONB NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "lessons_deckId_fkey" FOREIGN KEY ("deckId") REFERENCES "decks" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX "lessons_deckId_idx" ON "lessons"("deckId");

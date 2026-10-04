@@ -11,7 +11,7 @@ export const revalidate = 0;
 
 interface QuizPageProps {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ mode?: string; storyId?: string }>;
+  searchParams?: Promise<{ mode?: string; storyId?: string; lessonId?: string }>;
 }
 
 const getDeckOverview = cache((deckId: string) => deckService.getDeckOverview(deckId));
@@ -31,8 +31,13 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const modeParam = resolvedSearchParams.mode;
   const storyId = resolvedSearchParams.storyId;
+  const lessonId = resolvedSearchParams.lessonId;
   const initialMode =
-    modeParam === "focused_practice"
+    modeParam === "lesson_practice"
+      ? ("lesson_practice" as const)
+      : modeParam === "story_practice"
+      ? ("story_practice" as const)
+      : modeParam === "focused_practice"
       ? ("focused_practice" as const)
       : modeParam === "story_cloze"
       ? ("story_cloze" as const)
@@ -77,7 +82,29 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
   let quiz: { questions: import("@/services/vocabulary").QuizQuestion[]; sessionId: string } | null = null;
   let emptyClozeError: string | null = null;
 
-  if (initialMode === "focused_practice") {
+  if (initialMode === "lesson_practice" && lessonId) {
+    try {
+      const lessonPracticeQuiz = await quizService.getLessonPracticeQuiz(deck.id, lessonId);
+      quiz = {
+        questions: lessonPracticeQuiz.questions,
+        sessionId: lessonPracticeQuiz.sessionId,
+      };
+    } catch (err) {
+      emptyClozeError =
+        err instanceof Error ? err.message : "Không thể tạo bài luyện tập từ bài học này.";
+    }
+  } else if (initialMode === "story_practice" && storyId) {
+    try {
+      const storyPracticeQuiz = await quizService.getStoryPracticeQuiz(deck.id, storyId);
+      quiz = {
+        questions: storyPracticeQuiz.questions,
+        sessionId: storyPracticeQuiz.sessionId,
+      };
+    } catch (err) {
+      emptyClozeError =
+        err instanceof Error ? err.message : "Không thể tạo bài luyện tập từ câu chuyện này.";
+    }
+  } else if (initialMode === "focused_practice") {
     const focusedQuiz = await quizService.getFocusedPracticeQuiz(deck.id, 10);
     if (focusedQuiz.questions.length === 0) {
       return (
@@ -140,6 +167,7 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
   }
 
   if (emptyClozeError || !quiz) {
+    const isStoryPractice = initialMode === "story_practice";
     return (
       <div className="min-h-[100dvh] bg-[#FAF6EE] flex flex-col selection:bg-[#FDE68A] selection:text-[#221C16]">
         <Header />
@@ -147,10 +175,13 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
           <div className="brick-card p-8 bg-[#FFFDF9] text-center space-y-4 w-full shadow-[4px_4px_0px_#221C16]">
             <WordNestMascot mood="thinking" size={90} />
             <h1 className="text-2xl font-black text-[#221C16]">
-              Không thể tạo bài Story Cloze
+              {isStoryPractice ? "Không thể tạo bài tập cho câu chuyện" : "Không thể tạo bài Story Cloze"}
             </h1>
             <p className="text-sm font-semibold text-[#6B6258]">
-              {emptyClozeError || "Không có từ phù hợp để tạo bài Cloze từ Story này."}
+              {emptyClozeError ||
+                (isStoryPractice
+                  ? "Không có câu hỏi phù hợp để tạo bài luyện tập từ Story này."
+                  : "Không có từ phù hợp để tạo bài Cloze từ Story này.")}
             </p>
             <div className="pt-2 flex items-center justify-center gap-3 flex-wrap">
               <div className="hidden sm:block">
@@ -185,6 +216,7 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
           initialSessionId={quiz.sessionId}
           initialMode={initialMode}
           storyId={storyId}
+          lessonId={lessonId}
         />
       </main>
     </div>

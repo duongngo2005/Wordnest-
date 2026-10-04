@@ -131,6 +131,14 @@ export function normalizeStoryContextualTranslations(
 }
 
 export function normalizeStoryVocabulary(value: unknown): StoryVocabulary {
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      // not JSON string
+    }
+  }
+
   if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
     const requestedTerms = value.map((term) => term.trim()).filter(Boolean);
     return {

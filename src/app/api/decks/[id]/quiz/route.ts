@@ -15,12 +15,29 @@ export async function GET(
     const count = countParam ? parseInt(countParam, 10) : 10;
     const modeParam = searchParams.get("mode");
     const storyId = searchParams.get("storyId") || undefined;
+    const lessonId = searchParams.get("lessonId") || undefined;
 
     if (modeParam === "focused_practice") {
       const quizData = await quizService.getFocusedPracticeQuiz(
         deckId,
         isNaN(count) ? 10 : count
       );
+      return NextResponse.json({
+        success: true,
+        data: quizData,
+      });
+    }
+
+    if (modeParam === "story_practice" && storyId) {
+      const quizData = await quizService.getStoryPracticeQuiz(deckId, storyId);
+      return NextResponse.json({
+        success: true,
+        data: quizData,
+      });
+    }
+
+    if (modeParam === "lesson_practice" && lessonId) {
+      const quizData = await quizService.getLessonPracticeQuiz(deckId, lessonId);
       return NextResponse.json({
         success: true,
         data: quizData,

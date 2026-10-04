@@ -30,6 +30,45 @@ type OllamaChatResponse = {
   };
 };
 
+/**
+ * Process-level FIFO mutex to serialize all calls to local Ollama.
+ * Protects single GPU (e.g. RTX 4050 6GB) with OLLAMA_NUM_PARALLEL=1 from concurrent request collisions.
+ */
+export class OllamaExecutionGate {
+  private queue: Array<() => void> = [];
+  private locked = false;
+
+  async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      this.release();
+    }
+  }
+
+  private acquire(): Promise<void> {
+    if (!this.locked) {
+      this.locked = true;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.queue.push(resolve);
+    });
+  }
+
+  private release(): void {
+    const next = this.queue.shift();
+    if (next) {
+      next();
+    } else {
+      this.locked = false;
+    }
+  }
+}
+
+export const sharedOllamaExecutionGate = new OllamaExecutionGate();
+
 /** Minimal server-side client for Ollama's non-streaming JSON chat endpoint. */
 export class OllamaAiProvider {
   private readonly endpoint: string;
@@ -42,7 +81,11 @@ export class OllamaAiProvider {
     this.fetcher = fetcher;
   }
 
-  async generateJson({
+  async generateJson(request: OllamaJsonRequest): Promise<string> {
+    return sharedOllamaExecutionGate.runExclusive(() => this.executeGenerateJson(request));
+  }
+
+  private async executeGenerateJson({
     systemPrompt,
     prompt,
     temperature = 0.2,

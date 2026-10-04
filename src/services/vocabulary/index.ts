@@ -5,3 +5,5 @@ export * from "./story-service";
 export * from "./quiz-service";
 export * from "./progress-service";
 export * from "./practice-evidence-service";
+export * from "./story-exercise-service";
+export * from "./lesson-service";

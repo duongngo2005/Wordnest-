@@ -43,6 +43,18 @@ export interface AIService {
     surroundingSentence: string;
     context?: string;
   }): Promise<ContextualTranslationResponse>;
+  callStructured<T>(options: {
+    systemPrompt?: string;
+    prompt: string;
+    schema: ZodSchema<T>;
+    temperature?: number;
+    topP?: number;
+    numCtx?: number;
+    think?: boolean;
+    maxRetries?: number;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+  }): Promise<T>;
 }
 
 import { AI_CONFIG } from "./ai-config";
@@ -57,6 +69,7 @@ type StructuredGenerationOptions<T> = {
   think?: boolean;
   maxRetries?: number;
   timeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 /** Text generation stays on the local Ollama daemon; no hosted AI fallback exists. */
@@ -272,6 +285,7 @@ Use natural Vietnamese for meaningVi, contextualMeaningVi, definitionVi, and exa
     think,
     maxRetries = 1,
     timeoutMs = DEFAULT_OLLAMA_TIMEOUT_MS,
+    signal,
   }: StructuredGenerationOptions<T>): Promise<T> {
     let malformedAttempts = 0;
 
@@ -285,6 +299,7 @@ Use natural Vietnamese for meaningVi, contextualMeaningVi, definitionVi, and exa
           numCtx,
           think,
           timeoutMs,
+          signal,
         });
         const result = parseStructuredResponse(rawText, schema);
         console.info(`[AI] provider=ollama model=${this.model} result=success`);

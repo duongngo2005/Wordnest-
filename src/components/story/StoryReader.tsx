@@ -18,12 +18,15 @@ import {
   ChevronRight,
   Loader2,
   Maximize2,
+  Mic,
   Minimize2,
   MoreHorizontal,
   Plus,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { PronounceButton } from "../flashcards/PronounceButton";
 import { extractSentenceContainingUsageWithBoundary } from "@/lib/story/story-context";
 import { normalizeStoryPlainText } from "@/lib/story/story-content";
@@ -364,6 +367,7 @@ export function StoryReader({
   onDelete,
   readingMode = false,
   onReadingModeChange,
+  onStartShadowing,
 }: {
   story: StoryData;
   deckWords: DeckStoryWord[];
@@ -372,6 +376,7 @@ export function StoryReader({
   onDelete?: () => void;
   readingMode?: boolean;
   onReadingModeChange?: (readingMode: boolean) => void;
+  onStartShadowing?: () => void;
 }) {
   const title = useMemo(() => normalizeStoryPlainText(story.title), [story.title]);
   const content = useMemo(() => normalizeStoryPlainText(story.content), [story.content]);
@@ -479,7 +484,7 @@ export function StoryReader({
         {readingMode ? (
           <div className="wn-story-reading-toolbar">
             <div className="min-w-0"><p className="wn-story-kicker">Chế độ đọc</p><h1 id="story-heading" className="truncate font-[family-name:var(--font-story-display)] text-xl font-semibold tracking-[-0.02em] text-[#221C16] sm:text-2xl">{title}</h1></div>
-            <div className="flex shrink-0 items-center gap-1.5"><StoryNarrationControls storyId={story.id} content={content} narration={story.vocabulary.narration} compact />{vocabularyCount ? <button type="button" onClick={(event) => openTrail(event.currentTarget)} className="wn-story-icon-control" aria-label={`Từ trong bài, ${vocabularyCount} từ`}><BookMarked className="h-4 w-4" aria-hidden="true" /></button> : null}<button type="button" onClick={() => onReadingModeChange?.(false)} className="wn-story-icon-control" aria-label="Thoát chế độ đọc"><Minimize2 className="h-4 w-4" aria-hidden="true" /></button></div>
+            <div className="flex shrink-0 items-center gap-1.5"><StoryNarrationControls storyId={story.id} content={content} narration={story.vocabulary.narration} compact />{vocabularyCount ? <button type="button" onClick={(event) => openTrail(event.currentTarget)} className="wn-story-icon-control" aria-label={`Từ trong bài, ${vocabularyCount} từ`}><BookMarked className="h-4 w-4" aria-hidden="true" /></button> : null}{onStartShadowing ? <button type="button" onClick={onStartShadowing} className="wn-story-icon-control text-[var(--accent)]" title="Luyện Shadowing" aria-label="Luyện Shadowing câu chuyện này"><Mic className="h-4 w-4" aria-hidden="true" /></button> : null}<Link href={`/decks/${story.deckId}/quiz?mode=story_practice&storyId=${story.id}`} className="wn-story-icon-control text-[#D97706]" title="Luyện tập bài đọc này" aria-label="Luyện tập bài đọc này"><Sparkles className="h-4 w-4 text-[#D97706]" aria-hidden="true" /></Link><button type="button" onClick={() => onReadingModeChange?.(false)} className="wn-story-icon-control" aria-label="Thoát chế độ đọc"><Minimize2 className="h-4 w-4" aria-hidden="true" /></button></div>
           </div>
         ) : (
           <>
@@ -492,7 +497,7 @@ export function StoryReader({
               <div className="wn-story-metadata mt-3" aria-label="Thông tin truyện"><span>{story.topic}</span><span aria-hidden="true">•</span><span>CEFR {story.cefr}</span><span aria-hidden="true">•</span><span>{story.length === "short" ? "Ngắn" : story.length === "medium" ? "Vừa" : story.length === "long" ? "Dài" : story.length}</span></div>
             </div>
             <div className="mt-5 flex items-center justify-between gap-2 border-t border-dashed border-[#CFC2AF] pt-3">
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5"><StoryNarrationControls storyId={story.id} content={content} narration={story.vocabulary.narration} />{vocabularyCount ? <button type="button" onClick={(event) => openTrail(event.currentTarget)} className="wn-story-secondary-control" aria-expanded={isMobile ? mobileTrailOpen : trailOpen} aria-controls={isMobile ? "story-vocabulary-trail-title" : "story-vocabulary-trail"}><BookMarked className="h-4 w-4" aria-hidden="true" /><span>Từ trong bài <b>· {vocabularyCount}</b></span></button> : null}<button type="button" onClick={() => onReadingModeChange?.(true)} className="wn-story-secondary-control wn-story-reading-toggle" aria-label="Chế độ đọc" aria-pressed={readingMode}><Maximize2 className="h-4 w-4" aria-hidden="true" /><span>Chế độ đọc</span></button></div>
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5"><StoryNarrationControls storyId={story.id} content={content} narration={story.vocabulary.narration} />{vocabularyCount ? <button type="button" onClick={(event) => openTrail(event.currentTarget)} className="wn-story-secondary-control" aria-expanded={isMobile ? mobileTrailOpen : trailOpen} aria-controls={isMobile ? "story-vocabulary-trail-title" : "story-vocabulary-trail"}><BookMarked className="h-4 w-4" aria-hidden="true" /><span>Từ trong bài <b>· {vocabularyCount}</b></span></button> : null}{onStartShadowing ? <button type="button" onClick={onStartShadowing} className="wn-story-secondary-control bg-[#FEF8ED] text-[#221C16] border-[#221C16] hover:bg-[#FEF3C7]" title="Luyện Shadowing câu chuyện này"><Mic className="h-4 w-4 text-[var(--accent)]" aria-hidden="true" /><span>Luyện Shadowing</span></button> : null}<Link href={`/decks/${story.deckId}/quiz?mode=story_practice&storyId=${story.id}`} className="wn-story-secondary-control bg-[#FEF3C7] text-[#92400E] border-[#D97706] hover:bg-[#FDE68A]" title="Luyện tập bài đọc này"><Sparkles className="h-4 w-4 text-[#D97706]" aria-hidden="true" /><span>Luyện tập bài này</span></Link><button type="button" onClick={() => onReadingModeChange?.(true)} className="wn-story-secondary-control wn-story-reading-toggle" aria-label="Chế độ đọc" aria-pressed={readingMode}><Maximize2 className="h-4 w-4" aria-hidden="true" /><span>Chế độ đọc</span></button></div>
               <OverflowMenu title={title} onDelete={onDelete} />
             </div>
           </>
@@ -507,6 +512,38 @@ export function StoryReader({
       <div className="wn-story-prose select-text cursor-text" onClick={handleContentClick} onDoubleClick={handleDoubleClick}>
         {paragraphs.map((paragraph, index) => <p key={index}><TargetText paragraph={paragraph} usage={story.vocabulary.usage} activeUsageIndex={selectedUsageIndex} onClick={(usage, usageIndex, trigger) => showDeckTranslation(usage, usageIndex, trigger)} /></p>)}
         <div className="wn-story-endmark" aria-hidden="true"><span /><b>✦</b><span /></div>
+
+        {/* Practice This Story Bottom CTA */}
+        <div className="mt-8 pt-6 border-t-2 border-dashed border-[#CFC2AF] flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-[#FFFDF9] rounded-2xl border-2 border-[#221C16] shadow-[3px_3px_0px_#221C16]">
+          <div className="space-y-1 text-center sm:text-left">
+            <h3 className="text-base sm:text-lg font-black text-[#221C16] flex items-center justify-center sm:justify-start gap-2">
+              <Sparkles className="w-5 h-5 text-[var(--accent)]" />
+              <span>Đã đọc xong câu chuyện?</span>
+            </h3>
+            <p className="text-xs sm:text-sm font-medium text-[#6B6258]">
+              Củng cố ngay với bài tập Đọc hiểu, Từ vựng ngữ cảnh và Story Cloze.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row items-center gap-2.5">
+            {onStartShadowing ? (
+              <button
+                type="button"
+                onClick={onStartShadowing}
+                className="brick-button-secondary shrink-0 px-4 py-3 text-xs sm:text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16] flex items-center"
+              >
+                <Mic className="w-4 h-4 text-[var(--accent)]" />
+                <span>Luyện Shadowing</span>
+              </button>
+            ) : null}
+            <Link
+              href={`/decks/${story.deckId}/quiz?mode=story_practice&storyId=${story.id}`}
+              className="brick-button-primary shrink-0 px-5 py-3 text-xs sm:text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16]"
+            >
+              <span>Luyện tập ngay</span>
+              <ChevronRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
       </div>
 
       <AnimatePresence>{panel ? <VocabularyDetails panel={panel} deckId={story.deckId} onClose={closeVocabulary} /> : null}</AnimatePresence>

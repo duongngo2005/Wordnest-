@@ -5,6 +5,7 @@ import Link from "next/link";
 import { QuizQuestion, QuizQuestionExplanation, QuizSubmissionResult } from "@/services/vocabulary/quiz-service";
 import { QuizResults, AnswerRecord } from "./QuizResults";
 import { PronounceButton } from "../flashcards/PronounceButton";
+import { ExplainAnswerButton } from "@/components/ai/ExplainAnswerButton";
 import { WordNestMascot } from "../ui/Mascot";
 import { playUISound } from "@/lib/ui-sound";
 import { wnToast } from "@/components/ui/ToastProvider";
@@ -20,6 +21,7 @@ import {
   RotateCcw,
   Target,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 
 interface QuizRunnerProps {
@@ -29,8 +31,9 @@ interface QuizRunnerProps {
   };
   initialQuestions: QuizQuestion[];
   initialSessionId: string;
-  initialMode?: "multiple_choice" | "typed" | "story_cloze" | "focused_practice";
+  initialMode?: "multiple_choice" | "typed" | "story_cloze" | "focused_practice" | "story_practice" | "lesson_practice";
   storyId?: string;
+  lessonId?: string;
 }
 
 export function QuizRunner({
@@ -39,9 +42,10 @@ export function QuizRunner({
   initialSessionId,
   initialMode = "multiple_choice",
   storyId,
+  lessonId,
 }: QuizRunnerProps) {
   const [currentMode, setCurrentMode] = useState<
-    "multiple_choice" | "typed" | "story_cloze" | "focused_practice"
+    "multiple_choice" | "typed" | "story_cloze" | "focused_practice" | "story_practice" | "lesson_practice"
   >(initialMode);
   const [questions, setQuestions] = useState<QuizQuestion[]>(initialQuestions);
   const [sessionId, setSessionId] = useState(initialSessionId);
@@ -395,7 +399,11 @@ export function QuizRunner({
     setIsSubmitting(true);
     try {
       const url =
-        currentMode === "focused_practice"
+        currentMode === "lesson_practice" && lessonId
+          ? `/api/decks/${deck.id}/quiz?mode=lesson_practice&lessonId=${lessonId}`
+          : currentMode === "story_practice" && storyId
+          ? `/api/decks/${deck.id}/quiz?mode=story_practice&storyId=${storyId}`
+          : currentMode === "focused_practice"
           ? `/api/decks/${deck.id}/quiz?mode=focused_practice`
           : currentMode === "story_cloze" && storyId
           ? `/api/decks/${deck.id}/quiz?mode=story_cloze&storyId=${storyId}`
@@ -478,6 +486,10 @@ export function QuizRunner({
 
   const getQuestionTypeLabel = (type: string) => {
     switch (type) {
+      case "story_comprehension":
+        return "Đọc hiểu câu chuyện (Comprehension)";
+      case "story_contextual_vocab":
+        return "Từ vựng ngữ cảnh truyện (Contextual Vocab)";
       case "story_cloze":
         return "Điền từ vào câu chuyện (Story Cloze)";
       case "typed_vi_en":
@@ -509,6 +521,17 @@ export function QuizRunner({
 
           {/* Mode Switcher */}
           <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-1 shadow-[2px_2px_0px_#221C16]">
+            {currentMode === "lesson_practice" ? (
+              <div className="inline-flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 text-xs font-black rounded-lg bg-[var(--accent)] text-white border-2 border-[#221C16] shadow-[2px_2px_0px_#221C16]">
+                <Sparkles className="w-3.5 h-3.5" strokeWidth={2.5} />
+                <span>Luyện bài học AI</span>
+              </div>
+            ) : currentMode === "story_practice" ? (
+              <div className="inline-flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 text-xs font-black rounded-lg bg-[#059669] text-white border-2 border-[#221C16] shadow-[2px_2px_0px_#221C16]">
+                <BookOpen className="w-3.5 h-3.5" strokeWidth={2.5} />
+                <span>Luyện tập bài đọc</span>
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={() => {
@@ -864,6 +887,20 @@ export function QuizRunner({
                   </p>
                   {exp.exampleEn && <p className="italic text-[#4A4036]">&ldquo;{exp.exampleEn}&rdquo;</p>}
                   {exp.exampleVi && <p className="text-[#6B6258]">{exp.exampleVi}</p>}
+                </div>
+              )}
+
+              {/* On-demand AI Explanation for incorrect answer */}
+              {!isCorrect && (
+                <div className="pt-1">
+                  <ExplainAnswerButton
+                    sessionId={sessionId}
+                    questionId={currentQuestion.id}
+                    flashcardId={currentQuestion.cardId}
+                    userAnswer={isTypedQuestion ? typedAnswer.trim() : (selectedOption || "")}
+                    expectedAnswer={expectedAnswer}
+                    size="sm"
+                  />
                 </div>
               )}
             </div>

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { PracticeAttempt } from "@prisma/client";
+import { PracticeAttempt, Prisma } from "@prisma/client";
 import { normalizeStoryVocabulary } from "@/lib/story/story-vocabulary";
 import { extractSentenceContainingUsageWithBoundary } from "@/lib/story/story-context";
 
@@ -128,6 +128,25 @@ function serializeRecentModalityEvidence(
   };
 }
 
+export type SmartPracticeSignalCode =
+  | "RECENT_REPEATED_FAILURE"
+  | "RECENT_FAILURE"
+  | "HIGH_FAILURE_RATE"
+  | "MIXED_EVIDENCE"
+  | "OVERDUE"
+  | "LOW_STABILITY"
+  | "HIGH_LAPSES"
+  | "SLOW_RESPONSE";
+
+export interface CardFsrsSignals {
+  due?: Date | null;
+  state?: number;
+  stability?: number;
+  difficulty?: number;
+  lapses?: number;
+  reps?: number;
+}
+
 export interface NeedPracticeCardItem {
   card: {
     id: string;
@@ -139,9 +158,83 @@ export interface NeedPracticeCardItem {
     partOfSpeech?: string | null;
     cefr?: string | null;
     status: string;
+    definitionEn?: string | null;
+    exampleEn?: string | null;
+    exampleVi?: string | null;
+    stability?: number;
+    difficulty?: number;
+    lapses?: number;
+    reps?: number;
+    due?: Date | null;
+    state?: number;
+    lastReviewAt?: Date | null;
   };
   summary: PracticeEvidenceSummary;
   priorityScore: number;
+  signals?: SmartPracticeSignalCode[];
+  signalReasonVi?: string;
+}
+
+export type MistakeFilter =
+  | "ALL"
+  | "NEEDS_PRACTICE"
+  | "RECENT_MISTAKES"
+  | "RESOLVED"
+  | "TYPED"
+  | "FILL_IN_BLANK"
+  | "MULTIPLE_CHOICE"
+  | "STORY_CLOZE"
+  | "STORY_CONTEXTUAL_VOCAB";
+
+export interface MistakeBankItem {
+  id: string;
+  flashcardId: string;
+  term: string;
+  normalizedTerm: string | null;
+  meaningVi: string;
+  ipa?: string | null;
+  partOfSpeech?: string | null;
+  definitionEn?: string | null;
+  exampleEn?: string | null;
+  exampleVi?: string | null;
+  questionType: string;
+  prompt: string | null;
+  userAnswer: string;
+  expectedAnswer: string;
+  attemptNumber: number;
+  responseMs: number | null;
+  createdAt: Date;
+  sessionId?: string | null;
+  derivedStatus: "NEEDS_PRACTICE" | "IMPROVING" | "RESOLVED";
+  statusExplanationVi: string;
+  cardClassification: PracticeSignalCategory;
+}
+
+export interface SerializedMistakeBankItem extends Omit<MistakeBankItem, "createdAt"> {
+  createdAt: string;
+}
+
+export interface DeckMistakesResult {
+  mistakes: MistakeBankItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  counts: {
+    all: number;
+    needsPractice: number;
+    resolved: number;
+  };
+}
+
+export interface SerializedDeckMistakesResult extends Omit<DeckMistakesResult, "mistakes"> {
+  mistakes: SerializedMistakeBankItem[];
+}
+
+export interface GetDeckMistakesOptions {
+  page?: number;
+  pageSize?: number;
+  filter?: MistakeFilter;
 }
 
 /**
@@ -251,35 +344,112 @@ export function computeCardClassification(
 }
 
 /**
+ * Pure function: Combines Practice Evidence with FSRS Memory Evidence
+ * to compute a deterministic, explainable priority score for Smart Practice.
+ *
+ * Base Retrieval Practice Tiers:
+ * Tier 400: latest first-pass incorrect + retry also incorrect (RECENT_REPEATED_FAILURE)
+ * Tier 300: latest first-pass incorrect (RECENT_FAILURE)
+ * Tier 200: NEEDS_PRACTICE classification (HIGH_FAILURE_RATE)
+ * Tier 100: MIXED classification (MIXED_EVIDENCE)
+ *
+ * FSRS Memory Decay Bonuses:
+ * +60: Card is due or overdue (OVERDUE)
+ * +35: Card has repeated memory lapses (lapses >= 2) (HIGH_LAPSES)
+ * +25: Card has fragile memory stability (stability < 3.0) (LOW_STABILITY)
+ * +15: Card had slow response time in recent incorrect attempts (SLOW_RESPONSE)
+ */
+export function computeSmartPracticePriority(
+  summary: PracticeEvidenceSummary,
+  fsrs?: CardFsrsSignals,
+  now: Date = new Date()
+): { priorityScore: number; signals: SmartPracticeSignalCode[]; signalReasonVi: string } {
+  if (summary.classification === "NO_EVIDENCE" || summary.classification === "INSUFFICIENT_DATA") {
+    return { priorityScore: 0, signals: [], signalReasonVi: summary.explanationVi };
+  }
+
+  const signals: SmartPracticeSignalCode[] = [];
+  const reasonParts: string[] = [];
+
+  const latestFirstPassWrong = summary.latestFirstPassCorrect === false;
+  const retryAlsoWrong = summary.retryIncorrect > 0 && summary.retryAttempts > summary.retryCorrect;
+
+  let baseScore = 10;
+  if (latestFirstPassWrong && retryAlsoWrong) {
+    baseScore = 400;
+    signals.push("RECENT_REPEATED_FAILURE");
+    reasonParts.push("Sai lần đầu và khi luyện lại");
+  } else if (latestFirstPassWrong) {
+    baseScore = 300;
+    signals.push("RECENT_FAILURE");
+    reasonParts.push("Lần gần nhất chưa đúng");
+  } else if (summary.classification === "NEEDS_PRACTICE") {
+    baseScore = 200;
+    signals.push("HIGH_FAILURE_RATE");
+    reasonParts.push("Tỷ lệ sai cao gần đây");
+  } else if (summary.classification === "MIXED") {
+    baseScore = 100;
+    signals.push("MIXED_EVIDENCE");
+    reasonParts.push("Kết quả chưa ổn định");
+  }
+
+  let fsrsBonus = 0;
+  if (fsrs) {
+    // 1. Overdue signal
+    if (fsrs.state !== undefined && fsrs.state > 0 && fsrs.due && new Date(fsrs.due).getTime() <= now.getTime()) {
+      fsrsBonus += 60;
+      signals.push("OVERDUE");
+      reasonParts.push("Quá hạn ôn FSRS");
+    }
+
+    // 2. High lapses signal
+    if (fsrs.lapses !== undefined && fsrs.lapses >= 2) {
+      fsrsBonus += 35;
+      signals.push("HIGH_LAPSES");
+      reasonParts.push(`Hay quên (${fsrs.lapses} lần lapse)`);
+    }
+
+    // 3. Low stability signal
+    if (
+      fsrs.state !== undefined &&
+      fsrs.state > 0 &&
+      fsrs.stability !== undefined &&
+      fsrs.stability > 0 &&
+      fsrs.stability < 3.0
+    ) {
+      fsrsBonus += 25;
+      signals.push("LOW_STABILITY");
+      reasonParts.push("Trí nhớ mong manh");
+    }
+  }
+
+  // 4. Slow response time in recent failures
+  if (summary.recentFirstPassAttempts.length > 0) {
+    const wrongAttempts = summary.recentFirstPassAttempts.filter((a) => !a.correct && a.responseMs);
+    if (wrongAttempts.length > 0) {
+      const avgMs = wrongAttempts.reduce((sum, a) => sum + (a.responseMs ?? 0), 0) / wrongAttempts.length;
+      if (avgMs > 8000) {
+        fsrsBonus += 15;
+        signals.push("SLOW_RESPONSE");
+        reasonParts.push("Phản xạ chậm");
+      }
+    }
+  }
+
+  const priorityScore = baseScore + fsrsBonus;
+  const signalReasonVi = reasonParts.join(" • ") || summary.explanationVi;
+
+  return { priorityScore, signals, signalReasonVi };
+}
+
+/**
  * Pure function: Deterministic priority key for sorting "Cần luyện thêm" (highest priority first).
- * Prioritizes transparent signals:
- * Tier 400: latest first-pass incorrect + retry also incorrect
- * Tier 300: latest first-pass incorrect
- * Tier 200: NEEDS_PRACTICE (high failure rate in recent window)
- * Tier 100: MIXED (inconsistent recent performance)
- * Tier 0:   NO_EVIDENCE or INSUFFICIENT_DATA or RECENTLY_SUCCESSFUL
  */
 export function getNeedPracticePriority(summary: PracticeEvidenceSummary): number {
   if (summary.classification === "NO_EVIDENCE" || summary.classification === "INSUFFICIENT_DATA") {
     return 0;
   }
-
-  const latestFirstPassWrong = summary.latestFirstPassCorrect === false;
-  const retryAlsoWrong = summary.retryIncorrect > 0 && summary.retryAttempts > summary.retryCorrect;
-
-  if (latestFirstPassWrong && retryAlsoWrong) {
-    return 400; // Tier 1: Sai lần đầu + sai cả khi luyện lại
-  }
-  if (latestFirstPassWrong) {
-    return 300; // Tier 2: Sai lần đầu gần nhất
-  }
-  if (summary.classification === "NEEDS_PRACTICE") {
-    return 200; // Tier 3: Tỷ lệ sai cao trong chu kỳ gần đây
-  }
-  if (summary.classification === "MIXED") {
-    return 100; // Tier 4: Kết quả chưa ổn định
-  }
-  return 10; // Tier 5: Đang thực hành tốt
+  return computeSmartPracticePriority(summary).priorityScore;
 }
 
 /**
@@ -337,7 +507,8 @@ export function aggregateCardPracticeEvidence(
     } else if (
       a.questionType === "multiple_choice" ||
       a.questionType.startsWith("multiple_choice") ||
-      a.questionType === "fill_in_blank"
+      a.questionType === "fill_in_blank" ||
+      a.questionType === "story_contextual_vocab"
     ) {
       targetCategory = breakdown.multipleChoice;
       modalityKey = "multipleChoice";
@@ -461,6 +632,16 @@ export class PracticeEvidenceService {
         partOfSpeech: true,
         cefr: true,
         status: true,
+        definitionEn: true,
+        exampleEn: true,
+        exampleVi: true,
+        stability: true,
+        difficulty: true,
+        lapses: true,
+        reps: true,
+        due: true,
+        state: true,
+        lastReviewAt: true,
       },
       orderBy: { createdAt: "asc" },
     });
@@ -518,11 +699,23 @@ export class PracticeEvidenceService {
         summary.classification === "NEEDS_PRACTICE" ||
         summary.classification === "MIXED"
       ) {
-        const priorityScore = getNeedPracticePriority(summary);
+        const { priorityScore, signals, signalReasonVi } = computeSmartPracticePriority(
+          summary,
+          {
+            due: card.due,
+            state: card.state,
+            stability: card.stability,
+            difficulty: card.difficulty,
+            lapses: card.lapses,
+            reps: card.reps,
+          }
+        );
         needPracticeCards.push({
           card,
           summary,
           priorityScore,
+          signals,
+          signalReasonVi,
         });
       }
     }
@@ -617,17 +810,181 @@ export class PracticeEvidenceService {
       }
     }
 
-    return topCandidates.map(({ card, summary, priorityScore }) => {
+    return topCandidates.map(({ card, summary, priorityScore, signals, signalReasonVi }) => {
       const hasStory = cardsWithStoryContext.has(card.id);
       const modeSelection = selectPracticeMode(card, summary, { hasStoryContext: hasStory });
       return {
         card,
         summary,
         priorityScore,
+        signals,
+        signalReasonVi,
         targetQuestionType: modeSelection.targetQuestionType,
         selectionReason: modeSelection.selectionReason,
       };
     });
+  }
+
+  /**
+   * Retrieves paginated mistake bank items for a deck.
+   * Derived from immutable PracticeAttempt (correct === false, attemptNumber === 1).
+   * Status (NEEDS_PRACTICE, IMPROVING, RESOLVED) is derived from subsequent evidence.
+   */
+  async getDeckMistakes(
+    deckId: string,
+    options: GetDeckMistakesOptions = {}
+  ): Promise<DeckMistakesResult> {
+    const page = Math.max(1, options.page ?? 1);
+    const pageSize = Math.max(1, Math.min(50, options.pageSize ?? 10));
+    const filter = options.filter ?? "ALL";
+
+    // 1. Get current practice summaries for all cards in this deck to derive current status
+    const { summaries } = await this.getDeckPracticeEvidence(deckId);
+
+    // 2. Build where filter for PracticeAttempt
+    const baseWhere: Prisma.PracticeAttemptWhereInput = {
+      flashcard: { deckId },
+      correct: false,
+      attemptNumber: 1,
+    };
+
+    if (filter === "TYPED") {
+      baseWhere.questionType = "typed_vi_en";
+    } else if (filter === "FILL_IN_BLANK") {
+      baseWhere.questionType = "fill_in_blank";
+    } else if (filter === "MULTIPLE_CHOICE") {
+      baseWhere.questionType = { in: ["multiple_choice_en_vi", "multiple_choice_vi_en"] };
+    } else if (filter === "STORY_CLOZE") {
+      baseWhere.questionType = "story_cloze";
+    } else if (filter === "STORY_CONTEXTUAL_VOCAB") {
+      baseWhere.questionType = "story_contextual_vocab";
+    } else if (filter === "RECENT_MISTAKES") {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      baseWhere.createdAt = { gte: sevenDaysAgo };
+    } else if (filter === "NEEDS_PRACTICE") {
+      const matchingCardIds: string[] = [];
+      for (const [cardId, summary] of summaries.entries()) {
+        if (summary.classification === "NEEDS_PRACTICE" || summary.classification === "INSUFFICIENT_DATA") {
+          matchingCardIds.push(cardId);
+        }
+      }
+      baseWhere.flashcardId = { in: matchingCardIds };
+    } else if (filter === "RESOLVED") {
+      const matchingCardIds: string[] = [];
+      for (const [cardId, summary] of summaries.entries()) {
+        if (summary.classification === "RECENTLY_SUCCESSFUL") {
+          matchingCardIds.push(cardId);
+        }
+      }
+      baseWhere.flashcardId = { in: matchingCardIds };
+    }
+
+    // 3. Count total for current query
+    const total = await db.practiceAttempt.count({ where: baseWhere });
+
+    // 4. Compute counts for tabs
+    const allAttemptsCount = await db.practiceAttempt.count({
+      where: {
+        flashcard: { deckId },
+        correct: false,
+        attemptNumber: 1,
+      },
+    });
+
+    const needsPracticeCardIds: string[] = [];
+    const resolvedCardIds: string[] = [];
+    for (const [cardId, summary] of summaries.entries()) {
+      if (summary.classification === "NEEDS_PRACTICE" || summary.classification === "INSUFFICIENT_DATA") {
+        needsPracticeCardIds.push(cardId);
+      } else if (summary.classification === "RECENTLY_SUCCESSFUL") {
+        resolvedCardIds.push(cardId);
+      }
+    }
+
+    const [needsPracticeCount, resolvedCount] = await Promise.all([
+      needsPracticeCardIds.length > 0
+        ? db.practiceAttempt.count({
+            where: {
+              flashcardId: { in: needsPracticeCardIds },
+              correct: false,
+              attemptNumber: 1,
+            },
+          })
+        : 0,
+      resolvedCardIds.length > 0
+        ? db.practiceAttempt.count({
+            where: {
+              flashcardId: { in: resolvedCardIds },
+              correct: false,
+              attemptNumber: 1,
+            },
+          })
+        : 0,
+    ]);
+
+    // 5. Query paginated attempts
+    const attempts = await db.practiceAttempt.findMany({
+      where: baseWhere,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        flashcard: true,
+      },
+    });
+
+    const mistakes: MistakeBankItem[] = attempts.map((att) => {
+      const summary = summaries.get(att.flashcardId);
+      let derivedStatus: "NEEDS_PRACTICE" | "IMPROVING" | "RESOLVED" = "NEEDS_PRACTICE";
+      const statusExplanationVi = summary?.explanationVi ?? "Cần thêm lượt luyện tập";
+
+      if (summary) {
+        if (summary.classification === "RECENTLY_SUCCESSFUL") {
+          derivedStatus = "RESOLVED";
+        } else if (summary.classification === "MIXED") {
+          derivedStatus = "IMPROVING";
+        } else {
+          derivedStatus = "NEEDS_PRACTICE";
+        }
+      }
+
+      return {
+        id: att.id,
+        flashcardId: att.flashcardId,
+        term: att.flashcard.term,
+        normalizedTerm: att.flashcard.normalizedTerm,
+        meaningVi: att.flashcard.meaningVi,
+        ipa: att.flashcard.ipa,
+        partOfSpeech: att.flashcard.partOfSpeech,
+        definitionEn: att.flashcard.definitionEn,
+        exampleEn: att.flashcard.exampleEn,
+        exampleVi: att.flashcard.exampleVi,
+        questionType: att.questionType,
+        prompt: att.prompt,
+        userAnswer: att.answer,
+        expectedAnswer: att.expectedAnswer,
+        attemptNumber: att.attemptNumber,
+        responseMs: att.responseMs,
+        createdAt: att.createdAt,
+        sessionId: att.sessionId,
+        derivedStatus,
+        statusExplanationVi,
+        cardClassification: summary?.classification ?? "NO_EVIDENCE",
+      };
+    });
+
+    return {
+      mistakes,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize) || 1,
+      counts: {
+        all: allAttemptsCount,
+        needsPractice: needsPracticeCount,
+        resolved: resolvedCount,
+      },
+    };
   }
 }
 
@@ -660,6 +1017,8 @@ export interface FocusedPracticeCandidate {
   };
   summary: PracticeEvidenceSummary;
   priorityScore: number;
+  signals?: SmartPracticeSignalCode[];
+  signalReasonVi?: string;
   targetQuestionType: TargetedPracticeMode;
   selectionReason: string;
 }

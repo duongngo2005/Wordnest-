@@ -24,6 +24,7 @@ model Deck {
   updatedAt    DateTime      @updatedAt
   cards        Flashcard[]
   stories      Story[]
+  lessons      Lesson[]
   quizAttempts QuizAttempt[]
   quizSessions QuizSession[]
 
@@ -127,6 +128,21 @@ model Story {
 
   @@index([deckId])
   @@map("stories")
+}
+
+model Lesson {
+  id          String   @id @default(cuid())
+  deckId      String
+  deck        Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  title       String
+  content     String
+  cefr        String
+  targetWords Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([deckId])
+  @@map("lessons")
 }
 
 model QuizAttempt {
