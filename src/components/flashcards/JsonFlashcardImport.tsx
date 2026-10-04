@@ -123,7 +123,7 @@ export function JsonFlashcardImport({
         document.execCommand("copy");
         document.body.removeChild(textArea);
       }
-      toast.success("Đã sao chép prompt", { description: "Dán vào ChatGPT, Gemini hoặc Claude." });
+      toast.success("Đã sao chép prompt", { description: "Dán vào công cụ AI của bạn." });
     } catch {
       toast.error("Không thể sao chép prompt", { description: "Trình duyệt không cho phép truy cập clipboard." });
     }
@@ -291,7 +291,7 @@ export function JsonFlashcardImport({
 
         {isPromptVisible ? (
           <label className="block text-xs font-bold text-[#6B6258] pt-2 border-t border-dashed border-[#DCD3C5]">
-            <span>AI Prompt (dán vào ChatGPT, Claude hoặc Gemini):</span>
+            <span>AI Prompt:</span>
             <textarea
               readOnly
               rows={10}

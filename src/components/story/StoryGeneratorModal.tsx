@@ -11,23 +11,23 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardCopy,
-  Clock,
   Eye,
   EyeOff,
-  GraduationCap,
-  Lightbulb,
   Sparkles,
   WandSparkles,
   X,
 } from "lucide-react";
 import { getStoryGenerationGuidance, STORY_LENGTH_OPTIONS } from "@/lib/story/story-options";
 import { normalizeStoryVocabulary } from "@/lib/story/story-vocabulary";
+import { parseStoryResponseText } from "@/lib/story/story-content";
 import {
   aiStoryResponseSchema,
   type AIStoryResponse,
   type StoryCefr,
   type StoryLength,
 } from "@/lib/validation/story";
+import { useAiTasks } from "@/components/ai/AiTaskProvider";
+import { getSpeechPreferences, isCloudSpeechVoice } from "@/lib/speech-preferences";
 import type { StoryData } from "./StoryReader";
 
 export type DeckStoryWord = {
@@ -48,6 +48,7 @@ type StoryGeneratorModalProps = {
   open: boolean;
   deck: { id: string; name: string };
   words: DeckStoryWord[];
+  initialMode?: CreationMode;
   onClose: () => void;
   onStoryCreated: (story: StoryData) => void;
 };
@@ -75,6 +76,8 @@ async function responseData(response: Response): Promise<Record<string, unknown>
     const error =
       data && typeof data === "object" && "error" in data
         ? String(data.error)
+        : data && typeof data === "object" && "message" in data
+        ? String(data.message)
         : "Không thể hoàn tất yêu cầu. Hãy thử lại.";
     throw new Error(error);
   }
@@ -82,7 +85,7 @@ async function responseData(response: Response): Promise<Record<string, unknown>
 }
 
 /**
- * Robust client-side JSON sanitizer and validator for AI responses.
+ * Robust client-side sanitizer and validator for AI story responses (supports TITLE/PASSAGE and JSON).
  */
 function parseAndValidateStoryJson(rawStory: string): {
   success: boolean;
@@ -91,84 +94,45 @@ function parseAndValidateStoryJson(rawStory: string): {
 } {
   const trimmed = rawStory.trim();
   if (!trimmed) {
-    return { success: false, error: "Vui lòng dán JSON trước khi kiểm tra." };
+    return { success: false, error: "Vui lòng dán nội dung truyện trước khi kiểm tra." };
   }
 
-  // 1. Strip markdown code fences
-  let cleaned = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-
-  // 2. Find first { and matching last }
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
-  } else {
-    return {
-      success: false,
-      error: "Không tìm thấy cấu trúc JSON hợp lệ (cần bắt đầu bằng { và kết thúc bằng }).",
-    };
-  }
-
-  // 3. Remove trailing commas outside strings
-  let sanitized = "";
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < cleaned.length; i++) {
-    const char = cleaned[i];
-    if (inString) {
-      sanitized += char;
-      if (escaped) escaped = false;
-      else if (char === "\\") escaped = true;
-      else if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-      sanitized += char;
-      continue;
-    }
-    if (char === ",") {
-      let next = i + 1;
-      while (/\s/.test(cleaned[next] || "")) next++;
-      if (cleaned[next] === "}" || cleaned[next] === "]") continue;
-    }
-    sanitized += char;
-  }
-
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(sanitized);
+    const parsed = parseStoryResponseText(trimmed);
+    const result = aiStoryResponseSchema.safeParse(parsed);
+    if (!result.success) {
+      const issue = result.error.issues[0];
+      const field = issue.path.join(".");
+      return {
+        success: false,
+        error: `Dữ liệu chưa đủ hoặc sai định dạng${field ? ` tại "${field}"` : ""}: ${issue.message}. Cần có tiêu đề và nội dung truyện.`,
+      };
+    }
+    return { success: true, data: result.data };
   } catch (err) {
     return {
       success: false,
-      error: `Lỗi cú pháp JSON: ${err instanceof Error ? err.message : "Cú pháp không hợp lệ. Vui lòng kiểm tra lại dấu ngoặc kép và dấu phẩy."}`,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Nội dung không hợp lệ. Vui lòng đảm bảo có 'TITLE:' và 'PASSAGE:' hoặc cấu trúc JSON hợp lệ.",
     };
   }
-
-  const result = aiStoryResponseSchema.safeParse(parsed);
-  if (!result.success) {
-    const issue = result.error.issues[0];
-    const field = issue.path.join(".");
-    return {
-      success: false,
-      error: `Dữ liệu JSON chưa đủ hoặc sai định dạng${field ? ` tại "${field}"` : ""}: ${issue.message}. JSON cần có "title" và "content".`,
-    };
-  }
-
-  return { success: true, data: result.data };
 }
+
 
 export function StoryGeneratorModal({
   open,
   deck,
   words,
+  initialMode = "prompt",
   onClose,
   onStoryCreated,
 }: StoryGeneratorModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [step, setStep] = useState<ModalStep>("options");
-  const [mode, setMode] = useState<CreationMode>("prompt");
+  const [mode, setMode] = useState<CreationMode>(initialMode);
   const [selectedTerms, setSelectedTerms] = useState<string[]>([]);
   const [cefr, setCefr] = useState<StoryCefr>("B1");
   const [length, setLength] = useState<StoryLength>("medium");
@@ -177,6 +141,8 @@ export function StoryGeneratorModal({
   const [prompt, setPrompt] = useState("");
   const [showPromptDetails, setShowPromptDetails] = useState(false);
   const [hasCopiedPrompt, setHasCopiedPrompt] = useState(false);
+  const { refreshJobs, cancelJob } = useAiTasks();
+  const [submittedJobId, setSubmittedJobId] = useState<string | null>(null);
   const [rawStory, setRawStory] = useState("");
   const [validatedStory, setValidatedStory] = useState<AIStoryResponse | null>(null);
   const [validationSuccessMsg, setValidationSuccessMsg] = useState<string | null>(null);
@@ -196,6 +162,7 @@ export function StoryGeneratorModal({
   const resetFormState = () => {
     setError(null);
     setStatus("");
+    setSubmittedJobId(null);
     setValidationSuccessMsg(null);
     setValidatedStory(null);
   };
@@ -249,35 +216,39 @@ export function StoryGeneratorModal({
     return true;
   };
 
-  const requestOptions = () => ({
-    deckId: deck.id,
-    targetWords: selectedTerms,
-    cefr,
-    length,
-    topic,
-  });
+  const requestOptions = () => {
+    const voiceURI = getSpeechPreferences().voiceURI;
+    return {
+      deckId: deck.id,
+      targetWords: selectedTerms,
+      cefr,
+      length,
+      topic,
+      narrationVoiceId: isCloudSpeechVoice(voiceURI) ? voiceURI : undefined,
+    };
+  };
 
   const generateWithAi = async () => {
     if (!validateOptions()) return;
     setError(null);
-    setStatus("AI đang sáng tác câu chuyện từ các từ đã chọn…");
+    setStatus("Đang gửi yêu cầu tạo truyện...");
     setIsSubmitting(true);
     try {
-      const response = await fetch("/api/stories", {
+      const response = await fetch("/api/ai/story-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestOptions()),
       });
       const data = await responseData(response);
-      if (!data.story || typeof data.story !== "object") {
-        throw new Error("Máy chủ chưa trả về truyện hợp lệ.");
+      if (!data.jobId) {
+        throw new Error(String(data.error || "Không thể tạo tác vụ AI."));
       }
-      onStoryCreated(toStoryData(data.story as Record<string, unknown>));
-      closeDialog();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Không thể tạo truyện. Hãy thử lại.");
-    } finally {
+      setSubmittedJobId(String(data.jobId));
+      await refreshJobs();
       setStatus("");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Không thể tạo tác vụ AI. Hãy thử lại.");
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -382,20 +353,21 @@ export function StoryGeneratorModal({
     setValidationSuccessMsg(null);
     const result = parseAndValidateStoryJson(rawStory);
     if (!result.success || !result.data) {
-      setError(result.error || "JSON không hợp lệ.");
+      setError(result.error || "Nội dung truyện không hợp lệ.");
       setValidatedStory(null);
       return;
     }
     setValidatedStory(result.data);
-    setValidationSuccessMsg("JSON hợp lệ! Bạn có thể xem trước nội dung truyện bên dưới.");
+    setValidationSuccessMsg("Nội dung hợp lệ! Bạn có thể xem trước nội dung truyện bên dưới.");
   };
 
   const importValidatedStory = async () => {
     if (!validateOptions()) return;
     if (!rawStory.trim()) {
-      setError("Vui lòng dán JSON do AI trả về trước khi lưu.");
+      setError("Vui lòng dán kết quả do AI tạo trước khi lưu.");
       return;
     }
+
     setError(null);
     setStatus("Đang lưu truyện vào deck của bạn…");
     setIsSubmitting(true);
@@ -423,7 +395,7 @@ export function StoryGeneratorModal({
     <dialog
       ref={dialogRef}
       aria-labelledby="story-generator-title"
-      className="story-workbench m-auto max-h-[92dvh] w-[min(calc(100%_-_1rem),50rem)] overflow-hidden p-0 text-[#221C16] backdrop:bg-[#221C16]/45"
+      className="story-workbench m-auto max-h-[90dvh] w-[min(calc(100%_-_1rem),50rem)] overflow-hidden p-0 text-[#221C16] backdrop:bg-[#221C16]/45"
       onCancel={(event) => {
         event.preventDefault();
         closeDialog();
@@ -432,9 +404,9 @@ export function StoryGeneratorModal({
         if (event.target === event.currentTarget && !isSubmitting) closeDialog();
       }}
     >
-      <div className="flex max-h-[92dvh] flex-col">
+      <div className="flex max-h-[90dvh] flex-col">
         {/* Retro Header with Animated Lego Studs */}
-        <header className="story-workbench-header shrink-0 flex items-start justify-between gap-3 px-4 py-3 sm:px-6">
+        <header className="story-workbench-header shrink-0 flex items-start justify-between gap-3 px-4 py-2.5 sm:px-5 sm:py-3">
           <div>
             <div className="story-workbench-studs" aria-hidden="true">
               <span />
@@ -450,11 +422,6 @@ export function StoryGeneratorModal({
                 </span>
               ) : null}
             </h2>
-            <p className="mt-0.5 text-xs font-bold text-[#6B6258] sm:text-sm">
-              {step === "options"
-                ? "Lựa chọn các khối từ vựng và cấp độ để lắp ráp câu chuyện sinh động."
-                : "Sao chép prompt cho chatbot bên ngoài rồi dán JSON kết quả để hoàn tất."}
-            </p>
           </div>
           <button
             type="button"
@@ -468,12 +435,12 @@ export function StoryGeneratorModal({
         </header>
 
         {/* Modal Scrollable Body */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 sm:p-4">
           {/* STEP 1: OPTIONS VIEW */}
           {step === "options" ? (
             <>
               {/* Method Switcher */}
-              <div className="grid grid-cols-2 gap-2.5" aria-label="Cách tạo truyện">
+              <div className="grid grid-cols-2 gap-2" aria-label="Cách tạo truyện">
                 <button
                   type="button"
                   aria-pressed={mode === "prompt"}
@@ -481,7 +448,7 @@ export function StoryGeneratorModal({
                     setMode("prompt");
                     setError(null);
                   }}
-                  className={`story-workbench-method wn-method-card min-h-0 cursor-pointer p-3 transition-all ${
+                  className={`story-workbench-method wn-method-card min-h-[4rem] cursor-pointer p-2.5 transition-all ${
                     mode === "prompt"
                       ? "!bg-[#FEF3C7] !border-2 !border-[#221C16] !shadow-[3px_3px_0_#221C16]"
                       : "opacity-80 hover:opacity-100"
@@ -489,12 +456,11 @@ export function StoryGeneratorModal({
                   disabled={isSubmitting}
                 >
                   <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#F59E0B] text-white shadow-[1px_1px_0_#221C16]">
-                      <Braces className="h-4 w-4" />
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 border-[#221C16] bg-[#F59E0B] text-white shadow-[1px_1px_0_#221C16]">
+                      <Braces className="h-3.5 w-3.5" />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <span className="block text-sm font-black text-[#221C16]">Prompt → JSON</span>
-                      <span className="block text-[11px] font-bold text-[#6B6258]">Dùng ChatGPT, Claude, Gemini ngoài</span>
                     </div>
                   </div>
                 </button>
@@ -506,7 +472,7 @@ export function StoryGeneratorModal({
                     setMode("ai");
                     setError(null);
                   }}
-                  className={`story-workbench-method wn-method-card min-h-0 cursor-pointer p-3 transition-all ${
+                  className={`story-workbench-method wn-method-card min-h-[4rem] cursor-pointer p-2.5 transition-all ${
                     mode === "ai"
                       ? "!bg-[#FEF3C7] !border-2 !border-[#221C16] !shadow-[3px_3px_0_#221C16]"
                       : "opacity-80 hover:opacity-100"
@@ -514,22 +480,15 @@ export function StoryGeneratorModal({
                   disabled={isSubmitting}
                 >
                   <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[var(--accent)] text-white shadow-[1px_1px_0_#221C16]">
-                      <Sparkles className="h-4 w-4" />
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 border-[#221C16] bg-[var(--accent)] text-white shadow-[1px_1px_0_#221C16]">
+                      <Sparkles className="h-3.5 w-3.5" />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <span className="block text-sm font-black text-[#221C16]">Tạo bằng WordNest AI</span>
-                      <span className="block text-[11px] font-bold text-[#6B6258]">Tạo trực tiếp qua API nội bộ</span>
                     </div>
                   </div>
                 </button>
               </div>
-
-              {mode === "prompt" && (selectedTerms.length === 0 || !topic) ? (
-                <div className="rounded-xl border-2 border-[#D97706] bg-[#FEF3C7] p-3 text-xs sm:text-sm font-bold text-[#8A5817]">
-                  Chọn ít nhất một từ và chủ đề để mở prompt.
-                </div>
-              ) : null}
 
               {/* VOCABULARY SELECTION: Textarea-like Box */}
               <section className="space-y-2" aria-labelledby="story-vocab-label">
@@ -546,26 +505,30 @@ export function StoryGeneratorModal({
                   <div className="flex items-center gap-2">
                     <span
                       aria-live="polite"
-                      className="rounded-full border-[1.5px] border-[#8A5817] bg-[#FEF3C7] px-2.5 py-0.5 text-xs font-black text-[#8A5817]"
+                      className="text-xs font-black text-[#8A5817]"
                     >
-                      Đã chọn {selectedTerms.length}/{words.length}
+                      {selectedTerms.length}/{words.length}
                     </span>
-                    <button
-                      type="button"
-                      onClick={selectAllTerms}
-                      className="story-select-all-btn"
-                      disabled={isSubmitting || words.length === 0 || allWordsSelected}
-                    >
-                      Chọn tất cả
-                    </button>
-                    <button
-                      type="button"
-                      onClick={deselectAllTerms}
-                      className="story-select-all-btn"
-                      disabled={isSubmitting || selectedTerms.length === 0}
-                    >
-                      Bỏ chọn tất cả
-                    </button>
+                    {!allWordsSelected ? (
+                      <button
+                        type="button"
+                        onClick={selectAllTerms}
+                        className="story-select-all-btn"
+                        disabled={isSubmitting || words.length === 0}
+                      >
+                        Chọn tất cả
+                      </button>
+                    ) : null}
+                    {selectedTerms.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={deselectAllTerms}
+                        className="story-select-all-btn"
+                        disabled={isSubmitting}
+                      >
+                        Bỏ chọn
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -582,16 +545,19 @@ export function StoryGeneratorModal({
                     {words.map((word) => {
                       const isSelected = selectedWordSet.has(word.term);
                       return (
-                        <button
+                        <label
                           key={word.term}
-                          type="button"
-                          role="checkbox"
-                          aria-checked={isSelected}
-                          onClick={() => toggleTerm(word.term)}
-                          disabled={isSubmitting}
                           className={`story-vocab-chip ${isSelected ? "is-selected" : ""}`}
                         >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleTerm(word.term)}
+                            disabled={isSubmitting}
+                            className="sr-only"
+                          />
                           <span
+                            aria-hidden="true"
                             className={`flex h-4 w-4 items-center justify-center rounded-[3px] border border-[#221C16] text-[10px] ${
                               isSelected ? "bg-[var(--accent-strong)] text-white" : "bg-white"
                             }`}
@@ -602,36 +568,23 @@ export function StoryGeneratorModal({
                           {word.meaningVi ? (
                             <span className="text-xs text-[#6B6258] font-bold">({word.meaningVi})</span>
                           ) : null}
-                        </button>
+                        </label>
                       );
                     })}
                   </div>
                 )}
-                <p className="text-[11px] font-bold text-[#8C8275]">
-                  💡 Bấm trực tiếp vào các từ trên để chọn. Nghĩa tiếng Việt sẽ luôn sẵn sàng khi bạn đọc truyện.
-                </p>
               </section>
 
               {/* 3 HORIZONTAL BLOCKS: Length, CEFR, Topic */}
-              <div className="space-y-3 pt-1">
+              <div className="space-y-2.5">
                 {/* Block 1: Độ dài (Length) */}
-                <fieldset className="story-horizontal-block flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 sm:max-w-[42%]">
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-md border-1.5 border-[#221C16] bg-[#0D9488] text-[11px] font-black text-white shadow-[1px_1px_0_#221C16]">
-                        2
-                      </span>
-                      <legend className="text-sm font-black text-[#221C16] flex items-center gap-1.5">
-                        <Clock className="h-4 w-4 text-[#0D9488]" /> Độ dài truyện
-                      </legend>
-                    </div>
-                    <p className="mt-1 text-[11px] font-bold text-[var(--accent-strong)]">
-                      {guidance.description}
-                    </p>
-                    <p className="text-[10px] text-[#6B6258] font-medium">
-                      Tự thay đổi theo số từ bạn chọn, không khóa số từ cố định.
-                    </p>
-                  </div>
+                <fieldset className="story-horizontal-block flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <legend className="flex items-center gap-2 text-sm font-black text-[#221C16]">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md border-1.5 border-[#221C16] bg-[#F59E0B] text-[11px] font-black text-[#221C16] shadow-[1px_1px_0_#221C16]">
+                      2
+                    </span>
+                    Độ dài truyện
+                  </legend>
 
                   {/* Horizontal Options */}
                   <div className="flex flex-row flex-wrap items-center gap-2">
@@ -664,20 +617,13 @@ export function StoryGeneratorModal({
                 </fieldset>
 
                 {/* Block 2: Trình độ (CEFR) */}
-                <fieldset className="story-horizontal-block flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 sm:max-w-[42%]">
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-md border-1.5 border-[#221C16] bg-[#0284C7] text-[11px] font-black text-white shadow-[1px_1px_0_#221C16]">
-                        3
-                      </span>
-                      <legend className="text-sm font-black text-[#221C16] flex items-center gap-1.5">
-                        <GraduationCap className="h-4 w-4 text-[#0284C7]" /> Trình độ CEFR
-                      </legend>
-                    </div>
-                    <p className="mt-1 text-[11px] font-bold text-[#6B6258]">
-                      Độ khó cấu trúc câu và ngữ cảnh
-                    </p>
-                  </div>
+                <fieldset className="story-horizontal-block flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <legend className="flex items-center gap-2 text-sm font-black text-[#221C16]">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md border-1.5 border-[#221C16] bg-[#F59E0B] text-[11px] font-black text-[#221C16] shadow-[1px_1px_0_#221C16]">
+                      3
+                    </span>
+                    Trình độ CEFR
+                  </legend>
 
                   {/* Horizontal Options */}
                   <div className="flex flex-row flex-wrap items-center gap-1.5">
@@ -713,20 +659,18 @@ export function StoryGeneratorModal({
 
                 {/* Block 3: Chủ đề (Topic) */}
                 <fieldset className="story-horizontal-block space-y-2">
-                  <div className="flex items-center gap-2">
+                  <legend className="flex items-center gap-2 text-sm font-black text-[#221C16]">
                     <span className="flex h-5 w-5 items-center justify-center rounded-md border-1.5 border-[#221C16] bg-[#F59E0B] text-[11px] font-black text-[#221C16] shadow-[1px_1px_0_#221C16]">
                       4
                     </span>
-                    <legend className="text-sm font-black text-[#221C16] flex items-center gap-1.5">
-                      <Lightbulb className="h-4 w-4 text-[#F59E0B]" /> Chủ đề câu chuyện
-                    </legend>
-                  </div>
+                    Chủ đề (tuỳ chọn)
+                  </legend>
 
                   {/* Horizontal Options */}
                   <div className="flex flex-wrap items-center gap-1.5">
                     {[...TOPIC_OPTIONS, "Custom"].map((option) => {
                       const isSelected = topicChoice === option;
-                      const label = option === "Custom" ? "✍️ Tự nhập chủ đề" : option;
+                      const label = option === "Custom" ? "Tự nhập chủ đề" : option;
                       return (
                         <label
                           key={option}
@@ -932,10 +876,10 @@ export function StoryGeneratorModal({
                     </span>
                     <div>
                       <h3 id="json-input-title" className="text-base font-black text-[#221C16]">
-                        2. Dán JSON do chatbot trả về
+                        2. Dán kết quả do chatbot trả về
                       </h3>
                       <p className="text-xs font-bold text-[#6B6258]">
-                        Hỗ trợ dán cả khối ```json; hệ thống sẽ tự tách và kiểm tra.
+                        Hỗ trợ định dạng TITLE: ... PASSAGE: ... hoặc JSON; hệ thống sẽ tự nhận diện và phân tích từ vựng.
                       </p>
                     </div>
                   </div>
@@ -943,7 +887,7 @@ export function StoryGeneratorModal({
 
                 <div>
                   <textarea
-                    aria-label="JSON AI trả về"
+                    aria-label="Nội dung truyện AI trả về"
                     value={rawStory}
                     onChange={(e) => {
                       setRawStory(e.target.value);
@@ -951,7 +895,7 @@ export function StoryGeneratorModal({
                       setValidatedStory(null);
                       setValidationSuccessMsg(null);
                     }}
-                    placeholder={`{\n  "title": "A Day in the Park",\n  "content": "Once upon a time...",\n  "usage": [\n    { "term": "${selectedTerms[0] || "example"}", "usedAs": "${selectedTerms[0] || "example"}" }\n  ]\n}`}
+                    placeholder={`TITLE:\nA Morning at the Studio\n\nPASSAGE:\nClara arrived twenty minutes before opening time. She had to allocate her hours carefully between the new catalog and the upcoming review...`}
                     rows={8}
                     className="wn-field font-mono text-xs leading-relaxed resize-y !bg-[#FAF6EE]"
                     disabled={isSubmitting}
@@ -1044,6 +988,39 @@ export function StoryGeneratorModal({
             </div>
           )}
 
+          {submittedJobId ? (
+            <div className="rounded-2xl border-2 border-[#221C16] bg-[#FEF3C7] p-4 text-[#221C16] space-y-3 shadow-[3px_3px_0px_#221C16]">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-[var(--accent)]" />
+                <h3 className="text-sm sm:text-base font-black">Đã bắt đầu tạo truyện trên nền</h3>
+              </div>
+              <p className="text-xs sm:text-sm font-semibold text-[#6B6258] leading-relaxed">
+                AI đang viết truyện cho bạn ({selectedTerms.length} từ · {cefr} · {length}) trong tiến trình nền độc lập. Bạn có thể đóng cửa sổ này ngay lập tức để tiếp tục học tập. Khi hoàn thành, thông báo sẽ xuất hiện để bạn mở truyện.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={closeDialog}
+                  className="wn-button wn-button-primary text-xs"
+                >
+                  Ẩn và tiếp tục học
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (submittedJobId) {
+                      await cancelJob(submittedJobId);
+                      setSubmittedJobId(null);
+                    }
+                  }}
+                  className="rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-extrabold text-[#B91C1C] hover:bg-[#FEE2E2]"
+                >
+                  Hủy tác vụ
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {/* Status and Error banners */}
           {status ? (
             <p aria-live="polite" className="text-xs sm:text-sm font-black text-[var(--accent-strong)]">
@@ -1063,10 +1040,10 @@ export function StoryGeneratorModal({
         </div>
 
         {/* Modal Footer */}
-        <footer className="story-workbench-footer shrink-0 flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        <footer className="story-workbench-footer shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-5">
           <p className="text-xs font-bold text-[#6B6258]">
             {step === "options"
-              ? `Đang chọn ${selectedTerms.length} từ • ${guidance.description}`
+              ? `${selectedTerms.length} từ · ~${guidance.minWords}–${guidance.maxWords} từ`
               : `Khung tạo truyện • ${selectedTerms.length} từ đã chọn`}
           </p>
 

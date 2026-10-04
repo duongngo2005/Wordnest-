@@ -33,6 +33,43 @@ describe("OllamaAiProvider", () => {
     );
   });
 
+  it("sends both system and user messages when systemPrompt is provided", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      model: "wordnest-local",
+      message: { role: "assistant", content: '{"value":"local"}' },
+      done: true,
+    }), { status: 200 }));
+    const provider = new OllamaAiProvider({
+      baseUrl: "http://127.0.0.1:11434",
+      model: "wordnest-local",
+      fetcher,
+    });
+
+    await expect(provider.generateJson({
+      systemPrompt: "System instruction",
+      prompt: "User query",
+      temperature: 0.2,
+      timeoutMs: 5_000,
+    })).resolves.toBe('{"value":"local"}');
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://127.0.0.1:11434/api/chat",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          model: "wordnest-local",
+          messages: [
+            { role: "system", content: "System instruction" },
+            { role: "user", content: "User query" },
+          ],
+          format: "json",
+          stream: false,
+          options: { temperature: 0.2 },
+        }),
+      })
+    );
+  });
+
   it("returns a safe unavailable error when the local service cannot be reached", async () => {
     const provider = new OllamaAiProvider({
       baseUrl: "http://127.0.0.1:11434",

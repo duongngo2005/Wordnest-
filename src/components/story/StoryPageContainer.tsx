@@ -11,12 +11,24 @@ interface StoryPageContainerProps {
   deck: { id: string; name: string };
   initialStories: StoryData[];
   deckWords: DeckStoryWord[];
+  initialGeneratorMode?: "ai";
+  initialStoryId?: string;
 }
 
-export function StoryPageContainer({ deck, initialStories, deckWords }: StoryPageContainerProps) {
+export function StoryPageContainer({
+  deck,
+  initialStories,
+  deckWords,
+  initialGeneratorMode,
+  initialStoryId,
+}: StoryPageContainerProps) {
   const [stories, setStories] = useState(initialStories);
-  const [activeStoryId, setActiveStoryId] = useState(initialStories[0]?.id ?? null);
-  const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
+  const [activeStoryId, setActiveStoryId] = useState(
+    initialStoryId && initialStories.some((s) => s.id === initialStoryId)
+      ? initialStoryId
+      : initialStories[0]?.id ?? null
+  );
+  const [isGeneratorOpen, setIsGeneratorOpen] = useState(initialGeneratorMode === "ai");
   const [storyPendingDelete, setStoryPendingDelete] = useState<StoryData | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -179,7 +191,14 @@ export function StoryPageContainer({ deck, initialStories, deckWords }: StoryPag
         </section>
       )}
 
-      <StoryGeneratorModal open={isGeneratorOpen} deck={deck} words={deckWords} onClose={() => setIsGeneratorOpen(false)} onStoryCreated={addStory} />
+      <StoryGeneratorModal
+        open={isGeneratorOpen}
+        deck={deck}
+        words={deckWords}
+        initialMode={initialGeneratorMode}
+        onClose={() => setIsGeneratorOpen(false)}
+        onStoryCreated={addStory}
+      />
     </div>
   );
 }

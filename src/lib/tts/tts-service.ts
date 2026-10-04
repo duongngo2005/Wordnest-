@@ -17,6 +17,11 @@ type TtsSynthesisRequest = {
   voiceId: CloudTtsVoiceId;
 };
 
+export type TtsNarrationRequest = {
+  voiceId: CloudTtsVoiceId;
+  chunks: readonly string[];
+};
+
 type TtsServiceOptions = {
   provider: TtsProvider;
   cacheDirectory: string;
@@ -24,7 +29,7 @@ type TtsServiceOptions = {
 };
 
 /**
- * A deliberately small cloud-TTS boundary: provider synthesis plus a durable
+ * A deliberately small local-TTS boundary: provider synthesis plus a durable
  * file cache. The host is a self-hosted WordNest instance, so local storage is
  * the least operationally expensive persistent cache.
  */
@@ -35,7 +40,7 @@ export class TtsService {
 
   async synthesize(request: TtsSynthesisRequest): Promise<ArrayBuffer> {
     const voice = getCloudTtsVoice(request.voiceId);
-    if (!voice) throw new Error("Unsupported cloud voice");
+    if (!voice) throw new Error("Unsupported Kokoro voice");
 
     const text = normalizeTtsText(request.text);
     if (!text) throw new Error("Text is required");
@@ -57,6 +62,31 @@ export class TtsService {
     }
   }
 
+  /**
+   * Materializes every chunk before a Story is marked narration-ready. Audio is
+   * still stored through the existing text/voice cache, rather than copied into
+   * a second Story-specific cache.
+   */
+  async synthesizeNarration({ voiceId, chunks }: TtsNarrationRequest): Promise<void> {
+    for (const text of chunks) {
+      await this.synthesize({ text, voiceId });
+    }
+  }
+
+  /** Deletes only the cache entries derived from this Story's final text. */
+  async removeNarration({ voiceId, chunks }: TtsNarrationRequest): Promise<void> {
+    for (const rawText of chunks) {
+      const text = normalizeTtsText(rawText);
+      if (!text) continue;
+      const cachePath = this.getCachePath({ text, voiceId });
+      try {
+        await unlink(cachePath);
+      } catch (error) {
+        if (!isFileNotFoundError(error)) throw error;
+      }
+    }
+  }
+
   private async synthesizeAndCache({
     text,
     voice,
@@ -67,7 +97,7 @@ export class TtsService {
     cachePath: string;
   }): Promise<ArrayBuffer> {
     const audio = await this.options.provider.synthesize({ text, voice });
-    if (audio.byteLength === 0) throw new Error("Cloud provider returned empty audio");
+    if (audio.byteLength === 0) throw new Error("Kokoro returned empty audio");
 
     try {
       await mkdir(this.options.cacheDirectory, { recursive: true });

@@ -1,4 +1,8 @@
+import path from "path";
+import dotenv from "dotenv";
 import { defineConfig, devices } from "@playwright/test";
+
+dotenv.config({ path: path.resolve(__dirname, ".env.local") });
 
 const port = Number(process.env.PLAYWRIGHT_PORT || 3000);
 const baseURL = `http://127.0.0.1:${port}`;

@@ -133,12 +133,12 @@ export const manualCardsRequestSchema = z.object({
   cards: z.array(manualFlashcardItemSchema).min(1).max(30),
 });
 
-/** AI generation is intentionally smaller than direct JSON/manual imports. */
-export const AI_CARD_GENERATION_LIMIT = 12;
+/** AI generation maximum limit: 50 terms per operation. */
+export const AI_CARD_GENERATION_LIMIT = 50;
 
 export const aiCardGenerationRequestSchema = z.object({
   action: z.literal("generate"),
-  rawInput: z.string().trim().min(1, "Nhập ít nhất một từ hoặc cụm từ.").max(4_000),
+  rawInput: z.string().trim().min(1, "Nhập ít nhất một từ hoặc cụm từ.").max(10_000),
 });
 
 export const aiCardPersistRequestSchema = z.object({

@@ -52,13 +52,14 @@ test("opens the story creator and translates target deck words without an AI req
   await expect(dialog.getByRole("checkbox", { name: /apple.*quả táo/i })).toBeVisible();
   await dialog.getByRole("button", { name: "Chọn tất cả", exact: true }).click();
   await expect(dialog.getByRole("checkbox", { name: /apple.*quả táo/i })).toBeChecked();
-  await dialog.getByRole("button", { name: "Bỏ chọn tất cả" }).click();
+  await dialog.getByRole("button", { name: "Bỏ chọn", exact: true }).click();
   await expect(dialog.getByRole("checkbox", { name: /apple.*quả táo/i })).not.toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Ngắn" })).toBeVisible();
   await expect(dialog.getByRole("radio", { name: "CEFR B1" })).toBeVisible();
   await expect(dialog.getByRole("radio", { name: "Daily Life" })).toBeVisible();
   await expect(dialog.getByRole("combobox")).toHaveCount(0);
-  await expect(dialog.getByText("Tự thay đổi theo số từ bạn chọn, không khóa số từ cố định.")).toBeVisible();
+  await expect(dialog.getByText("Lựa chọn các khối từ vựng và cấp độ để lắp ráp câu chuyện sinh động.")).toHaveCount(0);
+  await expect(dialog.getByText("Tự thay đổi theo số từ bạn chọn, không khóa số từ cố định.")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -66,6 +67,29 @@ test("opens the story creator and translates target deck words without an AI req
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("button", { name: "Tạo truyện" })).toBeFocused();
+});
+
+test("opens the local AI story flow directly from a deck link", async ({ page }, testInfo) => {
+  const deck = await db.deck.create({
+    data: {
+      name: `AI story link ${testInfo.testId.slice(-8)}`,
+      cards: { create: { term: "apple", normalizedTerm: "apple", meaningVi: "quả táo" } },
+    },
+  });
+  deckId = deck.id;
+
+  await page.goto(`/decks/${deck.id}`);
+  const aiStoryLink = page.getByRole("link", { name: "Tạo truyện AI" });
+  await expect(aiStoryLink).toHaveAttribute("href", `/decks/${deck.id}/story?create=ai`);
+  await aiStoryLink.click();
+
+  const dialog = page.getByRole("dialog", { name: "Tạo truyện từ deck" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Tạo bằng WordNest AI/ })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(dialog.getByRole("button", { name: "Tạo truyện bằng AI" })).toBeVisible();
 });
 
 test("builds a portable custom-topic prompt and saves a fenced external JSON story", async ({ page }, testInfo) => {
@@ -87,10 +111,10 @@ test("builds a portable custom-topic prompt and saves a fenced external JSON sto
   const promptResponse = await page.request.post("/api/stories/prompt", { data: requestOptions });
   expect(promptResponse.status()).toBe(200);
   const promptData = await promptResponse.json();
-  expect(promptData.prompt).toContain('["allocate"]');
-  expect(promptData.prompt).toContain("CEFR C1");
+  expect(promptData.prompt).toContain("allocate");
+  expect(promptData.prompt).toContain("C1");
   expect(promptData.prompt).toContain("A first day on an engineering team");
-  expect(promptData.prompt).toContain("Return ONLY one valid JSON object");
+  expect(promptData.prompt).toContain("WordNest Reading Engine");
 
   const externalJson = {
     title: "A Careful Allocation",
@@ -131,7 +155,6 @@ test("reveals the one-tap prompt copy subform only after story options are compl
   await page.getByRole("button", { name: "Tạo truyện", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: /Prompt → JSON/ }).click();
-  await expect(dialog.getByText("Chọn ít nhất một từ và chủ đề để mở prompt.")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Tạo prompt" })).toHaveCount(0);
 
   await dialog.getByRole("button", { name: "Chọn tất cả", exact: true }).click();
@@ -144,7 +167,7 @@ test("reveals the one-tap prompt copy subform only after story options are compl
   await expect(dialog.getByRole("button", { name: "Sao chép prompt" })).toBeVisible();
   await dialog.getByRole("button", { name: "Sao chép prompt" }).click();
   await expect(dialog.getByText("Đã sao chép prompt.")).toBeVisible();
-  await expect(dialog.getByRole("textbox", { name: "JSON AI trả về" })).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "Nội dung truyện AI trả về" })).toBeVisible();
 });
 
 test("requires a named confirmation before permanently deleting the active story", async ({ page }, testInfo) => {

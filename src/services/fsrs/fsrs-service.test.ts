@@ -99,7 +99,7 @@ describe("FSRSService", () => {
     });
   });
 
-  describe("processScheduledReview integration with MySQL", () => {
+  describe("processScheduledReview integration with SQLite", () => {
     let testDeckId: string;
     let testCardId: string;
 

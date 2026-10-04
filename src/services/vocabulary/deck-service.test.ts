@@ -3,11 +3,11 @@ import { db } from "@/lib/db";
 import { deckService } from "./deck-service";
 import { FlashcardStatus } from "@prisma/client";
 import { aiService } from "@/services/ai";
-import { AIQuotaExceededError } from "@/services/ai/ai-core";
+import { AIProviderUnavailableError } from "@/services/ai/ai-core";
 import type { GeneratedFlashcardItem } from "@/lib/validation/flashcard";
 import { DuplicateFlashcardTermError } from "./deck-service";
 
-describe("DeckService Integration with MySQL", () => {
+describe("DeckService Integration with SQLite", () => {
   it("creates a minimal manual deck without calling the AI service", async () => {
     const generateFlashcards = vi
       .spyOn(aiService, "generateFlashcards")
@@ -102,10 +102,10 @@ describe("DeckService Integration with MySQL", () => {
     const deck = await db.deck.create({ data: { name: "AI failure is safe" } });
     const generateFlashcards = vi
       .spyOn(aiService, "generateFlashcards")
-      .mockRejectedValue(new AIQuotaExceededError());
+      .mockRejectedValue(new AIProviderUnavailableError());
 
     try {
-      await expect(deckService.generateAiCardDrafts(deck.id, "deploy; maintain")).rejects.toThrow(AIQuotaExceededError);
+      await expect(deckService.generateAiCardDrafts(deck.id, "deploy; maintain")).rejects.toThrow(AIProviderUnavailableError);
       expect(await db.flashcard.count({ where: { deckId: deck.id } })).toBe(0);
     } finally {
       generateFlashcards.mockRestore();
@@ -413,5 +413,26 @@ describe("DeckService Integration with MySQL", () => {
       await db.deck.delete({ where: { id: deckB.id } });
     }
   });
-});
 
+  it("enforces 50-card maximum limit on AI card drafts generation and persistence", async () => {
+    const deck = await db.deck.create({ data: { name: "Limit Test Deck" } });
+    try {
+      // 51 terms
+      const raw51 = Array.from({ length: 51 }, (_, i) => `word${i + 1}`).join("\n");
+      await expect(
+        deckService.generateAiCardDrafts(deck.id, raw51)
+      ).rejects.toThrow("Đã nhận 51 từ. Vui lòng chọn tối đa 50 từ để tạo flashcard.");
+
+      // 51 draft cards to persist
+      const cards51 = Array.from({ length: 51 }, (_, i) => ({
+        term: `persistword${i + 1}`,
+        meaningVi: `nghĩa ${i + 1}`,
+      }));
+      await expect(
+        deckService.persistAiCardDrafts(deck.id, cards51)
+      ).rejects.toThrow("Bạn có thể tạo tối đa 50 flashcard trong mỗi lần.");
+    } finally {
+      await db.deck.delete({ where: { id: deck.id } });
+    }
+  });
+});

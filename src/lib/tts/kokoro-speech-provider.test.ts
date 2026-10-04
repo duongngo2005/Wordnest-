@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { CloudTtsSynthesisError, CloudTtsUnavailableError } from "./azure-speech-provider";
-import { KokoroSpeechProvider } from "./kokoro-speech-provider";
+import {
+  KokoroSpeechProvider,
+  KokoroTtsSynthesisError,
+  KokoroTtsUnavailableError,
+} from "./kokoro-speech-provider";
 import { getCloudTtsVoice } from "./voice-catalog";
 
 describe("KokoroSpeechProvider", () => {
@@ -37,7 +40,7 @@ describe("KokoroSpeechProvider", () => {
     await expect(provider.synthesize({
       text: "Small steps",
       voice: getCloudTtsVoice("wordnest:ava")!,
-    })).rejects.toBeInstanceOf(CloudTtsUnavailableError);
+    })).rejects.toBeInstanceOf(KokoroTtsUnavailableError);
   });
 
   it("fails closed when Kokoro returns an error", async () => {
@@ -49,6 +52,6 @@ describe("KokoroSpeechProvider", () => {
     await expect(provider.synthesize({
       text: "Small steps",
       voice: getCloudTtsVoice("wordnest:ava")!,
-    })).rejects.toBeInstanceOf(CloudTtsSynthesisError);
+    })).rejects.toBeInstanceOf(KokoroTtsSynthesisError);
   });
 });

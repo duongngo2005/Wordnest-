@@ -3,6 +3,7 @@
  * curated WordNest voice; system voices always stay in the browser.
  */
 import { getSpeechPreferences, isCloudSpeechVoice } from "./speech-preferences";
+import type { CloudTtsVoiceId } from "./tts/voice-catalog";
 
 type SpeechCallbacks = {
   onStart?: () => void;
@@ -14,6 +15,11 @@ type SpeechCallbacks = {
 type SpeakOptions = {
   voiceURI?: string | null;
   onCloudFallback?: () => void;
+};
+
+export type PreparedCloudSpeech = {
+  text: string;
+  source: string;
 };
 
 let activeUtterance: SpeechSynthesisUtterance | null = null;
@@ -77,6 +83,52 @@ export function stopSpeech(): void {
   cancelSystemSpeech();
 }
 
+/**
+ * Fetches all already-generated narration chunks before playback starts. The
+ * returned object URLs keep playback from waiting on a TTS/network request
+ * between sentences.
+ */
+export async function prepareCloudSpeech(
+  texts: readonly string[],
+  voiceId: CloudTtsVoiceId
+): Promise<PreparedCloudSpeech[]> {
+  const prepared: PreparedCloudSpeech[] = [];
+  try {
+    for (const text of texts) {
+      const response = await fetch(
+        `/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(voiceId)}`
+      );
+      if (!response.ok) throw new Error("Không thể tải giọng đọc WordNest.");
+      const audio = await response.blob();
+      if (audio.size === 0) throw new Error("Giọng đọc WordNest không có dữ liệu.");
+      prepared.push({ text, source: URL.createObjectURL(audio) });
+    }
+    return prepared;
+  } catch (error) {
+    releasePreparedCloudSpeech(prepared);
+    throw error;
+  }
+}
+
+export function releasePreparedCloudSpeech(prepared: readonly PreparedCloudSpeech[]): void {
+  for (const item of prepared) URL.revokeObjectURL(item.source);
+}
+
+export function speakPreparedCloudSpeech(
+  prepared: PreparedCloudSpeech,
+  onStart?: () => void,
+  onEnd?: () => void,
+  onError?: (error: unknown) => void,
+  options: SpeakOptions = {}
+): void {
+  playCloudAudio(prepared.source, prepared.text, {
+    onStart,
+    onEnd,
+    onError,
+    onCloudFallback: options.onCloudFallback,
+  });
+}
+
 export function pauseSpeech(): boolean {
   if (activeAudio && !activeAudio.paused) {
     activeAudio.pause();
@@ -107,7 +159,24 @@ function playCloudSpeech(text: string, voiceURI: string, callbacks: SpeechCallba
     return;
   }
 
-  const audio = new Audio(`/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(voiceURI)}`);
+  playCloudAudio(
+    `/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(voiceURI)}`,
+    text,
+    callbacks
+  );
+}
+
+function playCloudAudio(
+  source: string,
+  text: string,
+  callbacks: SpeechCallbacks
+): void {
+  if (typeof Audio === "undefined") {
+    fallbackToSystemSpeech(text, callbacks);
+    return;
+  }
+
+  const audio = new Audio(source);
   const previousAudio = activeAudio;
   const rate = getSpeechPreferences().rate;
   let didFallback = false;

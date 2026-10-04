@@ -54,4 +54,28 @@ describe("StoryService historical data compatibility", () => {
 
     expect(duplicateResult).toMatchObject({ success: false, alreadyExists: true });
   });
+
+  it("automatically detects vocabulary coverage when persisting a story without pre-populated usage array", async () => {
+    expect(testDeckId).toBeDefined();
+    const story = await storyService.persistGeneratedStory({
+      deckId: testDeckId!,
+      requestedTerms: ["apple"],
+      cefr: "B1",
+      length: "short",
+      topic: "Daily Life",
+      generated: {
+        title: "Morning Routine",
+        content: "Every morning, Lucas ate an apple before heading out to work.",
+      },
+    });
+
+    expect(story.title).toBe("Morning Routine");
+    const retrieved = await storyService.getStoryById(story.id);
+    expect(retrieved).toBeDefined();
+    const targetWords = retrieved?.targetWords as Record<string, unknown>;
+    expect(targetWords.usage).toEqual([
+      expect.objectContaining({ term: "apple", usedAs: "apple" }),
+    ]);
+  });
 });
+

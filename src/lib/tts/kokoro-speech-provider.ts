@@ -1,4 +1,3 @@
-import { CloudTtsSynthesisError, CloudTtsUnavailableError } from "./azure-speech-provider";
 import { getKokoroVoiceId } from "./kokoro-voice-catalog";
 import type { TtsProvider } from "./tts-service";
 
@@ -6,6 +5,20 @@ type KokoroSpeechProviderOptions = {
   baseUrl: string;
   fetcher?: typeof fetch;
 };
+
+export class KokoroTtsUnavailableError extends Error {
+  constructor() {
+    super("Kokoro TTS is not configured");
+    this.name = "KokoroTtsUnavailableError";
+  }
+}
+
+export class KokoroTtsSynthesisError extends Error {
+  constructor(public readonly status: number, cause?: unknown) {
+    super("Kokoro TTS synthesis failed", cause === undefined ? undefined : { cause });
+    this.name = "KokoroTtsSynthesisError";
+  }
+}
 
 /** Local Kokoro client for its OpenAI-compatible `/v1/audio/speech` API. */
 export class KokoroSpeechProvider implements TtsProvider {
@@ -22,7 +35,7 @@ export class KokoroSpeechProvider implements TtsProvider {
   }
 
   async synthesize({ text, voice }: Parameters<TtsProvider["synthesize"]>[0]): Promise<ArrayBuffer> {
-    if (!this.endpoint) throw new CloudTtsUnavailableError();
+    if (!this.endpoint) throw new KokoroTtsUnavailableError();
 
     let response: Response;
     try {
@@ -38,15 +51,15 @@ export class KokoroSpeechProvider implements TtsProvider {
         cache: "no-store",
       });
     } catch (error) {
-      throw new CloudTtsSynthesisError(503, error);
+      throw new KokoroTtsSynthesisError(503, error);
     }
 
     if (!response.ok) {
-      throw new CloudTtsSynthesisError(response.status);
+      throw new KokoroTtsSynthesisError(response.status);
     }
 
     const audio = await response.arrayBuffer();
-    if (audio.byteLength === 0) throw new CloudTtsSynthesisError(response.status);
+    if (audio.byteLength === 0) throw new KokoroTtsSynthesisError(response.status);
     return audio;
   }
 }

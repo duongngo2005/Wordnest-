@@ -5,6 +5,7 @@ import { BookOpen, ChartNoAxesCombined, Settings } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { WordNestMascot } from "./Mascot";
 import { playUISound } from "@/lib/ui-sound";
+import { AiTaskIndicator } from "@/components/ai/AiTaskIndicator";
 
 function isCurrent(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
@@ -30,6 +31,7 @@ export function Header() {
         </Link>
 
         <nav aria-label="Điều hướng chính" className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <AiTaskIndicator />
           <Link
             href="/"
             onClick={() => playUISound("softTap")}

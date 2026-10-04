@@ -5,13 +5,14 @@ import {
   createStoryFromJsonRequestSchema,
   generateStoryRequestSchema,
 } from "@/lib/validation/story";
-import { cleanAndParseJson } from "@/services/ai/ai-core";
+import { parseStoryResponseText } from "@/lib/story/story-content";
 import { storyService } from "@/services/vocabulary";
 import { AIError } from "@/services/ai";
 import { aiErrorResponse } from "@/lib/http/ai-error";
 import { normalizeStoryVocabulary } from "@/lib/story/story-vocabulary";
 
 class StoryRequestValidationError extends Error {}
+
 
 export async function POST(request: Request) {
   try {
@@ -42,7 +43,8 @@ async function createStoryWithAi(body: unknown) {
   if (!validation.success) {
     throw new StoryRequestValidationError(validation.error.issues[0]?.message || "Dữ liệu không hợp lệ");
   }
-  return storyService.createStory(validation.data);
+  const story = await storyService.createStory(validation.data);
+  return prepareRequestedNarration(story, validation.data.narrationVoiceId);
 }
 
 async function createStoryFromValidatedJson(body: unknown) {
@@ -50,7 +52,17 @@ async function createStoryFromValidatedJson(body: unknown) {
   if (!validation.success) {
     throw new StoryRequestValidationError(validation.error.issues[0]?.message || "Dữ liệu không hợp lệ");
   }
-  return createStoryFromExternalJson(validation.data);
+  const story = await createStoryFromExternalJson(validation.data);
+  return prepareRequestedNarration(story, validation.data.narrationVoiceId);
+}
+
+async function prepareRequestedNarration<T extends { id: string }>(
+  story: T,
+  narrationVoiceId?: import("@/lib/tts/voice-catalog").CloudTtsVoiceId
+) {
+  if (!narrationVoiceId) return story;
+  await storyService.prepareStoryNarration(story.id, narrationVoiceId);
+  return (await storyService.getStoryById(story.id)) ?? story;
 }
 
 async function createStoryFromExternalJson(data: {
@@ -61,19 +73,23 @@ async function createStoryFromExternalJson(data: {
   topic: string;
   rawStory: string;
 }) {
-  let rawStory: unknown;
+  let parsedStory;
   try {
-    rawStory = cleanAndParseJson(data.rawStory);
-  } catch {
-    throw new StoryRequestValidationError("JSON chưa hợp lệ. Hãy dán lại đúng nội dung AI trả về.");
+    const parsed = parseStoryResponseText(data.rawStory);
+    const validated = aiStoryResponseSchema.safeParse(parsed);
+    if (!validated.success) {
+      throw new Error("Nội dung truyện thiếu tiêu đề hoặc nội dung hợp lệ.");
+    }
+    parsedStory = validated.data;
+  } catch (err) {
+    throw new StoryRequestValidationError(
+      err instanceof Error
+        ? err.message
+        : "Nội dung truyện chưa hợp lệ. Hãy dán lại đúng nội dung AI trả về (định dạng TITLE: ... PASSAGE: ... hoặc JSON)."
+    );
   }
 
-  const parsedStory = aiStoryResponseSchema.safeParse(rawStory);
-  if (!parsedStory.success) {
-    throw new StoryRequestValidationError("JSON thiếu tiêu đề hoặc nội dung truyện. Hãy dùng đúng prompt của WordNest.");
-  }
-
-  return storyService.createStoryFromJson({ ...data, generated: parsedStory.data });
+  return storyService.createStoryFromJson({ ...data, generated: parsedStory });
 }
 
 export async function GET(request: Request) {

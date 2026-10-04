@@ -6,10 +6,19 @@ import { normalizeStoryVocabulary } from "@/lib/story/story-vocabulary";
 
 export const revalidate = 0;
 
-export default async function DeckStoryPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function DeckStoryPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ create?: string | string[]; storyId?: string | string[] }>;
+}) {
   const { id } = await params;
+  const { create, storyId } = await searchParams;
   const [deck, stories] = await Promise.all([deckService.getDeckById(id), storyService.getStoriesByDeckId(id)]);
   if (!deck) notFound();
+  const openAiGenerator = create === "ai";
+  const selectedStoryId = typeof storyId === "string" ? storyId : Array.isArray(storyId) ? storyId[0] : undefined;
 
   return (
     <div className="app-shell">
@@ -17,6 +26,7 @@ export default async function DeckStoryPage({ params }: { params: Promise<{ id: 
       <main className="page-container py-5 sm:py-8">
         <StoryPageContainer
           deck={{ id: deck.id, name: deck.name }}
+          initialStoryId={selectedStoryId}
           deckWords={deck.cards.map((card) => ({
             term: card.term,
             meaningVi: card.meaningVi,
@@ -38,6 +48,7 @@ export default async function DeckStoryPage({ params }: { params: Promise<{ id: 
             vocabulary: normalizeStoryVocabulary(story.targetWords),
             createdAt: story.createdAt,
           }))}
+          initialGeneratorMode={openAiGenerator ? "ai" : undefined}
         />
       </main>
     </div>

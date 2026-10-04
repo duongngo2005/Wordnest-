@@ -21,7 +21,7 @@ export type StoryGenerationGuidance = {
 export const STORY_LENGTH_OPTIONS: Record<StoryLength, StoryLengthProfile> = {
   short: {
     label: "Ngắn (Short)",
-    coverage: { min: 0.4, max: 0.5 },
+    coverage: { min: 1, max: 1 },
     getWordRange: (count) => ({
       minWords: Math.max(100, roundDownToTen(90 + count * 5)),
       maxWords: Math.max(150, roundDownToTen(130 + count * 7)),
@@ -29,7 +29,7 @@ export const STORY_LENGTH_OPTIONS: Record<StoryLength, StoryLengthProfile> = {
   },
   medium: {
     label: "Vừa (Medium)",
-    coverage: { min: 0.6, max: 0.75 },
+    coverage: { min: 1, max: 1 },
     getWordRange: (count) => ({
       minWords: Math.max(200, roundDownToTen(170 + count * 10)),
       maxWords: Math.max(300, roundDownToTen(220 + count * 12)),
@@ -37,7 +37,7 @@ export const STORY_LENGTH_OPTIONS: Record<StoryLength, StoryLengthProfile> = {
   },
   long: {
     label: "Dài (Long)",
-    coverage: { min: 0.8, max: 0.9 },
+    coverage: { min: 1, max: 1 },
     getWordRange: (count) => ({
       minWords: Math.max(350, roundDownToTen(250 + count * 13)),
       maxWords: Math.max(500, roundDownToTen(330 + count * 16)),
@@ -83,3 +83,34 @@ export function getStoryLengthRange(length: StoryLength, selectedTermCount: numb
   const { minWords, maxWords } = getStoryGenerationGuidance(length, selectedTermCount);
   return `${minWords}–${maxWords}`;
 }
+
+/**
+ * Calculates the desired reading passage length in words based on WordNest Reading Engine rules:
+ * SHORT: approx. TARGET_WORD_COUNT × 10
+ * MEDIUM: approx. TARGET_WORD_COUNT × 17
+ * LONG: approx. TARGET_WORD_COUNT × 25
+ * With minimum baseline scaling for smaller vocabulary lists.
+ */
+export function calculateDesiredPassageLength(length: StoryLength, targetWordCount: number): number {
+  const count = Math.max(1, Math.floor(targetWordCount));
+  if (count <= 20) {
+    switch (length) {
+      case "short":
+        return Math.max(120, Math.round(count * 15));
+      case "medium":
+        return Math.max(200, Math.round(count * 25));
+      case "long":
+        return Math.max(350, Math.round(count * 40));
+    }
+  }
+
+  switch (length) {
+    case "short":
+      return Math.round(count * 10);
+    case "medium":
+      return Math.round(count * 17);
+    case "long":
+      return Math.round(count * 25);
+  }
+}
+

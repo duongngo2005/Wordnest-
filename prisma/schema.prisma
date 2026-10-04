@@ -179,3 +179,24 @@ model PracticeAttempt {
   @@index([sessionId, questionId])
   @@map("practice_attempts")
 }
+
+model AiJob {
+  id           String    @id @default(cuid())
+  type         String    @default("story_generation")
+  status       String    @default("queued") // queued | running | completed | failed | cancelled | interrupted
+  stage        String?   @default("queued") // queued | generating_story | validating_vocabulary | repairing_story | generating_translations | saving | completed
+  progress     Int       @default(0)
+  input        Json
+  resultId     String?
+  resultUrl    String?
+  errorCode    String?
+  errorMessage String?
+  createdAt    DateTime  @default(now())
+  startedAt    DateTime?
+  completedAt  DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status])
+  @@index([type, status])
+  @@map("ai_jobs")
+}

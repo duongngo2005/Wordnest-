@@ -42,7 +42,7 @@ export function AiCardsToDeckForm({
   const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const parsed = useMemo(() => parseVocabularyInput(rawInput, 12), [rawInput]);
+  const parsed = useMemo(() => parseVocabularyInput(rawInput, 50), [rawInput]);
 
   const generate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -155,8 +155,20 @@ export function AiCardsToDeckForm({
         </label>
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-[#6B6258]" aria-live="polite">
-          <span>{parsed.terms.length ? `${parsed.terms.length}/12 từ` : "Dùng dấu ; hoặc xuống dòng"}</span>
-          {parsed.duplicateCount ? <span>Đã bỏ {parsed.duplicateCount} từ trùng.</span> : null}
+          <span>
+            {parsed.terms.length
+              ? `${parsed.terms.length}/50 từ`
+              : "Dùng dấu ; hoặc xuống dòng"}
+          </span>
+          {parsed.terms.length >= 50 ? (
+            <span className={parsed.terms.length > 50 ? "text-[#B91C1C]" : "text-[#A64B2B]"}>
+              {parsed.terms.length > 50
+                ? `Đã nhận ${parsed.terms.length} từ. Vui lòng chọn tối đa 50 từ để tạo flashcard.`
+                : "Đã đạt tối đa 50 từ mỗi lần tạo."}
+            </span>
+          ) : parsed.duplicateCount ? (
+            <span>Đã bỏ {parsed.duplicateCount} từ trùng.</span>
+          ) : null}
         </div>
 
         <button type="submit" disabled={isGenerating || isSaving} className="brick-button-primary w-full px-4 py-3 text-sm font-black sm:w-fit">

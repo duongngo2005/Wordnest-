@@ -1,4 +1,6 @@
 import {
+  AICancelledError,
+  AIOomError,
   AIParseError,
   AIProviderUnavailableError,
   AITimeoutError,
@@ -10,10 +12,16 @@ type OllamaAiProviderOptions = {
   fetcher?: typeof fetch;
 };
 
-type OllamaJsonRequest = {
+export type OllamaJsonRequest = {
+  systemPrompt?: string;
   prompt: string;
-  temperature: number;
-  timeoutMs: number;
+  temperature?: number;
+  topP?: number;
+  numCtx?: number;
+  numPredict?: number;
+  think?: boolean;
+  timeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 type OllamaChatResponse = {
@@ -34,30 +42,76 @@ export class OllamaAiProvider {
     this.fetcher = fetcher;
   }
 
-  async generateJson({ prompt, temperature, timeoutMs }: OllamaJsonRequest): Promise<string> {
+  async generateJson({
+    systemPrompt,
+    prompt,
+    temperature = 0.2,
+    topP,
+    numCtx,
+    numPredict,
+    think,
+    timeoutMs,
+    signal,
+  }: OllamaJsonRequest): Promise<string> {
     let response: Response;
+
+    const messages = systemPrompt
+      ? [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: prompt },
+        ]
+      : [{ role: "user", content: prompt }];
+
+    const options: Record<string, unknown> = { temperature };
+    if (typeof topP === "number") options.top_p = topP;
+    if (typeof numCtx === "number") options.num_ctx = numCtx;
+    if (typeof numPredict === "number") options.num_predict = numPredict;
+
+    const requestBody: Record<string, unknown> = {
+      model: this.model,
+      messages,
+      format: "json",
+      stream: false,
+      options,
+    };
+    if (think !== undefined) {
+      requestBody.think = think;
+    }
+
+    const abortSignals: AbortSignal[] = [];
+    if (timeoutMs) {
+      abortSignals.push(AbortSignal.timeout(timeoutMs));
+    }
+    if (signal) {
+      abortSignals.push(signal);
+    }
+    const combinedSignal =
+      abortSignals.length > 1
+        ? AbortSignal.any(abortSignals)
+        : abortSignals[0];
 
     try {
       response = await this.fetcher(this.endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [{ role: "user", content: prompt }],
-          format: "json",
-          stream: false,
-          options: { temperature },
-        }),
-        signal: AbortSignal.timeout(timeoutMs),
+        body: JSON.stringify(requestBody),
+        signal: combinedSignal,
       });
     } catch (error) {
+      if (signal?.aborted) {
+        throw new AICancelledError();
+      }
       if (isTimeoutError(error)) {
-        throw new AITimeoutError(`Ollama request timed out after ${timeoutMs}ms`);
+        throw new AITimeoutError(`Ollama request timed out${timeoutMs ? ` after ${timeoutMs}ms` : ""}`);
       }
       throw new AIProviderUnavailableError(undefined, error);
     }
 
     if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      if (/out of memory|cuda/i.test(errText)) {
+        throw new AIOomError();
+      }
       throw new AIProviderUnavailableError(`Ollama returned HTTP ${response.status}`);
     }
 

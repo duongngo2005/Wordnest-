@@ -442,6 +442,12 @@ export class DeckService {
    * Commits accepted AI card drafts, skipping any system-wide duplicate terms gracefully.
    */
   async persistAiCardDrafts(deckId: string, cards: ManualFlashcardItem[]) {
+    if (cards.length > AI_CARD_GENERATION_LIMIT) {
+      throw new CardValidationError(
+        `Bạn có thể tạo tối đa ${AI_CARD_GENERATION_LIMIT} flashcard trong mỗi lần.`
+      );
+    }
+
     const validCards = cards.filter((card) => card.term.trim() && card.meaningVi.trim());
     if (validCards.length === 0) {
       throw new CardValidationError("Bản xem trước không có thẻ hợp lệ. Hãy tạo lại.");
@@ -471,6 +477,11 @@ export class DeckService {
   async generateAiCardDrafts(deckId: string, rawInput: string) {
     const parsed = parseVocabularyInput(rawInput, AI_CARD_GENERATION_LIMIT);
     if (parsed.error) throw new CardValidationError(parsed.error);
+    if (parsed.terms.length > AI_CARD_GENERATION_LIMIT) {
+      throw new CardValidationError(
+        `Đã nhận ${parsed.terms.length} từ. Vui lòng chọn tối đa ${AI_CARD_GENERATION_LIMIT} từ để tạo flashcard.`
+      );
+    }
     if (parsed.terms.length === 0) {
       throw new CardValidationError("Nhập ít nhất một từ hoặc cụm từ.");
     }

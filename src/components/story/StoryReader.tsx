@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { PronounceButton } from "../flashcards/PronounceButton";
 import { extractSentenceContainingUsageWithBoundary } from "@/lib/story/story-context";
+import { normalizeStoryPlainText } from "@/lib/story/story-content";
 import { panelVariants } from "@/lib/motion-tokens";
 import type { ContextualTranslationResponse } from "@/lib/validation/story";
 import type { StoryVocabulary, StoryVocabularyUsage } from "@/lib/story/story-vocabulary";
@@ -372,7 +373,9 @@ export function StoryReader({
   readingMode?: boolean;
   onReadingModeChange?: (readingMode: boolean) => void;
 }) {
-  const paragraphs = useMemo(() => story.content.split(/\n\n+/).filter(Boolean), [story.content]);
+  const title = useMemo(() => normalizeStoryPlainText(story.title), [story.title]);
+  const content = useMemo(() => normalizeStoryPlainText(story.content), [story.content]);
+  const paragraphs = useMemo(() => content.split(/\n\n+/).filter(Boolean), [content]);
   const requestId = useRef(0);
   const lastTriggerRef = useRef<HTMLElement | null>(null);
   const [panel, setPanel] = useState<TranslationPanel | null>(null);
@@ -383,7 +386,7 @@ export function StoryReader({
   const selectedUsageIndex = panel?.trailIndex ?? null;
   const deckWordsByTerm = useMemo(() => new Map(deckWords.map((word) => [normalize(word.term), word])), [deckWords]);
   const contextualTranslations = useMemo(() => new Map(story.vocabulary.contextualTranslations.map((item) => [`${normalize(item.term)}\u0000${normalize(item.usedAs)}`, item.meaningVi])), [story.vocabulary.contextualTranslations]);
-  const sentenceForUsage = useCallback((usage: StoryVocabularyUsage) => extractSentenceContainingUsageWithBoundary(story.content, usage.usedAs) || undefined, [story.content]);
+  const sentenceForUsage = useCallback((usage: StoryVocabularyUsage) => extractSentenceContainingUsageWithBoundary(content, usage.usedAs) || undefined, [content]);
 
   const showDeckTranslation = useCallback((usage: StoryVocabularyUsage, usageIndex?: number, trigger?: HTMLElement) => {
     if (trigger) lastTriggerRef.current = trigger;
@@ -412,12 +415,12 @@ export function StoryReader({
     if (!cleanText || cleanText.length > 150 || !/[a-zA-Z]/.test(cleanText)) return;
     const matchingDeckWord = deckWordsByTerm.get(normalize(cleanText));
     if (matchingDeckWord) {
-      setPanel({ selectedText: cleanText, canonicalTerm: matchingDeckWord.term, source: "deck", deckWord: matchingDeckWord, sentence: extractSentenceContainingUsageWithBoundary(story.content, cleanText) || undefined, contextualMeaning: contextualTranslations.get(`${normalize(matchingDeckWord.term)}\u0000${normalize(cleanText)}`) || matchingDeckWord.meaningVi });
+      setPanel({ selectedText: cleanText, canonicalTerm: matchingDeckWord.term, source: "deck", deckWord: matchingDeckWord, sentence: extractSentenceContainingUsageWithBoundary(content, cleanText) || undefined, contextualMeaning: contextualTranslations.get(`${normalize(matchingDeckWord.term)}\u0000${normalize(cleanText)}`) || matchingDeckWord.meaningVi });
       return;
     }
-    let surroundingSentence = extractSentenceContainingUsageWithBoundary(story.content, cleanText);
+    let surroundingSentence = extractSentenceContainingUsageWithBoundary(content, cleanText);
     if (!surroundingSentence) {
-      const sentences = story.content.split(/(?<=[.!?])\s+|\n+/).map((sentence) => sentence.trim()).filter(Boolean);
+      const sentences = content.split(/(?<=[.!?])\s+|\n+/).map((sentence) => sentence.trim()).filter(Boolean);
       surroundingSentence = sentences.find((sentence) => sentence.toLowerCase().includes(cleanText.toLowerCase())) || "";
     }
     if (!surroundingSentence) surroundingSentence = paragraphs.find((paragraph) => paragraph.toLowerCase().includes(cleanText.toLowerCase())) || cleanText;
@@ -475,22 +478,22 @@ export function StoryReader({
       <header className={`wn-story-reader-header ${readingMode ? "wn-story-reader-header--reading" : ""}`}>
         {readingMode ? (
           <div className="wn-story-reading-toolbar">
-            <div className="min-w-0"><p className="wn-story-kicker">Chế độ đọc</p><h1 id="story-heading" className="truncate font-[family-name:var(--font-story-display)] text-xl font-semibold tracking-[-0.02em] text-[#221C16] sm:text-2xl">{story.title}</h1></div>
-            <div className="flex shrink-0 items-center gap-1.5"><StoryNarrationControls content={story.content} compact />{vocabularyCount ? <button type="button" onClick={(event) => openTrail(event.currentTarget)} className="wn-story-icon-control" aria-label={`Từ trong bài, ${vocabularyCount} từ`}><BookMarked className="h-4 w-4" aria-hidden="true" /></button> : null}<button type="button" onClick={() => onReadingModeChange?.(false)} className="wn-story-icon-control" aria-label="Thoát chế độ đọc"><Minimize2 className="h-4 w-4" aria-hidden="true" /></button></div>
+            <div className="min-w-0"><p className="wn-story-kicker">Chế độ đọc</p><h1 id="story-heading" className="truncate font-[family-name:var(--font-story-display)] text-xl font-semibold tracking-[-0.02em] text-[#221C16] sm:text-2xl">{title}</h1></div>
+            <div className="flex shrink-0 items-center gap-1.5"><StoryNarrationControls storyId={story.id} content={content} narration={story.vocabulary.narration} compact />{vocabularyCount ? <button type="button" onClick={(event) => openTrail(event.currentTarget)} className="wn-story-icon-control" aria-label={`Từ trong bài, ${vocabularyCount} từ`}><BookMarked className="h-4 w-4" aria-hidden="true" /></button> : null}<button type="button" onClick={() => onReadingModeChange?.(false)} className="wn-story-icon-control" aria-label="Thoát chế độ đọc"><Minimize2 className="h-4 w-4" aria-hidden="true" /></button></div>
           </div>
         ) : (
           <>
             <div className="wn-story-masthead"><span>WordNest · Reading file</span><span aria-hidden="true">✦</span><span>{vocabularyCount} từ mục tiêu</span></div>
             <div className="mt-3">
               <div className="flex items-center gap-2.5">
-                <h1 id="story-heading" className="wn-story-title text-[#221C16]">{story.title}</h1>
-                <PronounceButton text={story.title} size="sm" />
+                <h1 id="story-heading" className="wn-story-title text-[#221C16]">{title}</h1>
+                <PronounceButton text={title} size="sm" />
               </div>
               <div className="wn-story-metadata mt-3" aria-label="Thông tin truyện"><span>{story.topic}</span><span aria-hidden="true">•</span><span>CEFR {story.cefr}</span><span aria-hidden="true">•</span><span>{story.length === "short" ? "Ngắn" : story.length === "medium" ? "Vừa" : story.length === "long" ? "Dài" : story.length}</span></div>
             </div>
             <div className="mt-5 flex items-center justify-between gap-2 border-t border-dashed border-[#CFC2AF] pt-3">
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5"><StoryNarrationControls content={story.content} />{vocabularyCount ? <button type="button" onClick={(event) => openTrail(event.currentTarget)} className="wn-story-secondary-control" aria-expanded={isMobile ? mobileTrailOpen : trailOpen} aria-controls={isMobile ? "story-vocabulary-trail-title" : "story-vocabulary-trail"}><BookMarked className="h-4 w-4" aria-hidden="true" /><span>Từ trong bài <b>· {vocabularyCount}</b></span></button> : null}<button type="button" onClick={() => onReadingModeChange?.(true)} className="wn-story-secondary-control wn-story-reading-toggle" aria-label="Chế độ đọc" aria-pressed={readingMode}><Maximize2 className="h-4 w-4" aria-hidden="true" /><span>Chế độ đọc</span></button></div>
-              <OverflowMenu title={story.title} onDelete={onDelete} />
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5"><StoryNarrationControls storyId={story.id} content={content} narration={story.vocabulary.narration} />{vocabularyCount ? <button type="button" onClick={(event) => openTrail(event.currentTarget)} className="wn-story-secondary-control" aria-expanded={isMobile ? mobileTrailOpen : trailOpen} aria-controls={isMobile ? "story-vocabulary-trail-title" : "story-vocabulary-trail"}><BookMarked className="h-4 w-4" aria-hidden="true" /><span>Từ trong bài <b>· {vocabularyCount}</b></span></button> : null}<button type="button" onClick={() => onReadingModeChange?.(true)} className="wn-story-secondary-control wn-story-reading-toggle" aria-label="Chế độ đọc" aria-pressed={readingMode}><Maximize2 className="h-4 w-4" aria-hidden="true" /><span>Chế độ đọc</span></button></div>
+              <OverflowMenu title={title} onDelete={onDelete} />
             </div>
           </>
         )}

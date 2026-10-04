@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { aiService } from "@/services/ai";
 import { normalizeTerm } from "./parser";
@@ -11,7 +12,9 @@ import {
   AddCardFromStoryRequest,
 } from "@/lib/validation/story";
 import { buildStoryPrompt } from "@/lib/story/story-prompt";
+import { normalizeStoryPlainText } from "@/lib/story/story-content";
 import {
+  analyzeVocabularyCoverage,
   createStoryVocabularyMetadata,
   normalizeStoryContextualTranslations,
   normalizeStoryVocabulary,
@@ -19,7 +22,17 @@ import {
   type StoryVocabularyUsage,
 } from "@/lib/story/story-vocabulary";
 import { findStorySelectionCacheIndex } from "@/lib/story/story-context";
+import { splitStoryIntoNarrationChunks } from "@/lib/story/story-narration";
+import { getNarrationTtsService } from "@/lib/tts/tts-runtime";
+import { type CloudTtsVoiceId } from "@/lib/tts/voice-catalog";
 import type { ContextualTranslationResponse } from "@/lib/validation/story";
+
+export type SelectedDeckVocabularyTerm = {
+  term: string;
+  partOfSpeech: string | null;
+  meaningVi?: string | null;
+  definitionEn?: string | null;
+};
 
 function containsVocabularyUsage(content: string, usedAs: string): boolean {
   const normalizedContent = content.trim().replace(/\s+/g, " ");
@@ -31,7 +44,7 @@ function containsVocabularyUsage(content: string, usedAs: string): boolean {
 
 export class StoryService {
   /**
-   * Generates a story using AI from selected vocabulary and persists to MySQL.
+   * Generates a story using local AI from selected vocabulary and persists to SQLite.
    */
   async createStory({
     deckId,
@@ -106,22 +119,29 @@ export class StoryService {
     return buildStoryPrompt({ targetWords: requestedTerms, cefr, length, topic });
   }
 
-  private async persistGeneratedStory({
+  async persistGeneratedStory({
     deckId,
     requestedTerms,
     cefr,
     length,
     topic,
     generated,
+    narrationVoiceId,
   }: {
     deckId: string;
     requestedTerms: string[];
     cefr: StoryCefr;
     length: StoryLength;
     topic: StoryTopic;
-    generated: AIStoryResponse;
+    generated: z.input<typeof aiStoryResponseSchema>;
+    narrationVoiceId?: CloudTtsVoiceId;
   }) {
-    const validatedGenerated = aiStoryResponseSchema.parse(generated);
+    const parsedGenerated = aiStoryResponseSchema.parse(generated);
+    const validatedGenerated = {
+      ...parsedGenerated,
+      title: normalizeStoryPlainText(parsedGenerated.title),
+      content: normalizeStoryPlainText(parsedGenerated.content),
+    };
 
     // Providers deployed before the new contract may only return wordsUsed. Use it
     // as a conservative compatibility fallback; invalid/non-present forms are dropped.
@@ -129,13 +149,25 @@ export class StoryService {
       validatedGenerated.usage.length > 0
         ? validatedGenerated.usage
         : validatedGenerated.wordsUsed.map((term) => ({ term, usedAs: term }));
-    const usage = this.normalizeGeneratedUsage(reportedUsage, requestedTerms, validatedGenerated.content);
+    let usage = this.normalizeGeneratedUsage(
+      reportedUsage.map((item) => ({ ...item, usedAs: normalizeStoryPlainText(item.usedAs) })),
+      requestedTerms,
+      validatedGenerated.content
+    );
+
+    // If no explicit usage matched (e.g. stories created via plain text TITLE/PASSAGE mode),
+    // deterministically scan the content for the requested terms and their grammatical inflections.
+    if (usage.length === 0 && requestedTerms.length > 0) {
+      const coverage = analyzeVocabularyCoverage(validatedGenerated.content, requestedTerms);
+      usage = coverage.used;
+    }
+
     const contextualTranslations = normalizeStoryContextualTranslations(
       validatedGenerated.contextualTranslations,
       usage
     );
 
-    // 3. Persist to MySQL. Translation enrichment is optional and never changes
+    // 3. Persist to SQLite. Translation enrichment is optional and never changes
     // whether the generated Story itself is accepted.
     const story = await db.story.create({
       data: {
@@ -147,6 +179,7 @@ export class StoryService {
         topic,
         targetWords: createStoryVocabularyMetadata(requestedTerms, usage, {
           contextualTranslations,
+          narration: { voiceIds: narrationVoiceId ? [narrationVoiceId] : [] },
         }),
       },
     });
@@ -182,9 +215,60 @@ export class StoryService {
    * Deletes a story.
    */
   async deleteStory(storyId: string) {
+    const story = await db.story.findUnique({
+      where: { id: storyId },
+      select: { content: true, targetWords: true },
+    });
+    if (!story) throw new Error("Không tìm thấy Story.");
+
+    const narration = normalizeStoryVocabulary(story.targetWords).narration;
+    const chunks = splitStoryIntoNarrationChunks(story.content);
+    for (const voiceId of narration.voiceIds) {
+      await getNarrationTtsService().removeNarration({ voiceId, chunks });
+    }
+
     return db.story.delete({
       where: { id: storyId },
     });
+  }
+
+  /** Materializes a complete cached narration for an existing Story and records its voice. */
+  async prepareStoryNarration(storyId: string, voiceId: CloudTtsVoiceId) {
+    const story = await db.story.findUnique({
+      where: { id: storyId },
+      select: { id: true, content: true, targetWords: true },
+    });
+    if (!story) throw new Error("Không tìm thấy Story.");
+
+    const chunks = splitStoryIntoNarrationChunks(story.content);
+    if (chunks.length === 0) throw new Error("Story không có nội dung để tạo giọng đọc.");
+
+    await getNarrationTtsService().synthesizeNarration({ voiceId, chunks });
+
+    // Re-read after the slow TTS work so a contextual-translation update made
+    // meanwhile is not overwritten by an older JSON snapshot.
+    const latestStory = await db.story.findUnique({
+      where: { id: storyId },
+      select: { targetWords: true },
+    });
+    if (!latestStory) throw new Error("Story đã bị xóa trong khi đang nạp giọng đọc.");
+
+    const vocabulary = normalizeStoryVocabulary(latestStory.targetWords);
+    const voiceIds = vocabulary.narration.voiceIds.includes(voiceId)
+      ? vocabulary.narration.voiceIds
+      : [...vocabulary.narration.voiceIds, voiceId];
+    await db.story.update({
+      where: { id: storyId },
+      data: {
+        targetWords: createStoryVocabularyMetadata(vocabulary.requestedTerms, vocabulary.usage, {
+          contextualTranslations: vocabulary.contextualTranslations,
+          selectionTranslations: vocabulary.selectionTranslations,
+          narration: { voiceIds },
+        }),
+      },
+    });
+
+    return { voiceIds };
   }
 
   /** Looks up the persistent full-response cache used by non-target selections. */
@@ -287,6 +371,7 @@ export class StoryService {
           {
             contextualTranslations: vocabulary.contextualTranslations,
             selectionTranslations: vocabulary.selectionTranslations,
+            narration: vocabulary.narration,
           }
         ),
       },
@@ -354,30 +439,51 @@ export class StoryService {
     };
   }
 
-  private async getSelectedDeckTerms(deckId: string, targetWords: string[]): Promise<string[]> {
+  async getSelectedDeckTerms(deckId: string, targetWords: string[]): Promise<string[]> {
+    const vocabulary = await this.getSelectedDeckVocabulary(deckId, targetWords);
+    return vocabulary.map((item) => item.term);
+  }
+
+  async getSelectedDeckVocabulary(
+    deckId: string,
+    targetWords: string[]
+  ): Promise<SelectedDeckVocabularyTerm[]> {
     const deck = await db.deck.findUnique({
       where: { id: deckId },
-      select: { cards: { select: { term: true, normalizedTerm: true } } },
+      select: {
+        cards: {
+          select: {
+            term: true,
+            normalizedTerm: true,
+            partOfSpeech: true,
+            meaningVi: true,
+            definitionEn: true,
+          },
+        },
+      },
     });
     if (!deck) {
       throw new Error("Không tìm thấy bộ từ vựng.");
     }
 
-    const cardsByNormalizedTerm = new Map(
-      deck.cards.map((card) => [card.normalizedTerm, card.term])
-    );
-    const requestedTerms: string[] = [];
+    const cardsByNormalizedTerm = new Map(deck.cards.map((card) => [card.normalizedTerm, card]));
+    const requestedTerms: SelectedDeckVocabularyTerm[] = [];
     const seenTerms = new Set<string>();
 
     for (const targetWord of targetWords) {
       const normalizedTerm = normalizeTerm(targetWord);
-      const canonicalTerm = cardsByNormalizedTerm.get(normalizedTerm);
-      if (!canonicalTerm) {
+      const card = cardsByNormalizedTerm.get(normalizedTerm);
+      if (!card) {
         throw new Error(`Từ vựng "${targetWord}" không thuộc bộ từ này.`);
       }
       if (!seenTerms.has(normalizedTerm)) {
         seenTerms.add(normalizedTerm);
-        requestedTerms.push(canonicalTerm);
+        requestedTerms.push({
+          term: card.term,
+          partOfSpeech: card.partOfSpeech,
+          meaningVi: card.meaningVi,
+          definitionEn: card.definitionEn,
+        });
       }
     }
 

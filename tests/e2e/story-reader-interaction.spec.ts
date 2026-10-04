@@ -79,6 +79,22 @@ test("opens a compact desktop vocabulary note, navigates the trail, and toggles 
   await expect(page.getByRole("button", { name: "Chế độ đọc" })).toBeVisible();
 });
 
+test("renders legacy Markdown vocabulary markers as clean plain text", async ({ page }, testInfo) => {
+  const deck = await seedStory(testInfo.testId);
+  const story = await db.story.findFirstOrThrow({ where: { deckId: deck.id } });
+  await db.story.update({
+    where: { id: story.id },
+    data: { content: "Mai **allocated** the morning to a careful **strategy**." },
+  });
+
+  await page.goto(`/decks/${deck.id}/story`);
+
+  const prose = page.locator(".wn-story-prose");
+  await expect(prose).toContainText("Mai allocated the morning to a careful strategy.");
+  await expect(prose).not.toContainText("**");
+  await expect(page.getByRole("button", { name: /Xem nghĩa của allocated/i })).toBeVisible();
+});
+
 test.describe("mobile Story Reader", () => {
   test.use({ viewport: { width: 430, height: 932 }, hasTouch: true, isMobile: true });
 

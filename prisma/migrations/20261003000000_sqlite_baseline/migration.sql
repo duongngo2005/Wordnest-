@@ -1,5 +1,4 @@
--- SQLite baseline. MySQL history is intentionally archived in
--- prisma/mysql-migrations-archive after the one-way local storage migration.
+-- SQLite baseline for the local WordNest database.
 
 CREATE TABLE "decks" (
     "id" TEXT NOT NULL PRIMARY KEY,
@@ -144,3 +143,23 @@ CREATE INDEX "quiz_sessions_expiresAt_idx" ON "quiz_sessions"("expiresAt");
 CREATE INDEX "practice_attempts_flashcardId_createdAt_idx" ON "practice_attempts"("flashcardId", "createdAt");
 CREATE INDEX "practice_attempts_sessionId_idx" ON "practice_attempts"("sessionId");
 CREATE INDEX "practice_attempts_sessionId_questionId_idx" ON "practice_attempts"("sessionId", "questionId");
+
+CREATE TABLE "ai_jobs" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "type" TEXT NOT NULL DEFAULT 'story_generation',
+    "status" TEXT NOT NULL DEFAULT 'queued',
+    "stage" TEXT DEFAULT 'queued',
+    "progress" INTEGER NOT NULL DEFAULT 0,
+    "input" JSONB NOT NULL,
+    "resultId" TEXT,
+    "resultUrl" TEXT,
+    "errorCode" TEXT,
+    "errorMessage" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "startedAt" DATETIME,
+    "completedAt" DATETIME,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX "ai_jobs_status_idx" ON "ai_jobs"("status");
+CREATE INDEX "ai_jobs_type_status_idx" ON "ai_jobs"("type", "status");

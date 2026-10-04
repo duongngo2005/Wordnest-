@@ -10,25 +10,24 @@ export class AIError extends Error {
   }
 }
 
-export class AIRateLimitError extends AIError {
-  constructor(message: string, public readonly retryAfterSeconds = 60) {
-    super(message);
-    this.name = "AIRateLimitError";
-  }
-}
-
-/** The provider has exhausted its available quota, rather than a short request burst. */
-export class AIQuotaExceededError extends AIError {
-  constructor(message = "AI provider quota exhausted.", public readonly retryAfterSeconds = 60) {
-    super(message);
-    this.name = "AIQuotaExceededError";
-  }
-}
-
 export class AITimeoutError extends AIError {
   constructor(message: string) {
     super(message);
     this.name = "AITimeoutError";
+  }
+}
+
+export class AICancelledError extends AIError {
+  constructor(message = "Tác vụ AI đã bị hủy.") {
+    super(message);
+    this.name = "AICancelledError";
+  }
+}
+
+export class AIOomError extends AIError {
+  constructor(message = "AI local không đủ bộ nhớ cho cấu hình hiện tại.") {
+    super(message);
+    this.name = "AIOomError";
   }
 }
 
@@ -43,13 +42,6 @@ export class AIValidationError extends AIError {
   constructor(message: string, public readonly issues: unknown) {
     super(message);
     this.name = "AIValidationError";
-  }
-}
-
-export class AINoKeysConfiguredError extends AIError {
-  constructor(message = "No Gemini API keys configured.") {
-    super(message);
-    this.name = "AINoKeysConfiguredError";
   }
 }
 

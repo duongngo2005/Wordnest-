@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CLOUD_TTS_VOICE_IDS } from "@/lib/tts/voice-catalog";
 
 export const StoryCefrEnum = z.enum(["A1", "A2", "B1", "B2", "C1"]);
 export type StoryCefr = z.infer<typeof StoryCefrEnum>;
@@ -15,6 +16,9 @@ export const generateStoryRequestSchema = z.object({
   cefr: StoryCefrEnum.default("B1"),
   length: StoryLengthEnum.default("medium"),
   topic: StoryTopicEnum.default("Daily Life"),
+  // The browser only sends this for a curated WordNest cloud voice. Device
+  // voices stay local to the browser and cannot be synthesized server-side.
+  narrationVoiceId: z.enum(CLOUD_TTS_VOICE_IDS).optional(),
 });
 
 export type GenerateStoryRequest = z.infer<typeof generateStoryRequestSchema>;
@@ -30,6 +34,8 @@ export const aiStoryResponseSchema = z.object({
         .object({
           term: z.string().trim().min(1).max(200),
           usedAs: z.string().trim().min(1).max(200),
+          start: z.number().int().nonnegative().optional(),
+          end: z.number().int().nonnegative().optional(),
         })
         .strict()
     )

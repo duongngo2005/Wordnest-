@@ -69,7 +69,7 @@ export function parseVocabularyInput(
 
   let error: string | undefined;
   if (terms.length > maxLimit) {
-    error = `Tối đa ${maxLimit} từ/cụm từ cho mỗi lần tạo (phát hiện ${terms.length} từ). Vui lòng bớt lại.`;
+    error = `Đã nhận ${terms.length} từ. Vui lòng chọn tối đa ${maxLimit} từ để tạo flashcard.`;
   }
 
   return {

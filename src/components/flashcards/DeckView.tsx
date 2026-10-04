@@ -250,7 +250,7 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
           </div>
 
           {/* Core Action Trio: Visible, tactile, hierarchically distinct */}
-          <div className="grid grid-cols-2 gap-2.5 pt-1 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2.5 pt-1 sm:grid-cols-4">
             <Link
               href={`/decks/${deck.id}/study`}
               prefetch
@@ -267,6 +267,15 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
             >
               <GraduationCap className="h-4 w-4 text-[#0284C7]" strokeWidth={2.5} />
               <span>Luyện tập</span>
+            </Link>
+
+            <Link
+              href={`/decks/${deck.id}/story?create=ai`}
+              prefetch
+              className="brick-button-secondary px-4 py-2.5 text-sm font-black border-[#221C16]"
+            >
+              <BookOpen className="h-4 w-4 text-[#0D9488]" strokeWidth={2.5} />
+              <span>Tạo truyện AI</span>
             </Link>
 
             <button

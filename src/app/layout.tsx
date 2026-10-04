@@ -27,6 +27,7 @@ const sourceSerif = Source_Serif_4({
 import { PwaRegister } from "@/components/pwa/PwaRegister";
 import { MascotThemeProvider } from "@/components/ui/MascotThemeProvider";
 import { ToastProvider } from "@/components/ui/ToastProvider";
+import { AiTaskProvider } from "@/components/ai/AiTaskProvider";
 
 const mascotThemeBootstrap = `(() => {
   try {
@@ -85,7 +86,9 @@ export default function RootLayout({
       >
         <script dangerouslySetInnerHTML={{ __html: mascotThemeBootstrap }} />
         <MascotThemeProvider>
-          <ToastProvider>{children}</ToastProvider>
+          <ToastProvider>
+            <AiTaskProvider>{children}</AiTaskProvider>
+          </ToastProvider>
           <PwaRegister />
         </MascotThemeProvider>
       </body>
