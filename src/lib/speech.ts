@@ -12,8 +12,9 @@ type SpeechCallbacks = {
   onCloudFallback?: () => void;
 };
 
-type SpeakOptions = {
+export type SpeakOptions = {
   voiceURI?: string | null;
+  rate?: number;
   onCloudFallback?: () => void;
 };
 
@@ -35,11 +36,11 @@ export function isSpeechSynthesisSupported(): boolean {
 
 export function configureEnglishUtterance(
   utterance: SpeechSynthesisUtterance,
-  voiceURI = getSpeechPreferences().voiceURI
+  voiceURI = getSpeechPreferences().voiceURI,
+  rate: number = getSpeechPreferences().rate
 ): void {
-  const preferences = getSpeechPreferences();
   utterance.lang = "en-US";
-  utterance.rate = preferences.rate;
+  utterance.rate = rate;
   utterance.pitch = 1;
 
   if (!isSpeechSynthesisSupported()) return;
@@ -65,13 +66,14 @@ export function speakEnglish(
 ): void {
   const callbacks: SpeechCallbacks = { onStart, onEnd, onError, onCloudFallback: options.onCloudFallback };
   const voiceURI = options.voiceURI === undefined ? getSpeechPreferences().voiceURI : options.voiceURI;
+  const rate = options.rate === undefined ? getSpeechPreferences().rate : options.rate;
 
   if (isCloudSpeechVoice(voiceURI)) {
-    playCloudSpeech(text, voiceURI, callbacks);
+    playCloudSpeech(text, voiceURI, callbacks, rate);
     return;
   }
 
-  playSystemSpeech(text, voiceURI, callbacks);
+  playSystemSpeech(text, voiceURI, callbacks, rate);
 }
 
 export function stopSpeech(): void {
@@ -153,38 +155,40 @@ export function resumeSpeech(): boolean {
   return false;
 }
 
-function playCloudSpeech(text: string, voiceURI: string, callbacks: SpeechCallbacks): void {
+function playCloudSpeech(text: string, voiceURI: string, callbacks: SpeechCallbacks, rate?: number): void {
   if (typeof Audio === "undefined") {
-    fallbackToSystemSpeech(text, callbacks);
+    fallbackToSystemSpeech(text, callbacks, undefined, rate);
     return;
   }
 
   playCloudAudio(
     `/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(voiceURI)}`,
     text,
-    callbacks
+    callbacks,
+    rate
   );
 }
 
 function playCloudAudio(
   source: string,
   text: string,
-  callbacks: SpeechCallbacks
+  callbacks: SpeechCallbacks,
+  rate?: number
 ): void {
   if (typeof Audio === "undefined") {
-    fallbackToSystemSpeech(text, callbacks);
+    fallbackToSystemSpeech(text, callbacks, undefined, rate);
     return;
   }
 
   const audio = new Audio(source);
   const previousAudio = activeAudio;
-  const rate = getSpeechPreferences().rate;
+  const audioRate = rate ?? getSpeechPreferences().rate;
   let didFallback = false;
   let didStart = false;
 
   audio.preload = "auto";
-  audio.playbackRate = rate;
-  audio.defaultPlaybackRate = rate;
+  audio.playbackRate = audioRate;
+  audio.defaultPlaybackRate = audioRate;
   audio.onplay = () => {
     if (didStart) return;
     didStart = true;
@@ -198,7 +202,7 @@ function playCloudAudio(
     if (activeAudio === audio) activeAudio = null;
     if (!didFallback) fallbackToSystemSpeech(text, callbacks, () => {
       didFallback = true;
-    });
+    }, rate);
   };
 
   // iOS Safari requires this to be the first media call in the user gesture.
@@ -212,17 +216,17 @@ function playCloudAudio(
     if (activeAudio === audio) activeAudio = null;
     if (!didFallback) fallbackToSystemSpeech(text, callbacks, () => {
       didFallback = true;
-    });
+    }, rate);
   });
 }
 
-function fallbackToSystemSpeech(text: string, callbacks: SpeechCallbacks, markFallback?: () => void): void {
+function fallbackToSystemSpeech(text: string, callbacks: SpeechCallbacks, markFallback?: () => void, rate?: number): void {
   markFallback?.();
   callbacks.onCloudFallback?.();
-  playSystemSpeech(text, null, callbacks);
+  playSystemSpeech(text, null, callbacks, rate);
 }
 
-function playSystemSpeech(text: string, voiceURI: string | null, callbacks: SpeechCallbacks): void {
+function playSystemSpeech(text: string, voiceURI: string | null, callbacks: SpeechCallbacks, rate?: number): void {
   if (!isSpeechSynthesisSupported()) {
     callbacks.onError?.(new Error("System speech is not supported"));
     return;
@@ -237,7 +241,7 @@ function playSystemSpeech(text: string, voiceURI: string | null, callbacks: Spee
   try {
     const utterance = new SpeechSynthesisUtterance(text);
     activeUtterance = utterance;
-    configureEnglishUtterance(utterance, voiceURI);
+    configureEnglishUtterance(utterance, voiceURI, rate ?? getSpeechPreferences().rate);
     utterance.onstart = callbacks.onStart ?? null;
     utterance.onend = () => {
       if (activeUtterance === utterance) activeUtterance = null;

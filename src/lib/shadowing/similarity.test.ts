@@ -120,6 +120,36 @@ describe("similarity and normalization", () => {
       expect(res.alignment.every((a) => a.status === "match")).toBe(true);
     });
 
+    it("verifies can't/cannot, won't/will not, I'm/I am, you're/you are, and it's/it is", () => {
+      expect(computeWordSimilarity("I can't swim.", "I cannot swim.").similarity).toBe(100);
+      expect(computeWordSimilarity("They won't come.", "They will not come.").similarity).toBe(100);
+      expect(computeWordSimilarity("I'm ready now.", "I am ready now.").similarity).toBe(100);
+      expect(computeWordSimilarity("You're very kind.", "You are very kind.").similarity).toBe(100);
+      expect(computeWordSimilarity("It's a sunny day.", "It is a sunny day.").similarity).toBe(100);
+    });
+
+    it("handles Unicode curly apostrophes in reference and transcript", () => {
+      const ref = "It’s wonderful that you’re here.";
+      const trans = "It's wonderful that you're here.";
+      const res = computeWordSimilarity(ref, trans);
+
+      expect(res.similarity).toBe(100);
+      expect(res.wer).toBe(0);
+    });
+
+    it("handles hyphenated words and repeated words cleanly", () => {
+      const ref = "This is a state-of-the-art model.";
+      const trans = "This is a state of the art model.";
+      const res = computeWordSimilarity(ref, trans);
+
+      expect(res.similarity).toBe(100);
+
+      // Repeated word detection
+      const repeated = computeWordSimilarity("The car is fast.", "The the car is fast.");
+      expect(repeated.wer).toBeGreaterThan(0);
+      expect(repeated.alignment.some((a) => a.status === "insertion")).toBe(true);
+    });
+
     it("handles multiple spaces and irregular formatting", () => {
       const ref = "  Hello    world!   ";
       const trans = "hello   world   ";

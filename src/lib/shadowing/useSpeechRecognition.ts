@@ -193,6 +193,10 @@ export function useSpeechRecognition({
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
+        recognitionRef.current.onstart = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
         try {
           recognitionRef.current.abort();
         } catch {}

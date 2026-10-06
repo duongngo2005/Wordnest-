@@ -72,4 +72,37 @@ Another day begins.`;
       "Another day begins.",
     ]);
   });
+
+  it("passes all 7 audit test cases specifically requested in Phase 4 audit", () => {
+    expect(segmentSentences("Dr. Smith arrived at 9 a.m. He was early.")).toEqual([
+      "Dr. Smith arrived at 9 a.m.",
+      "He was early.",
+    ]);
+
+    expect(segmentSentences("Mr. Brown paid $3.50.")).toEqual([
+      "Mr. Brown paid $3.50.",
+    ]);
+
+    expect(segmentSentences("The value is 2.75. Is that correct?")).toEqual([
+      "The value is 2.75.",
+      "Is that correct?",
+    ]);
+
+    expect(segmentSentences('She said, "I\'ll come tomorrow." Then she left.')).toEqual([
+      'She said, "I\'ll come tomorrow."',
+      "Then she left.",
+    ]);
+
+    expect(segmentSentences("I met Prof. Smith, Jr. yesterday.")).toEqual([
+      "I met Prof. Smith, Jr. yesterday.",
+    ]);
+
+    expect(segmentSentences("Use this, e.g. when testing examples.")).toEqual([
+      "Use this, e.g. when testing examples.",
+    ]);
+
+    expect(segmentSentences("The score was 3.5 vs. 4.0.")).toEqual([
+      "The score was 3.5 vs. 4.0.",
+    ]);
+  });
 });

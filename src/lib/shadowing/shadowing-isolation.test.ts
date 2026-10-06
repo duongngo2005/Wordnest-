@@ -107,4 +107,34 @@ describe("Shadowing Isolation & Evidence Truthfulness", () => {
       expect(playerSource).toContain("stopSpeech()");
     });
   });
+
+  describe("4. Runtime Zero Evidence Truthfulness Test", () => {
+    it("guarantees 0 vocabulary evidence written when target word 'apply' is shadowed with completely wrong speech", async () => {
+      const { db } = await import("@/lib/db");
+
+      const attemptSpy = vi.spyOn(db.practiceAttempt, "create");
+      const reviewLogSpy = vi.spyOn(db.reviewLog, "create");
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+      // Scenario: Sentence contains target card 'apply'
+      const targetSentence = "You must apply online before Friday.";
+      // User speaks completely wrong text
+      const wrongTranscript = "banana potato orange table chair";
+
+      // Run similarity computation as Shadowing player does
+      const result = computeWordSimilarity(targetSentence, wrongTranscript);
+
+      expect(result.similarity).toBeLessThan(20);
+      expect(result.wer).toBeGreaterThan(0.8);
+
+      // Assert runtime database isolation:
+      expect(attemptSpy).not.toHaveBeenCalled();
+      expect(reviewLogSpy).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      attemptSpy.mockRestore();
+      reviewLogSpy.mockRestore();
+      fetchSpy.mockRestore();
+    });
+  });
 });

@@ -160,12 +160,14 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
       },
       () => {
         setAudioState("idle");
-      }
+      },
+      { rate: playbackRate }
     );
   };
 
   // Handle Start Recording (User speaks)
   const handleStartRecording = async () => {
+    if (audioState === "recording" || isRecording) return;
     playUISound("softTap");
 
     // Invariant: Stop TTS immediately so mic doesn't record computer speakers
@@ -309,7 +311,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
               {averageScore}%
             </p>
             <p className="text-[11px] font-medium text-[#8C8275] mt-1">
-              Tính trên mức độ tương đồng giữa transcript nhận diện và câu mẫu
+              Đã đánh giá {Object.keys(sentenceScores).length}/{totalSentences} câu có nhận diện giọng nói
             </p>
           </div>
         )}
@@ -516,24 +518,33 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
         {/* Evaluation & Text Match Result Section */}
         {audioState === "evaluating" && (
           <div className="rounded-2xl border-2 border-[#221C16] bg-[#FAF6EE] p-4 sm:p-5 space-y-4 shadow-[2px_2px_0px_#221C16]">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E0D5] pb-2.5">
-              <span className="text-xs font-bold text-[#6B6258]">
-                Độ khớp văn bản (Text Match):
-              </span>
-              {similarityResult !== null && (
-                <span
-                  className={`text-base font-black px-2.5 py-0.5 rounded-lg border ${
-                    similarityResult.similarity >= 85
-                      ? "bg-emerald-100 border-emerald-500 text-emerald-800"
-                      : similarityResult.similarity >= 60
-                      ? "bg-amber-100 border-amber-500 text-amber-800"
-                      : "bg-rose-100 border-rose-500 text-rose-800"
-                  }`}
-                >
-                  {similarityResult.similarity}%
+            {!isSttSupported ? (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+                <p>
+                  Đã ghi âm thành công! Hãy bấm <b>&ldquo;Nghe lại giọng mình&rdquo;</b> bên dưới để tự đối chiếu với câu mẫu.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E0D5] pb-2.5">
+                <span className="text-xs font-bold text-[#6B6258]">
+                  Độ khớp văn bản (Text Match):
                 </span>
-              )}
-            </div>
+                {similarityResult !== null && (
+                  <span
+                    className={`text-base font-black px-2.5 py-0.5 rounded-lg border ${
+                      similarityResult.similarity >= 85
+                        ? "bg-emerald-100 border-emerald-500 text-emerald-800"
+                        : similarityResult.similarity >= 60
+                        ? "bg-amber-100 border-amber-500 text-amber-800"
+                        : "bg-rose-100 border-rose-500 text-rose-800"
+                    }`}
+                  >
+                    {similarityResult.similarity}%
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Word Alignment Visual Diff */}
             {similarityResult && similarityResult.alignment.length > 0 && (

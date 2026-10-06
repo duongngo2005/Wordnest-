@@ -35,6 +35,10 @@ export function expandContractions(text: string): string {
     .replace(/\bcan't\b/gi, "cannot")
     .replace(/\blet's\b/gi, "let us")
     .replace(/\bshan't\b/gi, "shall not")
+    .replace(/\bit's\b/gi, "it is")
+    .replace(/\bthat's\b/gi, "that is")
+    .replace(/\bthere's\b/gi, "there is")
+    .replace(/\bwhat's\b/gi, "what is")
     .replace(/n't\b/gi, " not")
     .replace(/'ll\b/gi, " will")
     .replace(/'re\b/gi, " are")
@@ -97,8 +101,8 @@ export function computeWordSimilarity(
   reference: string,
   transcript: string
 ): ShadowingSimilarityResult {
-  const cleanRef = expandContractions(reference || "");
-  const cleanTrans = expandContractions(transcript || "");
+  const cleanRef = expandContractions(reference || "").replace(/[-–—]/g, " ");
+  const cleanTrans = expandContractions(transcript || "").replace(/[-–—]/g, " ");
 
   const refTokens = cleanRef.trim().split(/\s+/).filter(Boolean);
   const transTokens = cleanTrans.trim().split(/\s+/).filter(Boolean);
