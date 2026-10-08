@@ -194,6 +194,11 @@ summary { list-style: none; }
     max(var(--space-s), var(--safe-left));
 }
 
+.wn-reading-hub-dialog::backdrop {
+  background: rgba(34, 28, 22, 0.5);
+  backdrop-filter: blur(2px);
+}
+
 .wn-modal-sheet-backdrop {
   padding-top: max(var(--space-s), var(--safe-top));
   padding-inline: var(--safe-left) var(--safe-right);
@@ -937,6 +942,45 @@ html[data-story-reading-mode="true"] .wn-global-header {
   text-wrap: balance;
 }
 
+.wn-postcard__recommendation {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+  border-left: 3px solid var(--accent);
+  padding-left: var(--space-s);
+}
+
+.wn-postcard__recommendation-eyebrow {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.6875rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
+}
+
+.wn-postcard__recommendation-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--step-0);
+  font-weight: 950;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.wn-postcard__recommendation-description {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .wn-postcard__stats {
   display: flex;
   align-items: baseline;
@@ -1025,6 +1069,57 @@ html[data-story-reading-mode="true"] .wn-global-header {
   border-radius: var(--radius-pill);
   background: var(--brick-teal);
   transition: width 0.5s var(--ease);
+}
+
+.wn-postcard__secondary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  border-top: 1px dashed #DCD3C5;
+  padding-top: var(--space-s);
+}
+
+.wn-postcard__secondary-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wn-postcard__secondary-item {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-s);
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  font-weight: 700;
+}
+
+.wn-postcard__secondary-name,
+.wn-postcard__secondary-status {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.wn-postcard__secondary-name {
+  color: var(--ink);
+  font-weight: 850;
+}
+
+.wn-postcard__secondary-status {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.wn-postcard__secondary-more {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.6875rem;
+  font-weight: 800;
 }
 
 /* Right Column (Desktop) */
@@ -1165,6 +1260,17 @@ html[data-story-reading-mode="true"] .wn-global-header {
   .wn-postcard__quote {
     font-size: 1rem;
     line-height: 1.3;
+  }
+
+  .wn-postcard__secondary-item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .wn-postcard__secondary-status {
+    flex-shrink: 1;
+    text-align: left;
   }
 
   .wn-postcard__stats {

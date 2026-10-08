@@ -198,7 +198,22 @@ describe("Lesson Practice Evidence Adaptive Loop Integration", () => {
     expect(vocabMistakes.total).toBe(1);
     expect(vocabMistakes.mistakes[0].flashcardId).toBe(cardCompromiseId);
 
-    // 7. Verify Smart Practice prioritizes the weak words
+    // 7. Verify Smart Practice prioritizes confirmed weak words
+    // Under multi-axis practice evidence, confirmed weakness requires >= 2 attempts on a specific axis.
+    // Simulate a follow-up first-pass attempt confirming weakness on recognition axis:
+    await db.practiceAttempt.create({
+      data: {
+        flashcardId: cardCompromiseId,
+        sessionId: "sess_followup",
+        attemptNumber: 1,
+        mode: "quiz",
+        questionType: "story_contextual_vocab",
+        correct: false,
+        answer: "wrong",
+        expectedAnswer: "compromise",
+      },
+    });
+
     const evidence = await practiceEvidenceService.getDeckPracticeEvidence(deckId);
     expect(evidence.needPracticeCards.length).toBeGreaterThanOrEqual(1);
 

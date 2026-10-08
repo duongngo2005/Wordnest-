@@ -69,6 +69,7 @@ describe("Decks Lessons API Routes", () => {
 
     it("returns 404 when deck is not found", async () => {
       vi.spyOn(db.deck, "findUnique").mockResolvedValue(null);
+      vi.spyOn(db.flashcard, "findMany").mockResolvedValue([] as never);
 
       const req = new Request("http://localhost/api/decks/missing-deck/lessons", {
         method: "POST",
@@ -85,6 +86,10 @@ describe("Decks Lessons API Routes", () => {
 
     it("enqueues lesson job and returns 202 when input is valid and deck exists", async () => {
       vi.spyOn(db.deck, "findUnique").mockResolvedValue({ id: "deck-123" } as never);
+      vi.spyOn(db.flashcard, "findMany").mockResolvedValue([
+        { id: "word-1" },
+        { id: "word-2" },
+      ] as never);
 
       const mockJob = {
         id: "job-lesson-1",
@@ -114,6 +119,51 @@ describe("Decks Lessons API Routes", () => {
       const json = await res.json();
       expect(json.success).toBe(true);
       expect(json.jobId).toBe("job-lesson-1");
+      expect(aiJobService.createLessonJob).toHaveBeenCalledWith(
+        expect.objectContaining({ targetWords: ["word-1", "word-2"] })
+      );
+    });
+
+    it("rejects stale target IDs before it queues a silently altered lesson", async () => {
+      vi.spyOn(db.deck, "findUnique").mockResolvedValue({ id: "deck-123" } as never);
+      vi.spyOn(db.flashcard, "findMany").mockResolvedValue([
+        { id: "word-1" },
+        { id: "word-2" },
+      ] as never);
+      const createJob = vi.spyOn(aiJobService, "createLessonJob");
+
+      const req = new Request("http://localhost/api/decks/deck-123/lessons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetWords: ["word-1", "stale-word", "word-2"] }),
+      });
+
+      const res = await POST(req, { params: Promise.resolve({ id: "deck-123" }) });
+
+      expect(res.status).toBe(400);
+      await expect(res.json()).resolves.toMatchObject({
+        success: false,
+        error: expect.stringContaining("không còn thuộc bộ thẻ"),
+      });
+      expect(createJob).not.toHaveBeenCalled();
+    });
+
+    it("rejects duplicate target IDs instead of queuing an ambiguous request", async () => {
+      const createJob = vi.spyOn(aiJobService, "createLessonJob");
+      const req = new Request("http://localhost/api/decks/deck-123/lessons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetWords: ["word-1", "word-1"] }),
+      });
+
+      const res = await POST(req, { params: Promise.resolve({ id: "deck-123" }) });
+
+      expect(res.status).toBe(400);
+      await expect(res.json()).resolves.toMatchObject({
+        success: false,
+        error: expect.stringContaining("một lần"),
+      });
+      expect(createJob).not.toHaveBeenCalled();
     });
   });
 });

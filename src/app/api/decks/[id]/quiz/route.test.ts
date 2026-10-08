@@ -103,6 +103,10 @@ describe("POST /api/decks/[id]/quiz", () => {
     expect(q.correctAnswer).toBeUndefined();
     expect(q.options).toBeUndefined();
     expect(q.explanation).toBeUndefined();
+    expect(q.spellingHints).toEqual({
+      partial: "_l_oc___",
+      blank: "________",
+    });
   });
 
   it("POST /check scores typed answer server-side and returns feedback without claiming session", async () => {
@@ -211,5 +215,30 @@ describe("POST /api/decks/[id]/quiz", () => {
     expect(q.expectedAnswer).toBeUndefined();
     expect(q.usedAs).toBeUndefined();
     expect(q.explanation).toBeUndefined();
+  });
+
+  it("handles GET /api/decks/[id]/quiz?mode=focused_practice&cardIds=... with targeted cardIds", async () => {
+    const deck = await db.deck.create({ data: { name: "Targeted API Quiz" } });
+    deckIds.push(deck.id);
+    const card = await db.flashcard.create({
+      data: {
+        deckId: deck.id,
+        term: "meticulous",
+        normalizedTerm: "meticulous",
+        meaningVi: "tỉ mỉ",
+      },
+    });
+
+    const { GET } = await import("./route");
+    const response = await GET(
+      new Request(`http://localhost/api/decks/${deck.id}/quiz?mode=focused_practice&cardIds=${card.id}`),
+      { params: Promise.resolve({ id: deck.id }) }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.data.questions).toHaveLength(1);
+    expect(body.data.questions[0].cardId).toBe(card.id);
   });
 });

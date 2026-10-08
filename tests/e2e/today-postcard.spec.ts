@@ -105,9 +105,10 @@ test("renders WordNest Daily Postcard on Desktop and iPhone 15 Pro Max without o
   await expect(mascot).toBeVisible();
   await expect(page.locator(".wn-postcard__mascot-wrapper [aria-hidden='true']").first()).toBeVisible();
 
-  // Check CTA Ôn tập button
-  const cta = page.getByRole("link", { name: "Ôn tập" }).first();
+  // Due-now recommendation uses the existing global review queue.
+  const cta = page.getByRole("link", { name: /^Ôn \d+ thẻ đến hạn$/ }).first();
   await expect(cta).toBeVisible();
+  await expect(cta).toHaveAttribute("href", "/review");
 
   // Check Touch Target on Desktop
   const ctaBox = await cta.boundingBox();
@@ -151,7 +152,7 @@ test("renders WordNest Daily Postcard on Desktop and iPhone 15 Pro Max without o
   await page.screenshot({ path: "scratch/postcard-mobile-430.png" });
 });
 
-test("renders completed state with celebration badge when today's reviews are done", async ({ page }) => {
+test("renders the no-due postcard state without implying final mastery", async ({ page }) => {
   const now = new Date();
   const future = new Date(now.getTime() + 86_400_000);
 
@@ -178,10 +179,9 @@ test("renders completed state with celebration badge when today's reviews are do
     const dueStat = page.getByTestId("today-due-stat");
     await expect(dueStat).toContainText("0");
 
-    // Status should show celebration badge
-    const completedBadge = page.locator(".wn-postcard__completed-pill");
-    await expect(completedBadge).toBeVisible();
-    await expect(completedBadge).toContainText("Đã xong hôm nay");
+    // Other decks can legitimately determine the global next action. The
+    // postcard must not turn this no-due state into a false mastery claim.
+    await expect(page.getByText("Đã xong hôm nay")).toHaveCount(0);
 
     // Capture celebration screenshot
     await postcard.screenshot({ path: "scratch/postcard-completed.png" });

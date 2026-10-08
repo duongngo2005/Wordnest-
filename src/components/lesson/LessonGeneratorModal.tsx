@@ -1,16 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Loader2, Search, Sparkles, Target, X } from "lucide-react";
+import { Loader2, Sparkles, X } from "lucide-react";
 import { StoryCefr } from "@/lib/validation/story";
 import { useAiTasks } from "@/components/ai/AiTaskProvider";
+import {
+  ContextualTargetPicker,
+  type ContextualTargetWord,
+} from "@/components/contextual/ContextualTargetPicker";
+import {
+  LESSON_CONTEXTUAL_TARGET_LIMIT,
+  resolveContextualTargetSelection,
+  toggleContextualTargetId,
+  type ContextualTargetIntent,
+  type ContextualTargetSelectionResult,
+} from "@/lib/contextual-target-selection";
 import { toast } from "sonner";
 import { playUISound } from "@/lib/ui-sound";
 
-export type LessonDeckWord = {
-  id: string;
-  term: string;
-  meaningVi: string;
+export type LessonDeckWord = ContextualTargetWord & {
   partOfSpeech?: string | null;
   cefr?: string | null;
 };
@@ -35,6 +43,20 @@ const TOPIC_PRESETS = [
   "Academic & Informational Article",
 ];
 
+function selectionNormalizationNotice(selection: ContextualTargetSelectionResult): string | null {
+  const notices: string[] = [];
+  if (selection.ignoredUnknownIds.length > 0) {
+    notices.push(`Đã bỏ qua ${selection.ignoredUnknownIds.length} từ không còn thuộc bộ thẻ.`);
+  }
+  if (selection.duplicateCount > 0) {
+    notices.push(`Đã bỏ qua ${selection.duplicateCount} lựa chọn bị lặp.`);
+  }
+  if (selection.overflowCount > 0) {
+    notices.push(`Chỉ giữ ${selection.selectedIds.length} từ phù hợp với giới hạn bài học.`);
+  }
+  return notices.length > 0 ? notices.join(" ") : null;
+}
+
 export function LessonGeneratorModal(props: LessonGeneratorModalProps) {
   if (!props.open) return null;
   return <LessonGeneratorModalContent {...props} />;
@@ -49,75 +71,107 @@ function LessonGeneratorModalContent({
   onLessonCreated,
 }: LessonGeneratorModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
   const { refreshJobs } = useAiTasks();
-
-  const [selectedWordIds, setSelectedWordIds] = useState<string[]>(() => {
-    if (initialSelectedIds.length > 0) return initialSelectedIds;
-    if (weakWordIds.length > 0) return weakWordIds.slice(0, 8);
-    return words.slice(0, 5).map((w) => w.id);
+  const deckCardIds = useMemo(() => words.map((word) => word.id), [words]);
+  const [initialSelection] = useState(() => {
+    const intent: ContextualTargetIntent = initialSelectedIds.length > 0 ? "manual" : "general";
+    return {
+      intent,
+      selection: resolveContextualTargetSelection({
+        intent,
+        deckCardIds: words.map((word) => word.id),
+        weakCardIds: weakWordIds,
+        manualIds: initialSelectedIds,
+        maxSelectedIds: LESSON_CONTEXTUAL_TARGET_LIMIT,
+      }),
+    };
   });
+  const [selectedWordIds, setSelectedWordIds] = useState<string[]>(initialSelection.selection.selectedIds);
+  const [targetIntent, setTargetIntent] = useState<ContextualTargetIntent>(initialSelection.intent);
+  const [overflowCount, setOverflowCount] = useState(initialSelection.selection.overflowCount);
+  const [normalizationNotice, setNormalizationNotice] = useState(
+    selectionNormalizationNotice(initialSelection.selection)
+  );
   const [cefr, setCefr] = useState<StoryCefr>("B1");
   const [topic, setTopic] = useState("Everyday Communication & Life");
-  const [search, setSearch] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Dialog open/close lifecycle
   useEffect(() => {
     const dialog = dialogRef.current;
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (dialog && !dialog.open) {
       dialog.showModal();
     }
+    const focusFrame = requestAnimationFrame(() => closeButtonRef.current?.focus());
     return () => {
+      cancelAnimationFrame(focusFrame);
       if (dialog?.open) dialog.close();
+      openerRef.current?.focus();
     };
   }, []);
 
-  const filteredWords = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return words;
-    return words.filter(
-      (w) =>
-        w.term.toLowerCase().includes(q) ||
-        w.meaningVi.toLowerCase().includes(q) ||
-        (w.partOfSpeech && w.partOfSpeech.toLowerCase().includes(q))
-    );
-  }, [words, search]);
+  const applySelection = (
+    intent: ContextualTargetIntent,
+    selection: ContextualTargetSelectionResult,
+    notice: string | null = null
+  ) => {
+    setSelectedWordIds(selection.selectedIds);
+    setTargetIntent(intent);
+    setOverflowCount(selection.overflowCount);
+    setNormalizationNotice(notice);
+    setError(null);
+  };
 
-  const selectedSet = useMemo(() => new Set(selectedWordIds), [selectedWordIds]);
+  const applyTargetIntent = (intent: ContextualTargetIntent) => {
+    playUISound("softTap");
+    const selection = resolveContextualTargetSelection({
+      intent,
+      deckCardIds,
+      weakCardIds: weakWordIds,
+      manualIds: selectedWordIds,
+      maxSelectedIds: LESSON_CONTEXTUAL_TARGET_LIMIT,
+    });
+    applySelection(intent, selection);
+  };
 
   const toggleWord = (id: string) => {
     playUISound("softTap");
-    setSelectedWordIds((prev) => {
-      if (prev.includes(id)) {
-        return prev.filter((item) => item !== id);
-      }
-      if (prev.length >= 20) {
-        toast.warning("Chỉ nên chọn tối đa 20 từ vựng cho một bài học.");
-        return prev;
-      }
-      return [...prev, id];
+    const selection = toggleContextualTargetId({
+      selectedIds: selectedWordIds,
+      targetId: id,
+      deckCardIds,
+      maxSelectedIds: LESSON_CONTEXTUAL_TARGET_LIMIT,
     });
+    if (selection.limitReached) {
+      toast.warning("Mỗi bài học hỗ trợ tối đa 20 từ vựng.");
+      return;
+    }
+    applySelection("manual", selection);
   };
 
   const selectAll = () => {
     playUISound("softTap");
-    if (words.length > 20) {
-      toast.info("Đã chọn tối đa 20 từ đầu tiên để đảm bảo chất lượng bài học.");
-    }
-    setSelectedWordIds(words.slice(0, 20).map((w) => w.id));
+    const selection = resolveContextualTargetSelection({
+      intent: "manual",
+      deckCardIds,
+      manualIds: deckCardIds,
+      maxSelectedIds: LESSON_CONTEXTUAL_TARGET_LIMIT,
+    });
+    applySelection("manual", selection);
   };
 
   const deselectAll = () => {
     playUISound("softTap");
-    setSelectedWordIds([]);
-  };
-
-  const selectWeakWords = () => {
-    playUISound("softTap");
-    if (weakWordIds.length > 0) {
-      setSelectedWordIds(weakWordIds.slice(0, 20));
-    }
+    applySelection("manual", {
+      selectedIds: [],
+      ignoredUnknownIds: [],
+      duplicateCount: 0,
+      overflowCount: 0,
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -199,6 +253,7 @@ function LessonGeneratorModalContent({
             </h2>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
@@ -218,107 +273,21 @@ function LessonGeneratorModalContent({
           )}
 
           {/* Section 1: Choose target words */}
-          <section className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-sm font-black text-[#221C16]">
-                1. Chọn từ vựng mục tiêu ({selectedWordIds.length}/{words.length})
-                <span className="ml-2 text-xs font-semibold text-[#6B6258]">
-                  (Khuyến nghị: 3 – 8 từ)
-                </span>
-              </label>
-              <div className="flex items-center gap-1.5 text-xs font-bold">
-                {weakWordIds.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={selectWeakWords}
-                    className="inline-flex items-center gap-1 rounded-lg border border-[#221C16] bg-[#FEF3C7] px-2 py-1 text-[#92400E] hover:bg-[#FDE68A]"
-                  >
-                    <Target className="h-3 w-3" />
-                    <span>Chọn từ yếu ({weakWordIds.length})</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={selectAll}
-                  className="rounded-lg border border-[#221C16] bg-[#FFFDF9] px-2 py-1 hover:bg-[#F5EEDB]"
-                >
-                  Tất cả
-                </button>
-                <button
-                  type="button"
-                  onClick={deselectAll}
-                  className="rounded-lg border border-[#221C16] bg-[#FFFDF9] px-2 py-1 text-[#6B6258] hover:bg-[#F5EEDB]"
-                >
-                  Bỏ chọn
-                </button>
-              </div>
-            </div>
-
-            {/* Word filter */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6B6258]" />
-              <input
-                type="text"
-                placeholder="Tìm từ vựng trong bộ thẻ..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] py-1.5 pl-8 pr-3 text-xs font-semibold placeholder:text-[#9A9187] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-              />
-            </div>
-
-            {/* Word Selection Chips */}
-            <div
-              className="max-h-48 overflow-y-auto rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2.5 flex flex-wrap gap-1.5"
-              role="group"
-              aria-label="Danh sách từ vựng"
-            >
-              {filteredWords.length === 0 ? (
-                <p className="p-3 text-center text-xs font-semibold text-[#6B6258]">
-                  Không tìm thấy từ vựng phù hợp.
-                </p>
-              ) : (
-                filteredWords.map((word) => {
-                  const isSelected = selectedSet.has(word.id);
-                  const isWeak = weakWordIds.includes(word.id);
-                  return (
-                    <button
-                      key={word.id}
-                      type="button"
-                      onClick={() => toggleWord(word.id)}
-                      className={`inline-flex items-center gap-1.5 rounded-lg border-2 px-2.5 py-1.5 text-xs font-bold transition-all ${
-                        isSelected
-                          ? "border-[#221C16] bg-[#221C16] text-[#FFFDF9] shadow-[1px_1px_0px_#221C16]"
-                          : "border-[#D8CEBE] bg-[#FFFDF9] text-[#221C16] hover:border-[#221C16]"
-                      }`}
-                    >
-                      <span
-                        className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border ${
-                          isSelected
-                            ? "border-white bg-[var(--accent)] text-[#221C16]"
-                            : "border-[#8C8275] bg-white"
-                        }`}
-                      >
-                        {isSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
-                      </span>
-                      <span>{word.term}</span>
-                      {word.meaningVi && (
-                        <span
-                          className={`text-[11px] font-normal truncate max-w-[120px] ${
-                            isSelected ? "text-amber-200" : "text-[#6B6258]"
-                          }`}
-                        >
-                          ({word.meaningVi})
-                        </span>
-                      )}
-                      {isWeak && !isSelected && (
-                        <span className="h-1.5 w-1.5 rounded-full bg-rose-500" title="Từ yếu" />
-                      )}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </section>
+          <ContextualTargetPicker
+            idPrefix="lesson"
+            words={words}
+            weakWordIds={weakWordIds}
+            selectedIds={selectedWordIds}
+            intent={targetIntent}
+            maxSelectedIds={LESSON_CONTEXTUAL_TARGET_LIMIT}
+            overflowCount={overflowCount}
+            normalizationNotice={normalizationNotice}
+            disabled={isSubmitting}
+            onIntentChange={applyTargetIntent}
+            onToggleWord={toggleWord}
+            onSelectAll={selectAll}
+            onClear={deselectAll}
+          />
 
           {/* Section 2: CEFR Level */}
           <fieldset className="space-y-1.5">

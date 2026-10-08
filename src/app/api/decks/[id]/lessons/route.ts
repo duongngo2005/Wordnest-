@@ -52,10 +52,25 @@ export async function POST(
       );
     }
 
-    const deck = await db.deck.findUnique({
-      where: { id: deckId },
-      select: { id: true },
-    });
+    const targetWords = validation.data.targetWords;
+    const uniqueTargetWords = [...new Set(targetWords)];
+    if (uniqueTargetWords.length !== targetWords.length) {
+      return NextResponse.json(
+        { success: false, error: "Mỗi từ vựng chỉ có thể được chọn một lần." },
+        { status: 400 }
+      );
+    }
+
+    const [deck, selectedCards] = await Promise.all([
+      db.deck.findUnique({
+        where: { id: deckId },
+        select: { id: true },
+      }),
+      db.flashcard.findMany({
+        where: { deckId, id: { in: uniqueTargetWords } },
+        select: { id: true },
+      }),
+    ]);
     if (!deck) {
       return NextResponse.json(
         { success: false, error: "Không tìm thấy bộ thẻ." },
@@ -63,9 +78,19 @@ export async function POST(
       );
     }
 
+    if (selectedCards.length !== uniqueTargetWords.length) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Một hoặc nhiều từ vựng không còn thuộc bộ thẻ này. Hãy chọn lại trước khi tạo bài học.",
+        },
+        { status: 400 }
+      );
+    }
+
     const job = await aiJobService.createLessonJob({
       deckId,
-      targetWords: validation.data.targetWords,
+      targetWords: uniqueTargetWords,
       cefr: validation.data.cefr,
       topic: validation.data.topic,
     });

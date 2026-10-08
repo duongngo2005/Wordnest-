@@ -1,18 +1,82 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 export interface UseAudioRecorderReturn {
+  isSupported: boolean;
+  hasCheckedSupport: boolean;
   isRecording: boolean;
   audioUrl: string | null;
   audioBlob: Blob | null;
   error: string | null;
-  startRecording: () => Promise<void>;
+  startRecording: () => Promise<boolean>;
   stopRecording: () => void;
   resetRecording: () => void;
 }
 
+export type AudioRecorderCapability = {
+  isSupported: boolean;
+  error: string | null;
+};
+
+type BrowserMediaRecorderConstructor = typeof MediaRecorder;
+
+function getMediaRecorderConstructor(): BrowserMediaRecorderConstructor | null {
+  if (typeof window === "undefined" || typeof window.MediaRecorder === "undefined") {
+    return null;
+  }
+
+  return window.MediaRecorder;
+}
+
+export function getAudioRecorderCapability(): AudioRecorderCapability {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+    return {
+      isSupported: false,
+      error: "Trình duyệt này không hỗ trợ ghi âm microphone.",
+    };
+  }
+
+  if (!getMediaRecorderConstructor()) {
+    return {
+      isSupported: false,
+      error: "Trình duyệt này không hỗ trợ lưu bản ghi âm.",
+    };
+  }
+
+  return { isSupported: true, error: null };
+}
+
+function getAudioRecorderCapabilityStatus(): "supported" | "unknown" | string {
+  const capability = getAudioRecorderCapability();
+  return capability.isSupported ? "supported" : capability.error || "unknown";
+}
+
+function subscribeToAudioRecorderCapability() {
+  return () => {};
+}
+
+function getRecorderErrorMessage(error: unknown): string {
+  if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "PermissionDeniedError")) {
+    return "WordNest chưa được phép dùng microphone. Hãy bật quyền microphone trong trình duyệt để luyện nói.";
+  }
+  if (error instanceof DOMException && error.name === "NotFoundError") {
+    return "Không tìm thấy thiết bị microphone nào trên máy tính.";
+  }
+  if (error instanceof DOMException && error.name === "NotReadableError") {
+    return "Microphone đang được ứng dụng khác sử dụng. Hãy thử lại sau.";
+  }
+  return error instanceof Error ? error.message : "Không thể truy cập microphone.";
+}
+
 export function useAudioRecorder(): UseAudioRecorderReturn {
+  const capabilityStatus = useSyncExternalStore(
+    subscribeToAudioRecorderCapability,
+    getAudioRecorderCapabilityStatus,
+    () => "unknown"
+  );
+  const isSupported = capabilityStatus === "supported";
+  const hasCheckedSupport = capabilityStatus !== "unknown";
   const [isRecording, setIsRecording] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
@@ -63,12 +127,13 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
     setIsRecording(false);
   }, [stopStreamTracks]);
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async (): Promise<boolean> => {
     resetRecording();
 
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setError("Trình duyệt này không hỗ trợ ghi âm microphone.");
-      return;
+    const supported = getAudioRecorderCapability();
+    if (!supported.isSupported) {
+      setError(supported.error);
+      return false;
     }
 
     try {
@@ -83,16 +148,26 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
       mediaStreamRef.current = stream;
       chunksRef.current = [];
 
+      const MediaRecorderCtor = getMediaRecorderConstructor();
+      if (!MediaRecorderCtor) {
+        stopStreamTracks();
+        setError("Trình duyệt này không hỗ trợ lưu bản ghi âm.");
+        return false;
+      }
+
       // Determine supported mimeType
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      const isTypeSupported = MediaRecorderCtor.isTypeSupported?.bind(MediaRecorderCtor);
+      const mimeType = isTypeSupported?.("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
+        : isTypeSupported?.("audio/webm")
         ? "audio/webm"
-        : MediaRecorder.isTypeSupported("audio/mp4")
+        : isTypeSupported?.("audio/mp4")
         ? "audio/mp4"
         : "";
 
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const recorder = mimeType
+        ? new MediaRecorderCtor(stream, { mimeType })
+        : new MediaRecorderCtor(stream);
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (event) => {
@@ -126,17 +201,12 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
       recorder.start(250); // Slice into 250ms chunks
       setIsRecording(true);
       setError(null);
+      return true;
     } catch (err: unknown) {
       stopStreamTracks();
       setIsRecording(false);
-
-      if (err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError")) {
-        setError("WordNest chưa được phép dùng microphone. Hãy bật quyền microphone trong trình duyệt để luyện nói.");
-      } else if (err instanceof DOMException && err.name === "NotFoundError") {
-        setError("Không tìm thấy thiết bị microphone nào trên máy tính.");
-      } else {
-        setError(err instanceof Error ? err.message : "Không thể truy cập microphone.");
-      }
+      setError(getRecorderErrorMessage(err));
+      return false;
     }
   }, [resetRecording, stopStreamTracks]);
 
@@ -154,6 +224,8 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
   }, [stopStreamTracks, revokeCurrentUrl]);
 
   return {
+    isSupported,
+    hasCheckedSupport,
     isRecording,
     audioUrl,
     audioBlob,

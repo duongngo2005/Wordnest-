@@ -9,6 +9,11 @@ import { ExplainAnswerButton } from "@/components/ai/ExplainAnswerButton";
 import { WordNestMascot } from "../ui/Mascot";
 import { playUISound } from "@/lib/ui-sound";
 import { wnToast } from "@/components/ui/ToastProvider";
+import type { TypedAnswerHintStyle } from "@/lib/quiz/typed-answer-hints";
+import {
+  getContextualPracticeRestartHref,
+  getContextualPracticeSource,
+} from "@/lib/quiz/contextual-practice";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -52,6 +57,7 @@ export function QuizRunner({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [typedAnswer, setTypedAnswer] = useState("");
+  const [typedHintStyle, setTypedHintStyle] = useState<TypedAnswerHintStyle>("partial");
   const [isCheckingTyped, setIsCheckingTyped] = useState(false);
   const [checkedTypedData, setCheckedTypedData] = useState<{
     correct: boolean;
@@ -398,11 +404,15 @@ export function QuizRunner({
   const handleRestart = async () => {
     setIsSubmitting(true);
     try {
+      const contextualSource = getContextualPracticeSource({
+        deckId: deck.id,
+        mode: currentMode,
+        storyId,
+        lessonId,
+      });
       const url =
-        currentMode === "lesson_practice" && lessonId
-          ? `/api/decks/${deck.id}/quiz?mode=lesson_practice&lessonId=${lessonId}`
-          : currentMode === "story_practice" && storyId
-          ? `/api/decks/${deck.id}/quiz?mode=story_practice&storyId=${storyId}`
+        contextualSource
+          ? getContextualPracticeRestartHref(deck.id, contextualSource)
           : currentMode === "focused_practice"
           ? `/api/decks/${deck.id}/quiz?mode=focused_practice`
           : currentMode === "story_cloze" && storyId
@@ -442,6 +452,12 @@ export function QuizRunner({
     const finalTotal = submissionResult?.firstPassTotal ?? questions.length;
     const finalAccuracy =
       submissionResult?.accuracy ?? (finalTotal > 0 ? Number(((finalScore / finalTotal) * 100).toFixed(1)) : 0);
+    const contextualSource = getContextualPracticeSource({
+      deckId: deck.id,
+      mode: currentMode,
+      storyId,
+      lessonId,
+    });
 
     return (
       <QuizResults
@@ -452,6 +468,7 @@ export function QuizRunner({
         records={records}
         retryRecords={retryRecords}
         submissionResult={submissionResult}
+        contextualSource={contextualSource}
         onRestart={handleRestart}
       />
     );
@@ -483,6 +500,10 @@ export function QuizRunner({
     checkedTypedData?.expectedAnswer ??
     (!isTypedQuestion ? currentQuestion.correctAnswer : "");
   const progressPercent = Math.round(((activeIndex + 1) / total) * 100);
+  const typedSpellingHint =
+    currentQuestion.type === "typed_vi_en"
+      ? currentQuestion.spellingHints[typedHintStyle]
+      : null;
 
   const getQuestionTypeLabel = (type: string) => {
     switch (type) {
@@ -499,7 +520,7 @@ export function QuizRunner({
       case "multiple_choice_vi_en":
         return "Chọn từ tiếng Anh phù hợp";
       case "fill_in_blank":
-        return "Điền từ thích hợp vào câu";
+        return "Chọn từ thích hợp điền vào câu";
       default:
         return "Trắc nghiệm từ vựng";
     }
@@ -564,7 +585,7 @@ export function QuizRunner({
               }`}
             >
               <Keyboard className="w-3.5 h-3.5" strokeWidth={2.5} />
-              <span>Gõ đáp án (Recall)</span>
+              <span>Việt → Anh (Gõ)</span>
             </button>
             {(storyId || currentMode === "story_cloze") && (
               <button
@@ -687,6 +708,55 @@ export function QuizRunner({
                   ? "Điền từ thích hợp vào chỗ trống trong câu trên:"
                   : "Nhập từ hoặc cụm từ tiếng Anh tương ứng:"}
               </label>
+              {currentQuestion.type === "typed_vi_en" ? (
+                <fieldset className="space-y-2">
+                  <legend className="text-center text-[11px] font-bold text-[#6B6258]">
+                    Kiểu gợi ý chính tả
+                  </legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: "partial", label: "Lộ một phần chữ" },
+                      { value: "blank", label: "Chỉ dấu gạch" },
+                    ] as const).map((hintOption) => {
+                      const inputId = `typed-hint-${hintOption.value}`;
+                      const isSelected = typedHintStyle === hintOption.value;
+
+                      return (
+                        <label key={hintOption.value} htmlFor={inputId} className="cursor-pointer">
+                          <input
+                            id={inputId}
+                            type="radio"
+                            name="typed-hint-style"
+                            value={hintOption.value}
+                            checked={isSelected}
+                            onChange={() => setTypedHintStyle(hintOption.value)}
+                            disabled={isAnswerChecked || isCheckingTyped}
+                            className="peer wn-sr-only"
+                          />
+                          <span
+                            className={`flex min-h-[44px] items-center justify-center rounded-xl border-2 px-2 py-2 text-center text-xs font-black transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--accent)] ${
+                              isSelected
+                                ? "border-[#221C16] bg-[var(--accent-soft)] text-[#221C16]"
+                                : "border-[#DCD3C5] bg-[#FFFDF9] text-[#6B6258]"
+                            } peer-disabled:cursor-not-allowed peer-disabled:opacity-60`}
+                          >
+                            {hintOption.label}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              ) : null}
+              {typedSpellingHint ? (
+                <p
+                  data-testid="typed-spelling-hint"
+                  className="select-none text-center font-mono text-xl font-black tracking-[0.2em] text-[#9A3412]"
+                  aria-label={`Gợi ý chính tả: ${typedSpellingHint}`}
+                >
+                  {typedSpellingHint}
+                </p>
+              ) : null}
               <input
                 id="typed-recall-input"
                 ref={typedInputRef}
@@ -704,7 +774,7 @@ export function QuizRunner({
                 placeholder={
                   currentQuestion.type === "story_cloze"
                     ? "Nhập dạng từ thích hợp trong ngữ cảnh..."
-                    : "Ví dụ: allocate..."
+                    : "Nhập đáp án tiếng Anh..."
                 }
                 className={`w-full text-center px-4 py-3.5 rounded-xl border-2 text-base sm:text-xl font-black placeholder-[#8C8275] shadow-[2px_2px_0px_#221C16] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] min-h-[48px] transition-colors ${
                   isAnswerChecked

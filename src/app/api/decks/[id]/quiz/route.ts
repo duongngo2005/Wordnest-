@@ -17,10 +17,16 @@ export async function GET(
     const storyId = searchParams.get("storyId") || undefined;
     const lessonId = searchParams.get("lessonId") || undefined;
 
+    const cardIdsParam = searchParams.get("cardIds");
+    const targetCardIds = cardIdsParam !== null
+      ? cardIdsParam.split(",").map((s) => s.trim()).filter(Boolean)
+      : undefined;
+
     if (modeParam === "focused_practice") {
       const quizData = await quizService.getFocusedPracticeQuiz(
         deckId,
-        isNaN(count) ? 10 : count
+        isNaN(count) ? 10 : count,
+        targetCardIds
       );
       return NextResponse.json({
         success: true,
@@ -49,7 +55,12 @@ export async function GET(
         ? ["story_cloze"]
         : modeParam === "typed" || modeParam === "typed_vi_en"
         ? ["typed_vi_en"]
-        : ["multiple_choice_en_vi", "multiple_choice_vi_en", "fill_in_blank"];
+        : [
+            "multiple_choice_en_vi",
+            "multiple_choice_vi_en",
+            "fill_in_blank",
+            "typed_vi_en",
+          ];
 
     const quizData = await quizService.getDeckQuiz(
       deckId,

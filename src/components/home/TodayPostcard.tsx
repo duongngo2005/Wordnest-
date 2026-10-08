@@ -5,11 +5,17 @@ import Link from "next/link";
 import { BookOpen, CheckCircle2, Sparkles } from "lucide-react";
 import { WordNestMascot } from "@/components/ui/Mascot";
 import { playUISound } from "@/lib/ui-sound";
+import {
+  getTodayLearningPlanHref,
+  type TodayLearningPlan,
+  type TodaySecondaryDeckContext,
+} from "@/lib/today-learning-plan";
 
 export interface TodayPostcardProps {
-  dueCount: number;
+  plan: TodayLearningPlan;
   reviewedTodayCount: number;
-  studyDeckId?: string;
+  secondaryDecks: TodaySecondaryDeckContext[];
+  secondaryDecksRemainingCount: number;
   date?: Date;
 }
 
@@ -85,6 +91,77 @@ export function getPostcardState(
     quote: QUOTES_CLEAN_SLATE[dayOfYear % QUOTES_CLEAN_SLATE.length],
     mascotMood: "happy",
   };
+}
+
+function getRecommendationCopy(plan: TodayLearningPlan): {
+  eyebrow: string;
+  title: string;
+  description: string;
+  actionLabel: string | null;
+} {
+  switch (plan.kind) {
+    case "DUE":
+      return {
+        eyebrow: "Nên học tiếp",
+        title: `Ôn ${plan.dueCount} thẻ đến hạn`,
+        description:
+          plan.dueDeckCount > 1
+            ? `Các thẻ này đang đến hạn ôn trong ${plan.dueDeckCount} bộ từ.`
+            : "Các thẻ này đang đến hạn ôn theo lịch ghi nhớ của bạn.",
+        actionLabel: `Ôn ${plan.dueCount} thẻ đến hạn`,
+      };
+    case "WEAK":
+      return {
+        eyebrow: plan.deck.deckName,
+        title: `Củng cố ${plan.deck.weakCount} từ cần luyện`,
+        description: "Dựa trên kết quả luyện tập gần đây, hãy củng cố chúng trước khi học từ mới.",
+        actionLabel: "Bắt đầu củng cố",
+      };
+    case "NEW":
+      return {
+        eyebrow: plan.deck.deckName,
+        title: "Học từ mới",
+        description: `Có ${plan.deck.newCount} từ mới đang chờ trong bộ từ này. Phiên học sẽ tự giới hạn số thẻ phù hợp.`,
+        actionLabel: "Học từ mới",
+      };
+    case "CONTEXT":
+      return {
+        eyebrow: plan.deck.deckName,
+        title: "Đọc & học trong ngữ cảnh",
+        description: "Hiện không có thẻ cần ôn hay từ cần củng cố. Bạn có thể tiếp tục học trong ngữ cảnh.",
+        actionLabel: "Học trong ngữ cảnh",
+      };
+    case "EMPTY":
+      return {
+        eyebrow: plan.deck.deckName,
+        title: "Thêm từ để bắt đầu",
+        description: "Bộ từ này chưa có thẻ nào để học.",
+        actionLabel: "Mở bộ từ để thêm từ",
+      };
+    case "NO_DECKS":
+      return {
+        eyebrow: "Bắt đầu",
+        title: "Tạo bộ sưu tập đầu tiên",
+        description: "Tạo bộ sưu tập rồi thêm bộ từ để WordNest có thể gợi ý việc học tiếp theo.",
+        actionLabel: null,
+      };
+  }
+}
+
+function getSecondaryDeckLabel(item: TodaySecondaryDeckContext): string {
+  const { deck, status } = item;
+  switch (status) {
+    case "DUE":
+      return `${deck.dueCount} thẻ đến hạn`;
+    case "WEAK":
+      return `${deck.weakCount} từ cần luyện`;
+    case "NEW":
+      return `${deck.newCount} từ mới`;
+    case "CONTEXT":
+      return "Sẵn sàng học trong ngữ cảnh";
+    case "EMPTY":
+      return "Chưa có từ";
+  }
 }
 
 function VintagePostmark({ date }: { date: Date }) {
@@ -165,11 +242,13 @@ function VintagePostmark({ date }: { date: Date }) {
 }
 
 export function TodayPostcard({
-  dueCount,
+  plan,
   reviewedTodayCount,
-  studyDeckId,
+  secondaryDecks,
+  secondaryDecksRemainingCount,
   date = new Date(),
 }: TodayPostcardProps) {
+  const dueCount = plan.kind === "DUE" ? plan.dueCount : 0;
   const totalCardsToday = dueCount + reviewedTodayCount;
   const hasTodayProgress = totalCardsToday > 0;
   const progressPercent = hasTodayProgress
@@ -177,6 +256,8 @@ export function TodayPostcard({
     : 0;
 
   const { type, quote, mascotMood } = getPostcardState(dueCount, reviewedTodayCount, date);
+  const recommendation = getRecommendationCopy(plan);
+  const actionHref = getTodayLearningPlanHref(plan);
   const postcardRef = useRef<HTMLElement>(null);
   const [tilt, setTilt] = useState({ rotateX: 0, rotateY: 0 });
 
@@ -256,6 +337,12 @@ export function TodayPostcard({
             </blockquote>
           </div>
 
+          <div className="wn-postcard__recommendation">
+            <p className="wn-postcard__recommendation-eyebrow">{recommendation.eyebrow}</p>
+            <p className="wn-postcard__recommendation-title">{recommendation.title}</p>
+            <p className="wn-postcard__recommendation-description">{recommendation.description}</p>
+          </div>
+
           {/* Learning Stats */}
           <dl className="wn-postcard__stats" aria-label="Tóm tắt học hôm nay">
             <div
@@ -294,6 +381,26 @@ export function TodayPostcard({
               </progress>
             </div>
           ) : null}
+
+          {secondaryDecks.length > 0 ? (
+            <div className="wn-postcard__secondary" aria-label="Tóm tắt các bộ từ khác">
+              <ul className="wn-postcard__secondary-list">
+                {secondaryDecks.map(({ deck, status }) => (
+                  <li key={deck.deckId} className="wn-postcard__secondary-item">
+                    <span className="wn-postcard__secondary-name" title={deck.deckName}>
+                      {deck.deckName}
+                    </span>
+                    <span className="wn-postcard__secondary-status">
+                      {getSecondaryDeckLabel({ deck, status })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {secondaryDecksRemainingCount > 0 ? (
+                <p className="wn-postcard__secondary-more">+ {secondaryDecksRemainingCount} bộ từ khác</p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {/* Right Column: Postmark (Desktop) + Mascot & CTA */}
@@ -316,40 +423,21 @@ export function TodayPostcard({
             </div>
 
             <div className="wn-postcard__cta-wrap">
-              {dueCount > 0 && studyDeckId ? (
+              {actionHref && recommendation.actionLabel ? (
                 <Link
-                  href={`/decks/${studyDeckId}/study`}
+                  href={actionHref}
                   onClick={() => playUISound("softTap")}
                   className="brick-button-primary wn-postcard__cta"
                 >
                   <BookOpen className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />
-                  <span>Ôn tập</span>
+                  <span>{recommendation.actionLabel}</span>
                 </Link>
-              ) : type === "completed" ? (
-                <div className="flex flex-col items-center sm:items-end gap-2">
-                  <div
-                    className="wn-postcard__completion-stamp wn-completion-stamp-slam select-none inline-flex items-center gap-1.5 rounded-lg border-2 border-[#15803D] bg-[#DCFCE7]/90 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-[#15803D] shadow-[1.5px_1.5px_0px_#15803D]"
-                    style={{ transform: "rotate(-2deg)" }}
-                    aria-hidden="true"
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2.5} />
-                    <span>HOÀN THÀNH</span>
-                  </div>
-                  <div className="wn-postcard__completed-pill" role="status">
-                    <CheckCircle2 className="h-4 w-4 text-[#15803D]" aria-hidden="true" strokeWidth={2.5} />
-                    <span>Đã xong hôm nay</span>
-                  </div>
+              ) : (
+                <div className="wn-postcard__completed-pill" role="status">
+                  <CheckCircle2 className="h-4 w-4 text-[#15803D]" aria-hidden="true" strokeWidth={2.5} />
+                  <span>Chọn tạo bộ sưu tập bên dưới để bắt đầu</span>
                 </div>
-              ) : studyDeckId ? (
-                <Link
-                  href={`/decks/${studyDeckId}/study`}
-                  onClick={() => playUISound("softTap")}
-                  className="brick-button-secondary wn-postcard__cta"
-                >
-                  <BookOpen className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />
-                  <span>Ôn tập</span>
-                </Link>
-              ) : null}
+              )}
             </div>
           </div>
         </div>

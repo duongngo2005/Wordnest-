@@ -6,6 +6,11 @@ import { WordNestMascot } from "../ui/Mascot";
 import { PronounceButton } from "../flashcards/PronounceButton";
 import { ExplainAnswerButton } from "@/components/ai/ExplainAnswerButton";
 import { QuizQuestion, QuizQuestionExplanation, QuizSubmissionResult } from "@/services/vocabulary/quiz-service";
+import {
+  getTargetedFocusedPracticeHref,
+  getWrongVocabularyCardIdsFromFirstPass,
+  type ContextualPracticeSource,
+} from "@/lib/quiz/contextual-practice";
 import { playUISound } from "@/lib/ui-sound";
 import {
   RotateCcw,
@@ -16,6 +21,7 @@ import {
   Sparkles,
   BookOpen,
   CheckCheck,
+  Target,
 } from "lucide-react";
 
 export interface AnswerRecord {
@@ -38,6 +44,7 @@ interface QuizResultsProps {
   records: AnswerRecord[];
   retryRecords?: AnswerRecord[];
   submissionResult: QuizSubmissionResult | null;
+  contextualSource?: ContextualPracticeSource | null;
   onRestart: () => void;
 }
 
@@ -49,6 +56,7 @@ export function QuizResults({
   records,
   retryRecords = [],
   submissionResult,
+  contextualSource = null,
   onRestart,
 }: QuizResultsProps) {
   const [filter, setFilter] = useState<"all" | "correct" | "incorrect">("all");
@@ -59,6 +67,13 @@ export function QuizResults({
 
   const correctCount = records.filter((r) => r.isCorrect).length;
   const incorrectCount = total - correctCount;
+  const wrongVocabularyCardIds = contextualSource
+    ? getWrongVocabularyCardIdsFromFirstPass(records)
+    : [];
+  const targetedFocusedPracticeHref = getTargetedFocusedPracticeHref(
+    deck.id,
+    wrongVocabularyCardIds
+  );
 
   const filteredRecords = records.filter((r) => {
     if (filter === "correct") return r.isCorrect;
@@ -169,9 +184,29 @@ export function QuizResults({
 
         {/* Action Buttons */}
         <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+          {targetedFocusedPracticeHref ? (
+            <Link
+              href={targetedFocusedPracticeHref}
+              className="brick-button-primary w-full justify-center px-5 py-3 text-xs font-black shadow-[3px_3px_0px_#221C16] sm:w-auto sm:text-sm"
+            >
+              <Target className="w-4 h-4" />
+              <span>Luyện lại các từ vừa sai</span>
+            </Link>
+          ) : null}
+
+          {contextualSource ? (
+            <Link
+              href={contextualSource.returnHref}
+              className={`${targetedFocusedPracticeHref ? "brick-button-secondary" : "brick-button-primary"} w-full justify-center gap-2 px-5 py-3 text-xs font-black shadow-[3px_3px_0px_#221C16] sm:w-auto sm:text-sm`}
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>{contextualSource.returnLabel}</span>
+            </Link>
+          ) : null}
+
           <button
             onClick={onRestart}
-            className="brick-button-primary px-5 py-3 text-xs sm:text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16]"
+            className={`${contextualSource ? "brick-button-secondary" : "brick-button-primary"} px-5 py-3 text-xs sm:text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16]`}
           >
             <RotateCcw className="w-4 h-4" />
             <span>Làm lại bài Quiz</span>

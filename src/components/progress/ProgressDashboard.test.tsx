@@ -30,12 +30,14 @@ const mockAnalytics: ProgressAnalytics = {
     { key: "relearning", label: "Học lại", count: 2 },
   ],
   practice: {
-    firstPass: { label: "Kết quả lần đầu", total: 10, correct: 8, accuracy: 80.0 },
+    firstPass: { label: "Kết quả lần đầu", total: 10, correct: 8, accuracy: 80.0, hasSufficientEvidence: true },
+    recognition: { label: "Nhận diện", total: 4, correct: 3, accuracy: 75, hasSufficientEvidence: true },
+    production: { label: "Tự nhớ & viết", total: 6, correct: 5, accuracy: 83.3, hasSufficientEvidence: true },
     byType: [
-      { label: "Gõ từ", total: 6, correct: 5, accuracy: 83.3 },
-      { label: "Trắc nghiệm", total: 4, correct: 3, accuracy: 75.0 },
+      { label: "Gõ từ", total: 6, correct: 5, accuracy: 83.3, hasSufficientEvidence: true },
+      { label: "Trắc nghiệm", total: 4, correct: 3, accuracy: 75.0, hasSufficientEvidence: true },
     ],
-    retry: { label: "Luyện lại", total: 2, correct: 2, accuracy: 100.0 },
+    retry: { label: "Luyện lại", total: 2, correct: 2, accuracy: 100.0, hasSufficientEvidence: true },
     sessions: 3,
     assessedCards: 8,
     hasSufficientEvidence: true,
@@ -67,7 +69,7 @@ const mockAnalytics: ProgressAnalytics = {
       dueToday: 6,
       weakCards: 1,
       reviewedRecently: 5,
-      firstPass: { label: "Kết quả lần đầu", total: 10, correct: 8, accuracy: 80.0 },
+      firstPass: { label: "Kết quả lần đầu", total: 10, correct: 8, accuracy: 80.0, hasSufficientEvidence: true },
     },
   ],
   folders: [],
@@ -153,15 +155,39 @@ describe("ProgressDashboard component", () => {
     expect(html).toContain("Luyện tập trung");
   });
 
-  it("renders Practice panel distinguishing first-pass from retries", () => {
+  it("renders recognition and production practice metrics ahead of secondary totals", () => {
     const html = renderToStaticMarkup(<ProgressDashboard analytics={mockAnalytics} />);
-    expect(html).toContain("Kết quả luyện tập");
-    expect(html).toContain("Lần đầu (Đánh giá thật)");
+    expect(html).toContain("Khả năng thực hành");
+    expect(html).toContain("Nhận diện");
+    expect(html).toContain("Tự nhớ &amp; viết");
+    expect(html).toContain("3 / 4 lượt first-pass đúng");
+    expect(html).toContain("5 / 6 lượt first-pass đúng");
+    expect(html).toContain("Độ chính xác chung của các bài thực hành");
+    expect(html).toContain("Lần đầu");
     expect(html).toContain("80% · 8/10");
     expect(html).toContain("Luyện lại (Củng cố)");
     expect(html).toContain("100% · 2/2");
-    expect(html).toContain("Gõ từ");
-    expect(html).toContain("Trắc nghiệm");
+    expect(html).not.toContain("Dạng câu hỏi");
+  });
+
+  it("renders no-evidence and one-attempt states without presenting 0% or 100% as ability", () => {
+    const noEvidence = {
+      ...mockAnalytics,
+      practice: {
+        ...mockAnalytics.practice,
+        firstPass: { label: "Kết quả lần đầu", total: 0, correct: 0, accuracy: null, hasSufficientEvidence: false },
+        recognition: { label: "Nhận diện", total: 0, correct: 0, accuracy: null, hasSufficientEvidence: false },
+        production: { label: "Tự nhớ & viết", total: 1, correct: 1, accuracy: 100, hasSufficientEvidence: false },
+        retry: { label: "Luyện lại", total: 0, correct: 0, accuracy: null, hasSufficientEvidence: false },
+        byType: [],
+      },
+    } satisfies ProgressAnalytics;
+    const html = renderToStaticMarkup(<ProgressDashboard analytics={noEvidence} />);
+
+    expect(html).toContain("Chưa có dữ liệu");
+    expect(html).toContain("1/1");
+    expect(html).toContain("Cần thêm dữ liệu");
+    expect(html).not.toContain("100%</p>");
   });
 
   it("renders bar charts with data-count attributes and zero-height preservation", () => {

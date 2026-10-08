@@ -168,6 +168,10 @@ export function useSpeechRecognition({
           userMsg = "WordNest chưa được phép dùng microphone. Hãy bật quyền microphone trong trình duyệt để luyện nói.";
         } else if (errType === "network") {
           userMsg = "Không thể kết nối đến dịch vụ nhận diện giọng nói.";
+        } else if (errType === "audio-capture") {
+          userMsg = "Không thể nhận âm thanh từ microphone. Hãy kiểm tra thiết bị rồi thử lại.";
+        } else if (errType === "language-not-supported") {
+          userMsg = "Trình duyệt không hỗ trợ nhận diện tiếng Anh cho lượt này.";
         }
 
         setError(userMsg);

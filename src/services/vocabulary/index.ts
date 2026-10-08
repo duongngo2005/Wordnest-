@@ -7,3 +7,5 @@ export * from "./progress-service";
 export * from "./practice-evidence-service";
 export * from "./story-exercise-service";
 export * from "./lesson-service";
+export * from "./deck-hero-recommendation";
+export * from "./today-learning-service";

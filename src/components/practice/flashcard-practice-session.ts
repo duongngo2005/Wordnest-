@@ -1,6 +1,6 @@
 export type FlashcardPracticeDirection = "en_vi" | "vi_en";
 
-export type FlashcardPracticeMode = FlashcardPracticeDirection | "mix";
+export type FlashcardPracticeMode = "vi_en" | "mix";
 
 /**
  * Lexical fields intentionally safe to send to the client Practice session.
@@ -50,7 +50,7 @@ export function createFlashcardPracticeSession(
   mode: FlashcardPracticeMode,
   random: RandomSource = Math.random
 ): PracticeCardSessionItem[] {
-  if (mode === "en_vi" || mode === "vi_en") {
+  if (mode === "vi_en") {
     return cards.map((card) => ({ card, direction: mode }));
   }
 

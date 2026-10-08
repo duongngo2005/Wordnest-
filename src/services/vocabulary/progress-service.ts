@@ -1,4 +1,3 @@
-import { PracticeAttempt } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   DEFAULT_STUDY_TIMEZONE,
@@ -15,8 +14,9 @@ import {
 } from "./review-activity-service";
 import {
   EVIDENCE_CONFIG,
-  aggregateCardPracticeEvidence,
   getNeedPracticePriority,
+  isWeakCardSummary,
+  practiceEvidenceService,
   type PracticeEvidenceSummary,
 } from "./practice-evidence-service";
 
@@ -46,6 +46,7 @@ export interface ProgressPerformance {
   total: number;
   correct: number;
   accuracy: number | null;
+  hasSufficientEvidence: boolean;
 }
 
 export interface ProgressRatingCount {
@@ -100,6 +101,8 @@ export interface ProgressAnalytics {
   states: ProgressStateCount[];
   practice: {
     firstPass: ProgressPerformance;
+    recognition: ProgressPerformance;
+    production: ProgressPerformance;
     byType: ProgressPerformance[];
     retry: ProgressPerformance;
     sessions: number;
@@ -135,7 +138,7 @@ export interface ProgressAnalyticsInput {
   scope: ProgressScope;
   decks: ProgressDeckRecord[];
   reviewLogs: Array<{ cardId: string; rating: number; review: Date }>;
-  practiceAttempts: PracticeAttempt[];
+  practiceEvidence: Map<string, PracticeEvidenceSummary>;
   quizAttempts: Array<{ deckId: string }>;
   now?: Date;
   timezone?: string;
@@ -146,24 +149,14 @@ function dayLabel(date: Date, timezone: string = DEFAULT_STUDY_TIMEZONE): string
   return new Intl.DateTimeFormat("vi-VN", { timeZone: timezone, weekday: "short", day: "numeric" }).format(date);
 }
 
-function performance(label: string, attempts: Array<{ correct: boolean }>): ProgressPerformance {
-  const total = attempts.length;
-  const correct = attempts.filter((attempt) => attempt.correct).length;
+function performance(label: string, total: number, correct: number): ProgressPerformance {
   return {
     label,
     total,
     correct,
     accuracy: total > 0 ? Number(((correct / total) * 100).toFixed(1)) : null,
+    hasSufficientEvidence: total >= EVIDENCE_CONFIG.MIN_STABLE_ATTEMPTS,
   };
-}
-
-function questionTypeLabel(questionType: string): "Gõ từ" | "Trắc nghiệm" | "Story Cloze" | "Khác" {
-  if (questionType === "typed_vi_en") return "Gõ từ";
-  if (questionType === "story_cloze") return "Story Cloze";
-  if (questionType === "multiple_choice" || questionType.startsWith("multiple_choice") || questionType === "fill_in_blank") {
-    return "Trắc nghiệm";
-  }
-  return "Khác";
 }
 
 function stateKey(state: number): ProgressStateCount["key"] {
@@ -190,7 +183,7 @@ export function buildProgressAnalytics({
   scope,
   decks,
   reviewLogs,
-  practiceAttempts,
+  practiceEvidence,
   quizAttempts,
   now = new Date(),
   timezone = DEFAULT_STUDY_TIMEZONE,
@@ -203,7 +196,6 @@ export function buildProgressAnalytics({
 
   const cards = decks.flatMap((deck) => deck.cards);
   const deckById = new Map(decks.map((deck) => [deck.id, deck]));
-  const cardById = new Map(cards.map((card) => [card.id, card]));
 
   // Keep the primary CTA in lockstep with FSRSService.getReviewQueue(): these
   // are cards that can be reviewed now, not cards merely scheduled later today.
@@ -255,19 +247,37 @@ export function buildProgressAnalytics({
     allTimeLogs: allTimeReviewLogs ?? reviewLogs,
   });
 
-  const attemptsByCard = new Map<string, PracticeAttempt[]>();
-  for (const attempt of practiceAttempts) {
-    const attempts = attemptsByCard.get(attempt.flashcardId) ?? [];
-    attempts.push(attempt);
-    attemptsByCard.set(attempt.flashcardId, attempts);
-  }
-
   const weakCards: ProgressWeakCard[] = [];
   let assessedCards = 0;
+  const practiceTotals = {
+    firstPass: { total: 0, correct: 0 },
+    retry: { total: 0, correct: 0 },
+    recognition: { total: 0, correct: 0 },
+    production: { total: 0, correct: 0 },
+  };
+  const firstPassByDeck = new Map(decks.map((deck) => [deck.id, { total: 0, correct: 0 }]));
+
   for (const card of cards) {
-    const evidence: PracticeEvidenceSummary = aggregateCardPracticeEvidence(card.id, attemptsByCard.get(card.id) ?? []);
+    const evidence = practiceEvidence.get(card.id);
+    if (!evidence) continue;
+
+    practiceTotals.firstPass.total += evidence.firstPassAttempts;
+    practiceTotals.firstPass.correct += evidence.firstPassCorrect;
+    practiceTotals.retry.total += evidence.retryAttempts;
+    practiceTotals.retry.correct += evidence.retryCorrect;
+    practiceTotals.recognition.total += evidence.recognitionAxis.lifetimeFirstPassAttempts;
+    practiceTotals.recognition.correct += evidence.recognitionAxis.lifetimeFirstPassCorrect;
+    practiceTotals.production.total += evidence.productionAxis.lifetimeFirstPassAttempts;
+    practiceTotals.production.correct += evidence.productionAxis.lifetimeFirstPassCorrect;
+
+    const deckFirstPass = firstPassByDeck.get(card.deckId);
+    if (deckFirstPass) {
+      deckFirstPass.total += evidence.firstPassAttempts;
+      deckFirstPass.correct += evidence.firstPassCorrect;
+    }
+
     if (evidence.firstPassAttempts >= EVIDENCE_CONFIG.MIN_STABLE_ATTEMPTS) assessedCards += 1;
-    if (evidence.classification !== "NEEDS_PRACTICE" && evidence.classification !== "MIXED") continue;
+    if (!isWeakCardSummary(evidence)) continue;
     const deck = deckById.get(card.deckId);
     if (!deck) continue;
     weakCards.push({
@@ -282,12 +292,17 @@ export function buildProgressAnalytics({
   }
   weakCards.sort((a, b) => b.priority - a.priority || a.term.localeCompare(b.term));
 
-  const firstPassAttempts = practiceAttempts.filter((attempt) => attempt.attemptNumber === 1);
-  const retries = practiceAttempts.filter((attempt) => attempt.attemptNumber === 2);
-  const byTypeOrder: Array<ReturnType<typeof questionTypeLabel>> = ["Gõ từ", "Trắc nghiệm", "Story Cloze", "Khác"];
-  const byType = byTypeOrder
-    .map((label) => performance(label, firstPassAttempts.filter((attempt) => questionTypeLabel(attempt.questionType) === label)))
-    .filter((item) => item.total > 0);
+  const recognition = performance(
+    "Nhận diện",
+    practiceTotals.recognition.total,
+    practiceTotals.recognition.correct
+  );
+  const production = performance(
+    "Tự nhớ & viết",
+    practiceTotals.production.total,
+    practiceTotals.production.correct
+  );
+  const byType = [recognition, production].filter((item) => item.total > 0);
 
   const ratingLabels: Record<number, string> = { 1: "Lại", 2: "Khó", 3: "Tốt", 4: "Dễ" };
   const reviewRatings = ([1, 2, 3, 4] as const).map((rating) => ({
@@ -299,7 +314,7 @@ export function buildProgressAnalytics({
   const decksInsight = decks
     .map((deck) => {
       const deckCardIds = new Set(deck.cards.map((card) => card.id));
-      const deckAttempts = firstPassAttempts.filter((attempt) => deckCardIds.has(attempt.flashcardId));
+      const deckFirstPass = firstPassByDeck.get(deck.id) ?? { total: 0, correct: 0 };
       return {
         id: deck.id,
         name: deck.name,
@@ -309,7 +324,7 @@ export function buildProgressAnalytics({
         dueToday: deck.cards.filter((card) => card.state > 0 && card.due <= now).length,
         weakCards: weakCards.filter((card) => card.deckId === deck.id).length,
         reviewedRecently: reviewLogs.filter((log) => deckCardIds.has(log.cardId) && log.review >= activityStart).length,
-        firstPass: performance("Kết quả lần đầu", deckAttempts),
+        firstPass: performance("Kết quả lần đầu", deckFirstPass.total, deckFirstPass.correct),
       };
     })
     .sort((a, b) => b.dueToday - a.dueToday || b.weakCards - a.weakCards || a.name.localeCompare(b.name));
@@ -335,8 +350,6 @@ export function buildProgressAnalytics({
     (a, b) => b.dueToday - a.dueToday || b.weakCards - a.weakCards || a.name.localeCompare(b.name)
   );
 
-  const scopedFirstPass = firstPassAttempts.filter((attempt) => cardById.has(attempt.flashcardId));
-
   return {
     scope,
     today: {
@@ -351,9 +364,15 @@ export function buildProgressAnalytics({
     upcomingDue,
     states,
     practice: {
-      firstPass: performance("Kết quả lần đầu", scopedFirstPass),
+      firstPass: performance(
+        "Kết quả lần đầu",
+        practiceTotals.firstPass.total,
+        practiceTotals.firstPass.correct
+      ),
+      recognition,
+      production,
       byType,
-      retry: performance("Luyện lại", retries.filter((attempt) => cardById.has(attempt.flashcardId))),
+      retry: performance("Luyện lại", practiceTotals.retry.total, practiceTotals.retry.correct),
       sessions: quizAttempts.length,
       assessedCards,
       hasSufficientEvidence: assessedCards > 0,
@@ -433,19 +452,18 @@ export class ProgressService {
     const deckIds = deckRecords.map((deck) => deck.id);
     const isGlobal = scope.kind === "global";
 
-    const [scopedLogs, practiceAttempts, quizAttempts] = await Promise.all([
+    const evidencePromise =
+      cardIds.length > 0
+        ? practiceEvidenceService.getDeckPracticeEvidence(deckIds)
+        : Promise.resolve(null);
+    const [scopedLogs, evidenceResult, quizAttempts] = await Promise.all([
       cardIds.length > 0
         ? db.reviewLog.findMany({
             where: isGlobal ? undefined : { cardId: { in: cardIds } },
             select: { cardId: true, rating: true, review: true },
           })
         : [],
-      cardIds.length > 0
-        ? db.practiceAttempt.findMany({
-            where: { flashcardId: { in: cardIds } },
-            orderBy: { createdAt: "asc" },
-          })
-        : [],
+      evidencePromise,
       deckIds.length > 0
         ? db.quizAttempt.findMany({ where: { deckId: { in: deckIds } }, select: { deckId: true } })
         : [],
@@ -458,7 +476,7 @@ export class ProgressService {
       scope,
       decks: deckRecords,
       reviewLogs,
-      practiceAttempts,
+      practiceEvidence: evidenceResult?.summaries ?? new Map(),
       quizAttempts,
       timezone: resolvedTimezone,
       allTimeReviewLogs,

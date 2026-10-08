@@ -153,6 +153,129 @@ describe("PracticeEvidenceService", () => {
     });
   });
 
+  describe("Batched deck scopes", () => {
+    it("aggregates multiple decks through one evidence-service call", async () => {
+      const secondDeck = await db.deck.create({
+        data: { name: `Practice Evidence Scope ${crypto.randomUUID()}` },
+      });
+
+      try {
+        const secondCard = await db.flashcard.create({
+          data: {
+            deckId: secondDeck.id,
+            term: "resilient",
+            normalizedTerm: "resilient",
+            meaningVi: "kiên cường",
+          },
+        });
+        await db.practiceAttempt.createMany({
+          data: [
+            {
+              flashcardId: cardId,
+              sessionId: "scope-primary",
+              questionType: "multiple_choice_en_vi",
+              mode: "quiz",
+              attemptNumber: 1,
+              answer: "phân bổ",
+              expectedAnswer: "allocate",
+              correct: true,
+            },
+            {
+              flashcardId: secondCard.id,
+              sessionId: "scope-secondary",
+              questionType: "typed_vi_en",
+              mode: "quiz",
+              attemptNumber: 1,
+              answer: "wrong",
+              expectedAnswer: "resilient",
+              correct: false,
+            },
+          ],
+        });
+
+        const evidence = await practiceEvidenceService.getDeckPracticeEvidence([deckId, secondDeck.id]);
+
+        expect(evidence.summaries.size).toBe(2);
+        expect(evidence.summaries.get(cardId)?.recognitionAxis.lifetimeFirstPassAttempts).toBe(1);
+        expect(evidence.summaries.get(secondCard.id)?.productionAxis.lifetimeFirstPassAttempts).toBe(1);
+      } finally {
+        await db.deck.delete({ where: { id: secondDeck.id } });
+      }
+    });
+  });
+
+  describe("Legacy overall compatibility", () => {
+    it("keeps legacy first-pass totals inclusive of comprehension and other persisted question types", async () => {
+      await db.practiceAttempt.createMany({
+        data: [
+          {
+            flashcardId: cardId,
+            sessionId: "overall-recognition",
+            questionType: "multiple_choice_en_vi",
+            mode: "quiz",
+            attemptNumber: 1,
+            answer: "phân bổ",
+            expectedAnswer: "allocate",
+            correct: true,
+          },
+          {
+            flashcardId: cardId,
+            sessionId: "overall-production",
+            questionType: "typed_vi_en",
+            mode: "quiz",
+            attemptNumber: 1,
+            answer: "wrong",
+            expectedAnswer: "allocate",
+            correct: false,
+          },
+          {
+            flashcardId: cardId,
+            sessionId: "overall-comprehension",
+            questionType: "story_comprehension",
+            mode: "story",
+            attemptNumber: 1,
+            answer: "A",
+            expectedAnswer: "A",
+            correct: true,
+          },
+          {
+            flashcardId: cardId,
+            sessionId: "overall-legacy",
+            questionType: "legacy_non_vocab",
+            mode: "quiz",
+            attemptNumber: 1,
+            answer: "wrong",
+            expectedAnswer: "right",
+            correct: false,
+          },
+          {
+            flashcardId: cardId,
+            sessionId: "overall-production",
+            questionType: "typed_vi_en",
+            mode: "quiz",
+            attemptNumber: 2,
+            answer: "allocate",
+            expectedAnswer: "allocate",
+            correct: true,
+          },
+        ],
+      });
+
+      const evidence = await practiceEvidenceService.getDeckPracticeEvidence(deckId);
+      const summary = evidence.summaries.get(cardId);
+
+      expect(summary).toMatchObject({
+        firstPassAttempts: 4,
+        firstPassCorrect: 2,
+        firstPassIncorrect: 2,
+        retryAttempts: 1,
+        retryCorrect: 1,
+      });
+      expect(summary?.recognitionAxis).toMatchObject({ lifetimeFirstPassAttempts: 1, lifetimeFirstPassCorrect: 1 });
+      expect(summary?.productionAxis).toMatchObject({ lifetimeFirstPassAttempts: 1, lifetimeFirstPassCorrect: 0 });
+    });
+  });
+
   describe("Question-Type Separation", () => {
     it("9. aggregates typed_vi_en separately", () => {
       const attempts = [

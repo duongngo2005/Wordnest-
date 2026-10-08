@@ -78,8 +78,8 @@ describe("Shadowing Isolation & Evidence Truthfulness", () => {
       // Must NOT contain "Điểm phát âm AI"
       expect(playerContent).not.toContain("Điểm phát âm AI");
 
-      // Must contain approved terminology "Độ khớp văn bản" or "Text Match"
-      expect(playerContent).toContain("Độ khớp văn bản");
+      // Must contain truthful transcript-match terminology.
+      expect(playerContent).toContain("Khớp văn bản nhận diện với câu mẫu");
     });
   });
 

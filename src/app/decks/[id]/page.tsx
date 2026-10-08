@@ -24,6 +24,14 @@ export default async function DeckPage({ params }: DeckPageProps) {
     evidenceMap[cardId] = serializePracticeEvidenceSummary(summary);
   }
 
+  const now = new Date();
+  const dueCardsCount = deck.cards.filter(
+    (card) => (card.state ?? 0) > 0 && card.due && new Date(card.due) <= now
+  ).length;
+  const newCardsCount = deck.cards.filter(
+    (card) => (card.state ?? 0) === 0
+  ).length;
+
   return (
     <div className="app-shell flex min-h-[100dvh] flex-col">
       <Header />
@@ -33,6 +41,8 @@ export default async function DeckPage({ params }: DeckPageProps) {
           initialDeck={deck}
           evidenceMap={evidenceMap}
           needPracticeCardIds={needPracticeCards.map((item) => item.card.id)}
+          initialDueCardsCount={dueCardsCount}
+          initialNewCardsCount={newCardsCount}
         />
       </main>
     </div>

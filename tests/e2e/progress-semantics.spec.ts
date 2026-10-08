@@ -105,3 +105,83 @@ test("shows an insufficient-practice state instead of a misleading zero weak-car
   await expect(page.getByRole("region", { name: "Cần chú ý" }).getByRole("link", { name: "Làm bài Quiz" })).toHaveAttribute("href", `/decks/${deck.id}/quiz`);
   await expect(page.getByTestId("today-needs-practice")).toHaveText(/Chưa đủ dữ liệu/);
 });
+
+test("separates recognition and production first-pass progress without mobile overflow", async ({ page }, testInfo) => {
+  const deck = await db.deck.create({
+    data: {
+      name: `Practice axes ${testInfo.testId}`,
+      cards: { create: { term: "contrast", normalizedTerm: "contrast", meaningVi: "đối chiếu" } },
+    },
+    include: { cards: true },
+  });
+  deckId = deck.id;
+  const card = deck.cards[0];
+  const attempts = [
+    ...Array.from({ length: 10 }, (_, index) => ({
+      flashcardId: card.id,
+      sessionId: `recognition-${index}`,
+      questionType: "multiple_choice_en_vi",
+      mode: "quiz",
+      attemptNumber: 1,
+      answer: "answer",
+      expectedAnswer: "contrast",
+      correct: index < 9,
+    })),
+    ...Array.from({ length: 5 }, (_, index) => ({
+      flashcardId: card.id,
+      sessionId: `production-${index}`,
+      questionType: "typed_vi_en",
+      mode: "quiz",
+      attemptNumber: 1,
+      answer: "answer",
+      expectedAnswer: "contrast",
+      correct: index < 2,
+    })),
+  ];
+  await db.practiceAttempt.createMany({ data: attempts });
+
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.goto(`/progress/decks/${deck.id}`);
+  await expect(page.getByRole("heading", { name: "Khả năng thực hành" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Nhận diện" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tự nhớ & viết" })).toBeVisible();
+  await expect(page.getByText("90%", { exact: true })).toBeVisible();
+  await expect(page.getByText("40%", { exact: true })).toBeVisible();
+  await expect(page.getByText("9 / 10 lượt first-pass đúng", { exact: true })).toBeVisible();
+  await expect(page.getByText("2 / 5 lượt first-pass đúng", { exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 375, height: 844 });
+  await expect(page.getByRole("heading", { name: "Nhận diện" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tự nhớ & viết" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("shows production as no data when only recognition has first-pass evidence", async ({ page }, testInfo) => {
+  const deck = await db.deck.create({
+    data: {
+      name: `Recognition only ${testInfo.testId}`,
+      cards: { create: { term: "recognize", normalizedTerm: "recognize", meaningVi: "nhận ra" } },
+    },
+    include: { cards: true },
+  });
+  deckId = deck.id;
+  await db.practiceAttempt.createMany({
+    data: Array.from({ length: 10 }, (_, index) => ({
+      flashcardId: deck.cards[0].id,
+      sessionId: `recognition-only-${index}`,
+      questionType: "fill_in_blank",
+      mode: "quiz",
+      attemptNumber: 1,
+      answer: "recognize",
+      expectedAnswer: "recognize",
+      correct: index < 8,
+    })),
+  });
+
+  await page.goto(`/progress/decks/${deck.id}`);
+  const productionCard = page.locator("article").filter({
+    has: page.getByRole("heading", { name: "Tự nhớ & viết" }),
+  });
+  await expect(productionCard.getByText("Chưa có dữ liệu", { exact: true })).toBeVisible();
+  await expect(productionCard.getByText("0%", { exact: true })).toHaveCount(0);
+});

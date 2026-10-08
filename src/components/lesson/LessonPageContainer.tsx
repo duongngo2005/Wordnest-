@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, Sparkles } from "lucide-react";
@@ -35,8 +35,19 @@ export function LessonPageContainer({
   );
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(initialOpenGenerator);
   const [isShadowing, setIsShadowing] = useState(false);
+  const shadowingTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const activeLesson = lessons.find((l) => l.id === activeLessonId) || lessons[0] || null;
+
+  const startShadowing = (trigger: HTMLButtonElement) => {
+    shadowingTriggerRef.current = trigger;
+    setIsShadowing(true);
+  };
+
+  const exitShadowing = () => {
+    setIsShadowing(false);
+    window.requestAnimationFrame(() => shadowingTriggerRef.current?.focus());
+  };
 
   const handleDeleteLesson = async (lessonId: string) => {
     try {
@@ -120,13 +131,13 @@ export function LessonPageContainer({
             type: "lesson",
             cefr: activeLesson.cefr,
           }}
-          onExit={() => setIsShadowing(false)}
+          onExit={exitShadowing}
         />
       ) : activeLesson ? (
         <LessonReader
           lesson={activeLesson}
           deck={deck}
-          onStartShadowing={() => setIsShadowing(true)}
+          onStartShadowing={startShadowing}
           onDelete={() => handleDeleteLesson(activeLesson.id)}
         />
       ) : (

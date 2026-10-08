@@ -27,7 +27,7 @@ export type LessonData = {
 export type LessonReaderProps = {
   lesson: LessonData;
   deck: { id: string; name: string };
-  onStartShadowing?: () => void;
+  onStartShadowing?: (trigger: HTMLButtonElement) => void;
   onDelete?: () => void;
 };
 
@@ -138,12 +138,12 @@ export function LessonReader({
             {onStartShadowing && (
               <button
                 type="button"
-                onClick={onStartShadowing}
+                onClick={(event) => onStartShadowing(event.currentTarget)}
                 className="brick-button-secondary px-3.5 py-1.5 text-xs font-black flex items-center gap-1.5 shadow-[2px_2px_0px_#221C16]"
-                title="Luyện Shadowing bài học này"
+                title="Nghe và nói nhại"
               >
                 <Mic className="h-3.5 w-3.5 text-[var(--accent)]" />
-                <span>Luyện Shadowing</span>
+                <span>Nghe &amp; nói nhại (Shadowing)</span>
               </button>
             )}
 
@@ -241,33 +241,43 @@ export function LessonReader({
               return (
                 <div
                   key={`${usage.term}-${idx}`}
-                  onClick={() => setSelectedWord(isSelected ? null : usage.term.toLowerCase())}
-                  className={`rounded-xl border-2 p-3 transition-all cursor-pointer ${
+                  className={`relative rounded-xl border-2 p-3 transition-all ${
                     isSelected
                       ? "border-[#221C16] bg-[#FEF8ED] shadow-[2px_2px_0px_#221C16]"
                       : "border-[#E5E0D5] bg-[#FFFDF9] hover:border-[#221C16]"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWord(isSelected ? null : usage.term.toLowerCase())}
+                    aria-pressed={isSelected}
+                    aria-label={`Xem ngữ cảnh của ${usage.term}`}
+                    className="block w-full cursor-pointer pr-9 text-left"
+                  >
+                    <span className="block">
+                      <span className="flex items-center gap-1.5">
                         <span className="font-black text-sm text-[#221C16]">{usage.term}</span>
                         {usage.term.toLowerCase() !== usage.usedAs.toLowerCase() && (
                           <span className="text-[11px] font-semibold text-[#8C8275]">
                             (dạng: <i>{usage.usedAs}</i>)
                           </span>
                         )}
-                        <PronounceButton text={usage.usedAs} size="sm" />
-                      </div>
-                      <p className="text-xs font-bold text-[#8A5817] mt-0.5">{meaning}</p>
-                    </div>
-                  </div>
+                      </span>
+                      <span className="mt-0.5 block text-xs font-bold text-[#8A5817]">
+                        {meaning}
+                      </span>
+                    </span>
 
-                  {sentence && (
-                    <blockquote className="mt-2 text-xs text-[#524B43] italic border-l-2 border-[var(--accent)] pl-2">
-                      &ldquo;{sentence}&rdquo;
-                    </blockquote>
-                  )}
+                    {sentence && (
+                      <span className="mt-2 block border-l-2 border-[var(--accent)] pl-2 text-xs italic text-[#524B43]">
+                        &ldquo;{sentence}&rdquo;
+                      </span>
+                    )}
+                  </button>
+
+                  <div className="absolute right-3 top-3">
+                    <PronounceButton text={usage.usedAs} size="sm" />
+                  </div>
                 </div>
               );
             })}
@@ -290,11 +300,11 @@ export function LessonReader({
           {onStartShadowing && (
             <button
               type="button"
-              onClick={onStartShadowing}
+                onClick={(event) => onStartShadowing(event.currentTarget)}
               className="brick-button-secondary shrink-0 px-4 py-3 text-xs sm:text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16] flex items-center"
             >
               <Mic className="w-4 h-4 text-[var(--accent)]" />
-              <span>Luyện Shadowing</span>
+                <span>Nghe &amp; nói nhại (Shadowing)</span>
             </button>
           )}
           <Link

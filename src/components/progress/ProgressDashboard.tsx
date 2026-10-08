@@ -30,9 +30,11 @@ function percentage(value: number, maximum: number): string {
 }
 
 function accuracy(performance: ProgressPerformance): string {
-  return performance.accuracy === null
-    ? "Chưa có dữ liệu"
-    : `${performance.accuracy}% · ${performance.correct}/${performance.total}`;
+  if (performance.accuracy === null) return "Chưa có dữ liệu";
+  if (!performance.hasSufficientEvidence) {
+    return `${performance.correct}/${performance.total} · Cần thêm dữ liệu`;
+  }
+  return `${performance.accuracy}% · ${performance.correct}/${performance.total}`;
 }
 
 const srsStateColors: Record<string, string> = {
@@ -223,6 +225,46 @@ function HorizontalBars({
   );
 }
 
+function PracticeCapabilityCard({
+  title,
+  description,
+  performance,
+  colorClass,
+  backgroundClass,
+  textClass,
+}: {
+  title: string;
+  description: string;
+  performance: ProgressPerformance;
+  colorClass: string;
+  backgroundClass: string;
+  textClass: string;
+}) {
+  const hasEvidence = performance.total > 0;
+  const needsMoreEvidence = hasEvidence && !performance.hasSufficientEvidence;
+
+  return (
+    <article className={`min-w-0 rounded-xl border-2 ${colorClass} ${backgroundClass} p-3 shadow-[2px_2px_0px_#221C16]`}>
+      <h3 className="text-sm font-black text-[#221C16]">{title}</h3>
+      <p className="mt-1 text-xs font-semibold leading-relaxed text-[#6B6258]">{description}</p>
+      {hasEvidence ? (
+        <div className="mt-4">
+          <p className={`font-mono text-2xl font-black ${textClass}`}>
+            {needsMoreEvidence ? `${performance.correct}/${performance.total}` : `${performance.accuracy}%`}
+          </p>
+          <p className="mt-1 text-xs font-bold text-[#6B6258]">
+            {needsMoreEvidence
+              ? "Cần thêm dữ liệu"
+              : `${performance.correct} / ${performance.total} lượt first-pass đúng`}
+          </p>
+        </div>
+      ) : (
+        <p className="mt-4 font-mono text-base font-black text-[#6B6258]">Chưa có dữ liệu</p>
+      )}
+    </article>
+  );
+}
+
 function PracticePanel({
   analytics,
   practiceHref,
@@ -241,23 +283,48 @@ function PracticePanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 id="practice-heading" className="text-base font-black text-[#221C16]">
-            Kết quả luyện tập
+            Khả năng thực hành
           </h2>
           <p className="mt-0.5 text-xs font-semibold text-[#6B6258]">
-            Chỉ tính câu trả lời đầu tiên; luyện lại là củng cố sau phản hồi.
+            Kết quả tích lũy của lượt trả lời đầu tiên; luyện lại là củng cố sau phản hồi.
           </p>
         </div>
         <GraduationCap className="h-5 w-5 shrink-0 text-[#0284C7]" aria-hidden="true" strokeWidth={2.5} />
       </div>
 
+      <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2">
+        <PracticeCapabilityCard
+          title="Nhận diện"
+          description="Khả năng nhận ra và hiểu từ khi gặp từ, ngữ cảnh hoặc đáp án gợi ý."
+          performance={analytics.practice.recognition}
+          colorClass="border-[#164E8C]"
+          backgroundClass="bg-[#E8F2FF]"
+          textClass="text-[#164E8C]"
+        />
+        <PracticeCapabilityCard
+          title="Tự nhớ & viết"
+          description="Khả năng tự nhớ và viết từ khi không có danh sách đáp án gợi ý."
+          performance={analytics.practice.production}
+          colorClass="border-[#5B3B8A]"
+          backgroundClass="bg-[#F3E8FF]"
+          textClass="text-[#5B3B8A]"
+        />
+      </div>
+
       {hasPracticeResults ? (
-        <>
-          <div className={`mt-4 grid gap-4 ${hasRetries ? "sm:grid-cols-2" : "max-w-sm"}`}>
-            <div className="rounded-xl border-2 border-[#164E8C] bg-[#E8F2FF] p-3 shadow-[2px_2px_0px_#164E8C]">
-              <p className="text-xs font-bold uppercase tracking-wider text-[#4A617C]">
-                Lần đầu (Đánh giá thật)
+        <div className="mt-5 border-t border-dashed border-[#C9BFB1] pt-4">
+          <p className="text-xs font-black uppercase tracking-wider text-[#6B6258]">
+            Độ chính xác chung của các bài thực hành
+          </p>
+          <p className="mt-1 text-xs font-semibold leading-relaxed text-[#6B6258]">
+            Đây là số tổng hợp phụ; hai chỉ số ở trên cho biết rõ từng năng lực.
+          </p>
+          <div className={`mt-3 grid gap-3 ${hasRetries ? "sm:grid-cols-2" : "max-w-sm"}`}>
+            <div className="rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-3 shadow-[2px_2px_0px_#221C16]">
+              <p className="text-xs font-bold uppercase tracking-wider text-[#6B6258]">
+                Lần đầu
               </p>
-              <p className="mt-1 font-mono text-2xl font-black text-[#164E8C]">
+              <p className="mt-1 font-mono text-xl font-black text-[#221C16]">
                 {accuracy(analytics.practice.firstPass)}
               </p>
             </div>
@@ -266,41 +333,18 @@ function PracticePanel({
                 <p className="text-xs font-bold uppercase tracking-wider text-[#6B6258]">
                   Luyện lại (Củng cố)
                 </p>
-                <p className="mt-1 font-mono text-2xl font-black text-[#221C16]">
+                <p className="mt-1 font-mono text-xl font-black text-[#221C16]">
                   {accuracy(analytics.practice.retry)}
                 </p>
               </div>
             ) : null}
           </div>
-          {analytics.practice.byType.length > 0 ? (
-            <div className="mt-5 border-t border-dashed border-[#C9BFB1] pt-4">
-              <p className="text-xs font-black uppercase tracking-wider text-[#6B6258]">Dạng câu hỏi</p>
-              <ul className="mt-3 space-y-2.5">
-                {analytics.practice.byType.map((item) => (
-                  <li
-                    key={item.label}
-                    className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-2.5 text-xs font-bold"
-                  >
-                    <span className="font-extrabold text-[#221C16]">{item.label}</span>
-                    <span
-                      className="h-3 overflow-hidden rounded-md border border-[#221C16]/20 bg-[#FAF6EE] p-0.5 shadow-inner"
-                      aria-hidden="true"
-                    >
-                      <span
-                        className="block h-full rounded-sm bg-[#0284C7]"
-                        style={{ width: item.accuracy !== null ? `${item.accuracy}%` : "0%" }}
-                      />
-                    </span>
-                    <span className="font-mono font-black text-[#221C16]">{accuracy(item)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </>
+        </div>
       ) : (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm font-bold text-[#6B6258]">Chưa có dữ liệu luyện tập.</p>
+          <p className="text-sm font-bold text-[#6B6258]">
+            Làm Thử thách để WordNest kiểm tra từng khả năng thực hành.
+          </p>
           {practiceHref ? (
             <Link href={practiceHref} className="brick-button-secondary text-xs font-black">
               Làm bài Quiz

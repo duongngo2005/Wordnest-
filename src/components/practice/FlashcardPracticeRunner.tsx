@@ -28,7 +28,6 @@ interface FlashcardPracticeRunnerProps {
 }
 
 const modeOptions: Array<{ value: FlashcardPracticeMode; label: string; description: string }> = [
-  { value: "en_vi", label: "EN → VI", description: "Nhìn tiếng Anh, nhớ nghĩa Việt." },
   { value: "vi_en", label: "VI → EN", description: "Nhìn nghĩa Việt, nhớ từ tiếng Anh." },
   { value: "mix", label: "Mix", description: "Đan xen hai hướng trong một lượt." },
 ];
@@ -63,7 +62,7 @@ function PracticeModeSelector({
 
       <fieldset>
         <legend className="mb-2.5 text-sm font-black text-[#221C16]">Chọn hướng luyện</legend>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {modeOptions.map((option) => {
             const isSelected = selectedMode === option.value;
             const inputId = `flashcard-practice-mode-${option.value}`;
@@ -189,7 +188,7 @@ function PracticeCompletion({
 }
 
 export function FlashcardPracticeRunner({ deckId, deckName, initialCards }: FlashcardPracticeRunnerProps) {
-  const [selectedMode, setSelectedMode] = useState<FlashcardPracticeMode>("en_vi");
+  const [selectedMode, setSelectedMode] = useState<FlashcardPracticeMode>("vi_en");
   const [sessionMode, setSessionMode] = useState<FlashcardPracticeMode | null>(null);
   const [sessionItems, setSessionItems] = useState<PracticeCardSessionItem[] | null>(null);
   const [phase, setPhase] = useState<PracticePhase>("setup");

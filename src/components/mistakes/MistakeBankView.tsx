@@ -136,15 +136,34 @@ export function MistakeBankView({ deck, initialData }: MistakeBankViewProps) {
           </p>
         </div>
 
-        <Link href={`/decks/${deck.id}/quiz?mode=focused_practice`}>
-          <Button
-            variant="primary"
-            className="border-2 border-stone-800 bg-amber-400 hover:bg-amber-500 text-stone-900 font-black shadow-[3px_3px_0px_#1c1917] flex items-center gap-2"
+        {mistakes.length > 0 ? (
+          <Link
+            href={`/decks/${deck.id}/quiz?mode=focused_practice&cardIds=${Array.from(
+              new Set(mistakes.map((m) => m.flashcardId))
+            ).join(",")}`}
           >
-            <Sparkles className="w-4 h-4 text-amber-900" />
-            <span>Luyện các câu này (Smart Practice)</span>
-          </Button>
-        </Link>
+            <Button
+              variant="primary"
+              className="border-2 border-stone-800 bg-amber-400 hover:bg-amber-500 text-stone-900 font-black shadow-[3px_3px_0px_#1c1917] flex items-center gap-2"
+            >
+              <Sparkles className="w-4 h-4 text-amber-900" />
+              <span>
+                Luyện lại {Array.from(new Set(mistakes.map((m) => m.flashcardId))).length} từ này
+              </span>
+            </Button>
+          </Link>
+        ) : (
+          <Link href={`/decks/${deck.id}/quiz?mode=focused_practice`}>
+            <Button
+              variant="primary"
+              disabled
+              className="border-2 border-stone-800 bg-amber-400 text-stone-900 font-black shadow-[3px_3px_0px_#1c1917] flex items-center gap-2 opacity-50 cursor-not-allowed"
+            >
+              <Sparkles className="w-4 h-4 text-amber-900" />
+              <span>Luyện các câu này</span>
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Overview Stat Badges */}
@@ -365,6 +384,18 @@ export function MistakeBankView({ deck, initialData }: MistakeBankViewProps) {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <Link
+                    href={`/decks/${deck.id}/quiz?mode=focused_practice&cardIds=${item.flashcardId}`}
+                    title="Luyện lại từ này"
+                  >
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="border-2 border-stone-800 text-xs font-bold shadow-[1px_1px_0px_#1c1917]"
+                    >
+                      Luyện từ này
+                    </Button>
+                  </Link>
                   <ExplainAnswerButton
                     practiceAttemptId={item.id}
                     flashcardId={item.flashcardId}

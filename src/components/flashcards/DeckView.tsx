@@ -6,12 +6,14 @@ import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
+  ArrowRight,
   BookOpen,
   Download,
   GraduationCap,
   Layers,
   MoreHorizontal,
   Plus,
+  RotateCcw,
   Search,
   Sparkles,
   Target,
@@ -20,9 +22,11 @@ import {
 import { AddCardsToDeckForm } from "./AddCardsToDeckForm";
 import { FlashcardItem, FlashcardData } from "./FlashcardItem";
 import { FlashcardStatus } from "@/lib/flashcards/status";
-import { SerializedPracticeEvidenceSummary } from "@/services/vocabulary";
+import type { SerializedPracticeEvidenceSummary } from "@/services/vocabulary/practice-evidence-service";
+import { computeDeckHeroRecommendation } from "@/services/vocabulary/deck-hero-recommendation";
 import { useToast } from "@/components/ui/ToastProvider";
 import { LessonGeneratorModal } from "@/components/lesson/LessonGeneratorModal";
+import { ReadingHubModal } from "@/components/story/ReadingHubModal";
 
 interface DeckViewProps {
   initialDeck: {
@@ -35,11 +39,19 @@ interface DeckViewProps {
   };
   evidenceMap?: Record<string, SerializedPracticeEvidenceSummary>;
   needPracticeCardIds?: string[];
+  initialDueCardsCount?: number;
+  initialNewCardsCount?: number;
 }
 
 const pageSize = 20;
 
-export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }: DeckViewProps) {
+export function DeckView({
+  initialDeck,
+  evidenceMap,
+  needPracticeCardIds = [],
+  initialDueCardsCount,
+  initialNewCardsCount,
+}: DeckViewProps) {
   const router = useRouter();
   const toast = useToast();
   const [deck, setDeck] = useState(initialDeck);
@@ -50,6 +62,7 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
   const [isDeleting, setIsDeleting] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
+  const [isReadingHubOpen, setIsReadingHubOpen] = useState(false);
 
   useEffect(() => {
     if (!isConfirmingDelete) return;
@@ -70,6 +83,29 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
       return card && summary ? [{ card, summary }] : [];
     });
   }, [deck.cards, evidenceMap, needPracticeCardIds]);
+
+  const dueCardsCount = useMemo(() => {
+    if (typeof initialDueCardsCount === "number") return initialDueCardsCount;
+    const now = new Date();
+    return deck.cards.filter(
+      (card) => (card.state ?? 0) > 0 && card.due && new Date(card.due) <= now
+    ).length;
+  }, [deck.cards, initialDueCardsCount]);
+
+  const newCardsCount = useMemo(() => {
+    if (typeof initialNewCardsCount === "number") return initialNewCardsCount;
+    return deck.cards.filter((card) => (card.state ?? 0) === 0).length;
+  }, [deck.cards, initialNewCardsCount]);
+
+  const recommendation = useMemo(() => {
+    return computeDeckHeroRecommendation({
+      deckId: deck.id,
+      totalCards: deck.cards.length,
+      dueCardsCount,
+      needPracticeCardsCount: needPracticeCards.length,
+      newCardsCount,
+    });
+  }, [deck.id, deck.cards.length, dueCardsCount, needPracticeCards.length, newCardsCount]);
 
   const filteredCards = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -163,7 +199,10 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
       </Link>
 
       {/* Deck Header Card */}
-      <section className="wn-primary-surface brick-card relative overflow-visible border-l-[6px] border-l-[var(--accent)] bg-[#FFFDF9] rounded-2xl shadow-[4px_4px_0px_#221C16] focus-within:z-30" aria-labelledby="deck-name">
+      <section
+        className="wn-primary-surface brick-card relative overflow-visible border-l-[6px] border-l-[var(--accent)] bg-[#FFFDF9] rounded-2xl shadow-[4px_4px_0px_#221C16] focus-within:z-30"
+        aria-labelledby="deck-name"
+      >
         <div className="flex items-center justify-between rounded-t-[calc(var(--radius-lg)-2px)] border-b-2 border-dashed border-[#DCD3C5] bg-[#FEF8ED] px-4 py-2.5 sm:px-5">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
@@ -174,81 +213,86 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
             </span>
           </div>
 
-          <details className="relative wn-menu-details">
-            <summary
-              aria-label="Thêm tùy chọn"
-              className="relative z-50 flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
+          <div className="flex items-center gap-2">
+            {/* Utility Action: Thêm từ */}
+            <button
+              type="button"
+              onClick={() => setIsAddingCards((current) => !current)}
+              aria-expanded={isAddingCards}
+              className="inline-flex items-center gap-1.5 rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[1.5px_1.5px_0px_#221C16] transition-transform active:translate-y-0.5 cursor-pointer hover:bg-[#FAF6EE]"
             >
-              <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
-            </summary>
-            <div
-              className="fixed inset-0 z-40 cursor-default"
-              onClick={(e) => {
-                e.stopPropagation();
-                e.currentTarget.closest("details")?.removeAttribute("open");
-              }}
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                e.currentTarget.closest("details")?.removeAttribute("open");
-              }}
-            />
-            <div className="absolute right-0 top-full z-50 mt-1.5 grid w-52 gap-1 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
-              <Link
-                href={`/progress/decks/${deck.id}`}
-                className="wn-button wn-button-quiet justify-start text-xs font-bold"
+              <Plus className="h-3.5 w-3.5 text-[var(--accent)]" strokeWidth={2.5} />
+              <span>Thêm từ</span>
+            </button>
+
+            <details className="relative wn-menu-details">
+              <summary
+                aria-label="Thêm tùy chọn"
+                className="relative z-50 flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16] cursor-pointer list-none transition-transform active:translate-y-0.5"
               >
-                <Target className="h-4 w-4 text-[#0284C7]" />
-                <span>Tiến độ</span>
-              </Link>
-              <a
-                href={`/api/decks/${deck.id}/export`}
-                download
-                className="wn-button wn-button-quiet justify-start text-xs font-bold"
-              >
-                <Download className="h-4 w-4" />
-                <span>Xuất dữ liệu</span>
-              </a>
-              <Link
-                href={`/decks/${deck.id}/story`}
-                className="wn-button wn-button-quiet justify-start text-xs font-bold"
-              >
-                <BookOpen className="h-4 w-4" />
-                <span>Story</span>
-              </Link>
-              <Link
-                href={`/decks/${deck.id}/lesson`}
-                className="wn-button wn-button-quiet justify-start text-xs font-bold"
-              >
-                <Sparkles className="h-4 w-4 text-[var(--accent)]" />
-                <span>Bài học AI</span>
-              </Link>
-              <Link
-                href={`/decks/${deck.id}/practice`}
-                className="wn-button wn-button-quiet justify-start text-xs font-bold"
-              >
-                <GraduationCap className="h-4 w-4" />
-                <span>Luyện thẻ</span>
-              </Link>
-              <Link
-                href={`/decks/${deck.id}/mistakes`}
-                className="wn-button wn-button-quiet justify-start text-xs font-bold text-rose-700 hover:text-rose-900"
-              >
-                <AlertCircle className="h-4 w-4 text-rose-600" />
-                <span>Sổ tay câu sai</span>
-              </Link>
-              <button
-                type="button"
+                <MoreHorizontal className="h-4 w-4 text-[#6B6258]" />
+              </summary>
+              <div
+                className="fixed inset-0 z-40 cursor-default"
                 onClick={(e) => {
+                  e.stopPropagation();
                   e.currentTarget.closest("details")?.removeAttribute("open");
-                  setIsConfirmingDelete(true);
                 }}
-                className="wn-button wn-button-quiet wn-button-danger justify-start text-xs font-bold cursor-pointer"
-              >
-                <Trash2 className="h-4 w-4" />
-                <span>Xóa bộ từ</span>
-              </button>
-            </div>
-          </details>
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.currentTarget.closest("details")?.removeAttribute("open");
+                }}
+              />
+              <div className="absolute right-0 top-full z-50 mt-1.5 grid w-56 gap-1 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-2 shadow-[3px_3px_0px_#221C16]">
+                <Link
+                  href={`/progress/decks/${deck.id}`}
+                  className="wn-button wn-button-quiet justify-start text-xs font-bold"
+                >
+                  <Target className="h-4 w-4 text-[#0284C7]" />
+                  <span>Tiến độ</span>
+                </Link>
+                <Link
+                  href={`/decks/${deck.id}/practice`}
+                  className="wn-button wn-button-quiet flex-col items-start gap-0.5 py-1.5 text-xs font-bold"
+                >
+                  <div className="flex items-center gap-2">
+                    <GraduationCap className="h-4 w-4 text-[#6B6258]" />
+                    <span>Lướt thẻ tự do</span>
+                  </div>
+                  <span className="text-[10px] font-medium text-[#6B6258] pl-6">
+                    Luyện nhanh, không ảnh hưởng lịch ôn
+                  </span>
+                </Link>
+                <Link
+                  href={`/decks/${deck.id}/mistakes`}
+                  className="wn-button wn-button-quiet justify-start text-xs font-bold text-rose-700 hover:text-rose-900"
+                >
+                  <AlertCircle className="h-4 w-4 text-rose-600" />
+                  <span>Sổ tay câu sai</span>
+                </Link>
+                <a
+                  href={`/api/decks/${deck.id}/export`}
+                  download
+                  className="wn-button wn-button-quiet justify-start text-xs font-bold"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Xuất dữ liệu</span>
+                </a>
+                <div className="my-1 border-t border-dashed border-[#DCD3C5]" />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    setIsConfirmingDelete(true);
+                  }}
+                  className="wn-button wn-button-quiet wn-button-danger justify-start text-xs font-bold cursor-pointer"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>Xóa bộ từ</span>
+                </button>
+              </div>
+            </details>
+          </div>
         </div>
 
         <div className="space-y-4 p-4 sm:p-6">
@@ -265,48 +309,171 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
               </p>
             ) : null}
           </div>
+        </div>
+      </section>
 
-          {/* Core Action Trio: Visible, tactile, hierarchically distinct */}
-          <div className="grid grid-cols-2 gap-2.5 pt-1 sm:grid-cols-4">
-            <Link
-              href={`/decks/${deck.id}/study`}
-              prefetch
-              className="brick-button-primary col-span-2 px-4 py-3 text-sm font-black sm:col-span-1"
-            >
-              <Sparkles className="h-4 w-4" strokeWidth={2.5} />
-              <span>Ôn tập</span>
-            </Link>
+      {/* Hero Recommendation Banner: Deterministic Next Best Action */}
+      <section
+        aria-label="Gợi ý bước tiếp theo"
+        className="brick-card rounded-2xl border-2 border-[#221C16] bg-[#FEF8ED] p-4 sm:p-5 shadow-[3px_3px_0px_#221C16]"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1.5 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 border-[#221C16] bg-[#FDE68A] shadow-[1px_1px_0px_#221C16]">
+                <Sparkles className="h-3.5 w-3.5 text-[#B45309]" strokeWidth={2.5} />
+              </span>
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#9A3412]">
+                Bạn nên làm gì tiếp?
+              </span>
+              <span className="rounded-full border border-[#221C16] bg-[#FFFDF9] px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#221C16]">
+                {recommendation.badge}
+              </span>
+            </div>
+            <h2 className="text-base sm:text-lg font-black text-[#221C16] leading-snug">
+              {recommendation.title}
+            </h2>
+            <p className="text-xs sm:text-sm font-semibold text-[#6B6258] leading-relaxed max-w-2xl">
+              {recommendation.description}
+            </p>
+          </div>
 
-            <Link
-              href={`/decks/${deck.id}/quiz`}
-              prefetch
-              className="brick-button-secondary px-4 py-2.5 text-sm font-black border-[#221C16]"
-            >
-              <GraduationCap className="h-4 w-4 text-[#0284C7]" strokeWidth={2.5} />
-              <span>Luyện tập</span>
-            </Link>
+          <div className="flex flex-wrap items-center gap-2 pt-1 sm:pt-0 shrink-0">
+            {recommendation.secondaryAction ? (
+              <Link
+                href={recommendation.secondaryAction.href!}
+                className="brick-button-secondary px-3.5 py-2 text-xs font-black"
+              >
+                {recommendation.secondaryAction.label}
+              </Link>
+            ) : null}
 
-            <Link
-              href={`/decks/${deck.id}/story?create=ai`}
-              prefetch
-              className="brick-button-secondary px-4 py-2.5 text-sm font-black border-[#221C16]"
-            >
-              <BookOpen className="h-4 w-4 text-[#0D9488]" strokeWidth={2.5} />
-              <span>Tạo truyện AI</span>
-            </Link>
-
-            <button
-              type="button"
-              onClick={() => setIsAddingCards((current) => !current)}
-              aria-expanded={isAddingCards}
-              className="brick-button-secondary px-4 py-2.5 text-sm font-black border-[#221C16]"
-            >
-              <Plus className="h-4 w-4 text-[var(--accent)]" strokeWidth={2.5} />
-              <span>Thêm thẻ</span>
-            </button>
+            {recommendation.primaryAction.actionType === "NAVIGATE" ? (
+              <Link
+                href={recommendation.primaryAction.href!}
+                prefetch
+                className="brick-button-primary px-4 py-2.5 text-xs sm:text-sm font-black"
+              >
+                <span>{recommendation.primaryAction.label}</span>
+                <ArrowRight className="h-4 w-4 ml-1" />
+              </Link>
+            ) : recommendation.primaryAction.actionType === "OPEN_ADD_CARDS" ? (
+              <button
+                type="button"
+                onClick={() => setIsAddingCards(true)}
+                className="brick-button-primary px-4 py-2.5 text-xs sm:text-sm font-black cursor-pointer"
+              >
+                <Plus className="h-4 w-4 mr-1" strokeWidth={2.5} />
+                <span>{recommendation.primaryAction.label}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsReadingHubOpen(true)}
+                className="brick-button-primary px-4 py-2.5 text-xs sm:text-sm font-black cursor-pointer"
+              >
+                <BookOpen className="h-4 w-4 mr-1" strokeWidth={2.5} />
+                <span>{recommendation.primaryAction.label}</span>
+              </button>
+            )}
           </div>
         </div>
       </section>
+
+      {/* 3 Primary Learning Anchors - Only shown when deck has cards */}
+      {deck.cards.length > 0 ? (
+        <section aria-label="Phương pháp học tập chính" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {/* Anchor 1: Ôn tập (FSRS Spaced Repetition) */}
+          <Link
+            href={`/decks/${deck.id}/study`}
+            prefetch
+            className="group relative flex flex-col justify-between rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-4 sm:p-5 shadow-[3px_3px_0px_#221C16] transition-all hover:bg-[#FAF6EE] hover:shadow-[4px_4px_0px_#221C16] active:translate-x-0.5 active:translate-y-0.5"
+          >
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[#221C16] bg-[#FEF08A] shadow-[1.5px_1.5px_0px_#221C16] group-hover:scale-105 transition-transform">
+                  <RotateCcw className="h-5 w-5 text-[#B45309]" strokeWidth={2.5} />
+                </span>
+                <span
+                  className={`rounded-full border border-[#221C16] px-2.5 py-0.5 text-xs font-black shadow-[1px_1px_0px_#221C16] ${
+                    dueCardsCount > 0
+                      ? "bg-[#FEE2E2] text-[#991B1B]"
+                      : "bg-[#DCFCE7] text-[#166534]"
+                  }`}
+                >
+                  {dueCardsCount > 0 ? `${dueCardsCount} đến hạn` : "Đã ôn xong"}
+                </span>
+              </div>
+              <h3 className="mt-3.5 text-base sm:text-lg font-black text-[#221C16] flex items-center gap-1.5">
+                <span>Ôn tập</span>
+                <ArrowRight className="h-4 w-4 text-[#6B6258] group-hover:translate-x-1 transition-transform" />
+              </h3>
+              <p className="mt-1 text-xs font-semibold text-[#6B6258] leading-relaxed">
+                Ôn tập ngắt quãng FSRS theo chu kỳ ghi nhớ khoa học.
+              </p>
+            </div>
+            <div className="mt-4 pt-2.5 border-t border-dashed border-[#DCD3C5] text-[11px] font-black text-[#B45309]">
+              {dueCardsCount > 0 ? "Ưu tiên hoàn thành hôm nay →" : "Chu kỳ ghi nhớ tối ưu →"}
+            </div>
+          </Link>
+
+          {/* Anchor 2: Thử thách (Quiz / Retrieval Practice) */}
+          <Link
+            href={`/decks/${deck.id}/quiz`}
+            prefetch
+            className="group relative flex flex-col justify-between rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-4 sm:p-5 shadow-[3px_3px_0px_#221C16] transition-all hover:bg-[#FAF6EE] hover:shadow-[4px_4px_0px_#221C16] active:translate-x-0.5 active:translate-y-0.5"
+          >
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[#221C16] bg-[#E0F2FE] shadow-[1.5px_1.5px_0px_#221C16] group-hover:scale-105 transition-transform">
+                  <Target className="h-5 w-5 text-[#0369A1]" strokeWidth={2.5} />
+                </span>
+                <span className="rounded-full border border-[#221C16] bg-[#FFFDF9] px-2.5 py-0.5 text-xs font-black text-[#0369A1] shadow-[1px_1px_0px_#221C16]">
+                  Trắc nghiệm &amp; Gõ từ
+                </span>
+              </div>
+              <h3 className="mt-3.5 text-base sm:text-lg font-black text-[#221C16] flex items-center gap-1.5">
+                <span>Thử thách</span>
+                <ArrowRight className="h-4 w-4 text-[#6B6258] group-hover:translate-x-1 transition-transform" />
+              </h3>
+              <p className="mt-1 text-xs font-semibold text-[#6B6258] leading-relaxed">
+                Kiểm tra nhận diện, ngữ cảnh và khả năng tự nhớ từ.
+              </p>
+            </div>
+            <div className="mt-4 pt-2.5 border-t border-dashed border-[#DCD3C5] text-[11px] font-black text-[#0369A1]">
+              Kiểm tra phản xạ &amp; ghi nhớ →
+            </div>
+          </Link>
+
+          {/* Anchor 3: Đọc & Ngữ cảnh (Story + AI Lesson) */}
+          <button
+            type="button"
+            onClick={() => setIsReadingHubOpen(true)}
+            className="group relative flex flex-col justify-between rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-4 sm:p-5 text-left shadow-[3px_3px_0px_#221C16] transition-all hover:bg-[#FAF6EE] hover:shadow-[4px_4px_0px_#221C16] active:translate-x-0.5 active:translate-y-0.5 cursor-pointer"
+          >
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[#221C16] bg-[#CCFBF1] shadow-[1.5px_1.5px_0px_#221C16] group-hover:scale-105 transition-transform">
+                  <BookOpen className="h-5 w-5 text-[#0F766E]" strokeWidth={2.5} />
+                </span>
+                <span className="rounded-full border border-[#221C16] bg-[#FFFDF9] px-2.5 py-0.5 text-xs font-black text-[#0F766E] shadow-[1px_1px_0px_#221C16]">
+                  Truyện &amp; Bài học
+                </span>
+              </div>
+              <h3 className="mt-3.5 text-base sm:text-lg font-black text-[#221C16] flex items-center gap-1.5">
+                <span>Đọc &amp; Ngữ cảnh</span>
+                <ArrowRight className="h-4 w-4 text-[#6B6258] group-hover:translate-x-1 transition-transform" />
+              </h3>
+              <p className="mt-1 text-xs font-semibold text-[#6B6258] leading-relaxed">
+                Đọc truyện song ngữ và học bài học AI gắn liền ngữ cảnh thực.
+              </p>
+            </div>
+            <div className="mt-4 pt-2.5 border-t border-dashed border-[#DCD3C5] text-[11px] font-black text-[#0F766E]">
+              Mở không gian ngữ cảnh →
+            </div>
+          </button>
+        </section>
+      ) : null}
 
       {/* Add Cards Surface */}
       {isAddingCards ? (
@@ -322,7 +489,7 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
         />
       ) : null}
 
-      {/* Contextual Weak Evidence Section: Cần luyện thêm (Notebook Study Callout) */}
+      {/* Contextual Weak Evidence Section: Cần củng cố */}
       {needPracticeCards.length > 0 ? (
         <section
           data-testid="need-practice-section"
@@ -334,9 +501,9 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
                 <span className="flex h-6 w-6 items-center justify-center rounded-md border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1px_1px_0px_#221C16]">
                   <Target className="h-3.5 w-3.5 text-[#B45309]" strokeWidth={2.5} />
                 </span>
-                <h2 className="text-base font-black text-[#221C16]">Cần luyện thêm</h2>
+                <h2 className="text-base font-black text-[#221C16]">Cần củng cố</h2>
                 <span className="wn-marker-amber text-xs font-black text-[#9A3412]">
-                  {needPracticeCards.length} từ
+                  {needPracticeCards.length} từ cần luyện thêm
                 </span>
               </div>
               <p className="mt-1 text-xs font-bold text-[#6B6258]">
@@ -354,31 +521,22 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
                 }}
                 className="brick-button-secondary px-3 py-1.5 text-xs font-black"
               >
-                Xem thẻ
+                Xem trong danh sách
               </button>
               <Link
                 href={`/decks/${deck.id}/mistakes`}
                 className="brick-button-secondary px-3 py-1.5 text-xs font-black text-rose-700 hover:text-rose-800 flex items-center gap-1.5"
               >
                 <AlertCircle className="h-3.5 w-3.5 text-rose-600" />
-                <span>Sổ tay câu sai</span>
+                <span>Sổ tay câu sai →</span>
               </Link>
-              <button
-                data-testid="btn-create-lesson-from-weak"
-                type="button"
-                onClick={() => setIsLessonModalOpen(true)}
-                className="brick-button-secondary px-3 py-1.5 text-xs font-black text-amber-800 hover:text-amber-900 flex items-center gap-1.5"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-                <span>Tạo bài học AI</span>
-              </button>
               <Link
                 data-testid="btn-start-focused-practice"
                 href={`/decks/${deck.id}/quiz?mode=focused_practice`}
                 className="brick-button-primary px-3.5 py-1.5 text-xs font-black"
               >
                 <Target className="h-3.5 w-3.5" strokeWidth={2.5} />
-                <span>Luyện tập trung ({needPracticeCards.length} từ)</span>
+                <span>Củng cố · Luyện tập trung ({needPracticeCards.length} từ)</span>
               </Link>
             </div>
           </div>
@@ -578,12 +736,19 @@ export function DeckView({ initialDeck, evidenceMap, needPracticeCardIds = [] }:
           cefr: c.cefr,
         }))}
         weakWordIds={needPracticeCardIds}
-        initialSelectedIds={needPracticeCardIds}
         onClose={() => setIsLessonModalOpen(false)}
         onLessonCreated={() => {
           setIsLessonModalOpen(false);
           router.refresh();
         }}
+      />
+
+      <ReadingHubModal
+        open={isReadingHubOpen}
+        deckId={deck.id}
+        deckName={deck.name}
+        onClose={() => setIsReadingHubOpen(false)}
+        onOpenLessonGenerator={() => setIsLessonModalOpen(true)}
       />
     </div>
   );

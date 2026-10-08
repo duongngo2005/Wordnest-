@@ -45,7 +45,13 @@ export interface ShadowingPlayerProps {
   onExit?: () => void;
 }
 
-type AudioState = "idle" | "playing_tts" | "recording" | "evaluating" | "completed";
+type AudioState =
+  | "idle"
+  | "requesting_microphone"
+  | "playing_tts"
+  | "recording"
+  | "evaluating"
+  | "completed";
 
 export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProps) {
   // 1. Sentence segmentation
@@ -53,8 +59,12 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
   const [currentIndex, setCurrentIndex] = useState(0);
   const [audioState, setAudioState] = useState<AudioState>("idle");
   const [playbackRate, setPlaybackRate] = useState<number>(() => {
-    return getSpeechPreferences().rate || 1.0;
+    const preferredRate = getSpeechPreferences().rate;
+    return [0.8, 1.0, 1.2].includes(preferredRate) ? preferredRate : 1.0;
   });
+  const [referenceAudioError, setReferenceAudioError] = useState<string | null>(null);
+  const [liveStatus, setLiveStatus] = useState("");
+  const playerHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
   // Recorded scores for summary
   const [sentenceScores, setSentenceScores] = useState<Record<number, number>>({});
@@ -85,6 +95,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
   // 2. Speech recognition hook
   const {
     isSupported: isSttSupported,
+    isListening,
     transcript,
     interimTranscript,
     error: sttError,
@@ -106,6 +117,8 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
 
   // 3. Audio recorder hook
   const {
+    isSupported: isRecorderSupported,
+    hasCheckedSupport: hasCheckedRecorderSupport,
     isRecording,
     audioUrl,
     error: recorderError,
@@ -113,6 +126,16 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
     stopRecording,
     resetRecording,
   } = useAudioRecorder();
+
+  const exitLabel = source.type === "story" ? "Quay lại truyện" : "Quay lại bài học";
+  const sourceName = source.type === "story" ? "truyện" : "bài học";
+
+  useEffect(() => {
+    playerHeadingRef.current?.focus();
+  }, []);
+
+  const liveMessage = referenceAudioError || recorderError || sttError || liveStatus;
+  const isActivelyRecording = audioState === "recording" && isRecording;
 
   // Stop all active audio / mic
   const stopAllAudio = useCallback(() => {
@@ -131,6 +154,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
     resetTranscript();
     resetRecording();
     setAudioState("idle");
+    setReferenceAudioError(null);
   }, [stopAllAudio, resetTranscript, resetRecording]);
 
   // Unmount cleanup
@@ -149,6 +173,8 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
     // Invariant: Stop any active recording/mic before TTS
     stopAllAudio();
     setAudioState("playing_tts");
+    setReferenceAudioError(null);
+    setLiveStatus("Đang đọc câu mẫu.");
 
     speakEnglish(
       currentSentence,
@@ -157,9 +183,13 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
       },
       () => {
         setAudioState("idle");
+        setLiveStatus("Đã đọc xong câu mẫu.");
       },
       () => {
         setAudioState("idle");
+        const message = "Không thể phát câu mẫu. Bạn có thể thử lại.";
+        setReferenceAudioError(message);
+        setLiveStatus(message);
       },
       { rate: playbackRate }
     );
@@ -167,7 +197,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
 
   // Handle Start Recording (User speaks)
   const handleStartRecording = async () => {
-    if (audioState === "recording" || isRecording) return;
+    if (audioState === "requesting_microphone" || isRecording) return;
     playUISound("softTap");
 
     // Invariant: Stop TTS immediately so mic doesn't record computer speakers
@@ -177,15 +207,25 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
       setIsPlayingSelfAudio(false);
     }
 
-    setAudioState("recording");
+    setAudioState("requesting_microphone");
+    setLiveStatus("Đang chuẩn bị micro.");
     resetTranscript();
     resetRecording();
 
-    // Start both browser STT (if supported) and MediaRecorder (for self-playback)
+    // Recognition and recording are independent. Recording must start successfully
+    // before the player presents an active recording control.
     if (isSttSupported) {
       startListening();
     }
-    await startRecording();
+    const didStartRecording = await startRecording();
+    if (!didStartRecording) {
+      stopListening();
+      setAudioState("idle");
+      return;
+    }
+
+    setAudioState("recording");
+    setLiveStatus(isSttSupported ? "Đang nhận diện lời nói." : "Đang ghi âm.");
   };
 
   // Handle Stop Recording
@@ -202,6 +242,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
       }));
     }
     setAudioState("evaluating");
+    setLiveStatus(activeText ? "Đã có kết quả nhận diện để đối chiếu." : "Đã dừng ghi âm.");
   };
 
   // Self audio playback handler
@@ -234,9 +275,11 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
     resetSentenceState();
     if (currentIndex + 1 < totalSentences) {
       setCurrentIndex((prev) => prev + 1);
+      setLiveStatus(`Đã chuyển sang câu ${currentIndex + 2} trên ${totalSentences}.`);
     } else {
       setAudioState("completed");
       setCurrentIndex(totalSentences);
+      setLiveStatus(`Bạn đã đi hết ${totalSentences} câu.`);
     }
   };
 
@@ -246,6 +289,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
       playUISound("softTap");
       resetSentenceState();
       setCurrentIndex((prev) => prev - 1);
+      setLiveStatus(`Đã chuyển sang câu ${currentIndex} trên ${totalSentences}.`);
     }
   };
 
@@ -253,6 +297,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
   const handleRetry = () => {
     playUISound("softTap");
     resetSentenceState();
+    setLiveStatus(`Bạn có thể nói lại câu ${currentIndex + 1}.`);
   };
 
   // Calculate overall summary score
@@ -271,49 +316,79 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
 
   if (totalSentences === 0) {
     return (
-      <div className="mx-auto max-w-3xl rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-8 text-center space-y-4 shadow-[4px_4px_0px_#221C16]">
+      <section
+        aria-labelledby="shadowing-title"
+        className="mx-auto max-w-3xl rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-8 text-center space-y-4 shadow-[4px_4px_0px_#221C16]"
+      >
         <AlertCircle className="mx-auto h-10 w-10 text-amber-600" />
-        <h2 className="text-xl font-black text-[#221C16]">Không tìm thấy câu văn nào</h2>
+        <h1 ref={playerHeadingRef} id="shadowing-title" tabIndex={-1} className="text-xl font-black text-[#221C16]">
+          Không tìm thấy câu văn nào
+        </h1>
         <p className="text-sm font-semibold text-[#6B6258]">
-          Nội dung bài đọc chưa có câu hoàn chỉnh để thực hành Shadowing.
+          Nội dung {sourceName} chưa có câu hoàn chỉnh để nghe và nói nhại.
         </p>
-        <Link href={backHref} className="brick-button-primary inline-flex px-4 py-2 text-xs font-bold">
-          Quay lại
-        </Link>
-      </div>
+        {onExit || onClose ? (
+          <button
+            type="button"
+            onClick={() => {
+              stopAllAudio();
+              (onExit || onClose)?.();
+            }}
+            className="brick-button-primary inline-flex px-4 py-2 text-xs font-bold"
+          >
+            {exitLabel}
+          </button>
+        ) : (
+          <Link href={backHref} className="brick-button-primary inline-flex px-4 py-2 text-xs font-bold">
+            {exitLabel}
+          </Link>
+        )}
+      </section>
     );
   }
 
   // Completion Screen
   if (isCompleted || audioState === "completed") {
     return (
-      <div className="mx-auto max-w-2xl rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-6 sm:p-10 text-center space-y-6 shadow-[4px_4px_0px_#221C16] animate-in fade-in zoom-in-95 duration-150">
+      <section
+        aria-labelledby="shadowing-title"
+        className="mx-auto max-w-2xl rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-6 sm:p-10 text-center space-y-6 shadow-[4px_4px_0px_#221C16] animate-in fade-in zoom-in-95 duration-150"
+      >
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border-2 border-[#221C16] bg-[#FEF3C7] shadow-[2px_2px_0px_#221C16]">
           <Sparkles className="h-8 w-8 text-[#D97706]" strokeWidth={2.5} />
         </div>
 
         <div className="space-y-2">
           <p className="text-xs font-black uppercase tracking-wider text-[#D97706]">
-            WordNest · Shadowing Complete
+            WordNest · Nghe &amp; nói nhại
           </p>
-          <h2 className="text-2xl sm:text-3xl font-black text-[#221C16]">
-            Hoàn thành bài luyện Shadowing!
-          </h2>
+          <h1 ref={playerHeadingRef} id="shadowing-title" tabIndex={-1} className="text-2xl sm:text-3xl font-black text-[#221C16]">
+            Bạn đã đi hết các câu
+          </h1>
           <p className="text-sm font-semibold text-[#6B6258]">
-            Bạn đã hoàn thành toàn bộ {totalSentences}/{totalSentences} câu trong &ldquo;{source.title}&rdquo;.
+            Bạn đã đi hết {totalSentences}/{totalSentences} câu trong &ldquo;{source.title}&rdquo;.
           </p>
         </div>
 
         {averageScore !== null && isSttSupported && (
           <div className="inline-block rounded-2xl border-2 border-[#221C16] bg-[#FAF6EE] px-6 py-4 shadow-[2px_2px_0px_#221C16]">
-            <p className="text-xs font-bold text-[#6B6258]">Độ khớp văn bản trung bình (Text Match)</p>
+            <p className="text-xs font-bold text-[#6B6258]">Khớp văn bản nhận diện với câu mẫu</p>
             <p className="text-3xl sm:text-4xl font-black text-[#221C16] mt-1">
               {averageScore}%
             </p>
             <p className="text-[11px] font-medium text-[#8C8275] mt-1">
-              Đã đánh giá {Object.keys(sentenceScores).length}/{totalSentences} câu có nhận diện giọng nói
+              Mức khớp tổng hợp dựa trên kết quả tốt nhất ở {Object.keys(sentenceScores).length}/{totalSentences} câu đã nhận diện.
+            </p>
+            <p className="text-[11px] font-medium text-[#8C8275] mt-1">
+              Không đánh giá phát âm, giọng hay mức độ thành thạo.
             </p>
           </div>
+        )}
+
+        {averageScore === null && (
+          <p className="text-xs font-semibold text-[#6B6258]">
+            Chưa có kết quả nhận diện để đối chiếu.
+          </p>
         )}
 
         <div className="flex flex-wrap items-center justify-center gap-3 pt-4 border-t-2 border-dashed border-[#CFC2AF]">
@@ -340,7 +415,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
               }}
               className="brick-button-primary px-5 py-2.5 text-xs font-black flex items-center gap-2 shadow-[2px_2px_0px_#221C16]"
             >
-              <span>Quay về bài học</span>
+              <span>{exitLabel}</span>
               <ArrowRight className="h-4 w-4" />
             </button>
           ) : (
@@ -348,17 +423,20 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
               href={backHref}
               className="brick-button-primary px-5 py-2.5 text-xs font-black flex items-center gap-2 shadow-[2px_2px_0px_#221C16]"
             >
-              <span>Quay về bài học</span>
+              <span>{exitLabel}</span>
               <ArrowRight className="h-4 w-4" />
             </Link>
           )}
         </div>
-      </div>
+      </section>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <section aria-labelledby="shadowing-title" className="mx-auto max-w-3xl space-y-5">
+      <p className="wn-sr-only" aria-live="polite" aria-atomic="true">
+        {liveMessage}
+      </p>
       {/* Top Header & Navigation */}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -372,7 +450,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
               className="inline-flex items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-transform active:translate-y-0.5"
             >
               <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
-              <span>Thoát</span>
+              <span>{exitLabel}</span>
             </button>
           ) : (
             <Link
@@ -381,7 +459,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
               className="inline-flex items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-transform active:translate-y-0.5"
             >
               <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
-              <span>Thoát</span>
+              <span>{exitLabel}</span>
             </Link>
           )}
           <span className="text-xs font-black text-[#6B6258] truncate max-w-[200px] sm:max-w-xs">
@@ -391,20 +469,27 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
 
         <div className="flex items-center gap-2">
           {/* Rate Selector */}
-          <div className="flex items-center rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-0.5 text-xs font-bold shadow-[2px_2px_0px_#221C16]">
+          <fieldset className="flex items-center rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] p-0.5 text-xs font-bold shadow-[2px_2px_0px_#221C16]">
+            <legend className="wn-sr-only">Tốc độ câu mẫu</legend>
             {[0.8, 1.0, 1.2].map((rate) => (
-              <button
+              <label
                 key={rate}
-                type="button"
-                onClick={() => setPlaybackRate(rate)}
-                className={`rounded-lg px-2 py-0.5 transition-colors ${
+                className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg px-2 py-1 transition-colors ${
                   playbackRate === rate ? "bg-[#221C16] text-[#FFFDF9]" : "text-[#221C16] hover:bg-[#F5EEDB]"
                 }`}
               >
+                <input
+                  type="radio"
+                  name="shadowing-playback-rate"
+                  value={rate}
+                  checked={playbackRate === rate}
+                  onChange={() => setPlaybackRate(rate)}
+                  className="wn-sr-only"
+                />
                 {rate}x
-              </button>
+              </label>
             ))}
-          </div>
+          </fieldset>
 
           {onClose && (
             <button
@@ -423,17 +508,40 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
       </header>
 
       {/* Main Shadowing Workspace Card */}
-      <main className="wn-story-paper relative rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-5 sm:p-8 space-y-6 shadow-[4px_4px_0px_#221C16]">
+      <div className="wn-story-paper relative rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-5 sm:p-8 space-y-6 shadow-[4px_4px_0px_#221C16]">
+        <div className="space-y-1">
+          <h1 ref={playerHeadingRef} id="shadowing-title" tabIndex={-1} className="text-xl font-black text-[#221C16] sm:text-2xl">
+            Nghe &amp; nói nhại
+          </h1>
+          <p className="text-xs font-semibold leading-5 text-[#6B6258]">
+            Tùy chọn: nghe câu mẫu, nói nhại, rồi xem văn bản mà trình duyệt nhận diện.
+          </p>
+          <p className="text-[11px] font-medium leading-5 text-[#8C8275]">
+            Khớp văn bản nhận diện với câu mẫu; không đánh giá phát âm, giọng hay mức độ thành thạo.
+          </p>
+        </div>
         {/* Progress bar and counter */}
         <div className="flex items-center justify-between gap-3 text-xs font-black text-[#6B6258] border-b-2 border-dashed border-[#CFC2AF] pb-3">
           <div className="flex items-center gap-2">
             <Headphones className="h-4 w-4 text-[var(--accent)]" />
-            <span>Luyện Shadowing</span>
+            <span>Nghe &amp; nói nhại</span>
           </div>
           <div className="flex items-center gap-2">
             <span>
               Câu {currentIndex + 1} / {totalSentences}
             </span>
+            <label htmlFor="shadowing-progress" className="wn-sr-only">
+              Tiến độ câu
+            </label>
+            <progress
+              id="shadowing-progress"
+              aria-label="Tiến độ câu"
+              value={currentIndex + 1}
+              max={totalSentences}
+              className="wn-sr-only"
+            >
+              {currentIndex + 1} / {totalSentences}
+            </progress>
           </div>
         </div>
 
@@ -442,15 +550,25 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
           <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
             <p>
-              Trình duyệt này chưa hỗ trợ nhận diện văn bản tự động. Bạn vẫn có thể nghe câu mẫu, bấm thu âm và nghe lại giọng của mình để so sánh!
+              Trình duyệt này chưa hỗ trợ nhận diện giọng nói.{" "}
+              {isRecorderSupported
+                ? "Bạn vẫn có thể nghe câu mẫu, ghi âm và nghe lại."
+                : "Bạn vẫn có thể nghe câu mẫu."}
             </p>
           </div>
         )}
 
-        {(sttError || recorderError) && (
+        {hasCheckedRecorderSupport && !isRecorderSupported && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+            <p>Thiết bị này không hỗ trợ ghi âm. Bạn vẫn có thể nghe câu mẫu.</p>
+          </div>
+        )}
+
+        {(sttError || recorderError || referenceAudioError) && (
           <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-xs text-rose-900 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-600" />
-            <p>{sttError || recorderError}</p>
+            <p>{referenceAudioError || recorderError || sttError}</p>
           </div>
         )}
 
@@ -459,7 +577,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
           <p className="text-xs font-bold uppercase tracking-wider text-[#8C8275]">
             Câu cần luyện nói:
           </p>
-          <p className="font-[family-name:var(--font-story-display)] text-xl sm:text-2xl font-bold leading-relaxed text-[#221C16]">
+          <p className="font-[family-name:var(--font-story-display)] text-xl sm:text-2xl font-bold leading-relaxed text-[#221C16] [overflow-wrap:anywhere]">
             {currentSentence}
           </p>
         </div>
@@ -470,7 +588,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
           <button
             type="button"
             onClick={handlePlayTts}
-            disabled={audioState === "recording"}
+            disabled={isActivelyRecording || audioState === "requesting_microphone"}
             className={`brick-button-secondary px-5 py-3 text-sm font-black flex items-center gap-2 min-w-[140px] justify-center ${
               audioState === "playing_tts" ? "bg-[#FEF3C7] border-amber-600 text-amber-900" : ""
             }`}
@@ -480,7 +598,16 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
           </button>
 
           {/* Record Button */}
-          {audioState === "recording" || isRecording ? (
+          {audioState === "requesting_microphone" ? (
+            <button
+              type="button"
+              disabled
+              className="brick-button-primary px-6 py-3 text-sm font-black flex items-center gap-2 min-w-[140px] justify-center"
+            >
+              <Mic className="h-5 w-5 animate-pulse" />
+              <span>Đang chuẩn bị micro…</span>
+            </button>
+          ) : isActivelyRecording ? (
             <button
               type="button"
               onClick={handleStopRecording}
@@ -489,6 +616,15 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
               <Square className="h-4 w-4 fill-white" />
               <span>Dừng nói</span>
             </button>
+          ) : hasCheckedRecorderSupport && !isRecorderSupported ? (
+            <button
+              type="button"
+              disabled
+              className="brick-button-secondary px-6 py-3 text-sm font-black flex items-center gap-2 min-w-[140px] justify-center"
+            >
+              <Mic className="h-5 w-5" />
+              <span>Ghi âm không được hỗ trợ</span>
+            </button>
           ) : (
             <button
               type="button"
@@ -496,19 +632,19 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
               className="brick-button-primary px-6 py-3 text-sm font-black flex items-center gap-2 min-w-[140px] justify-center"
             >
               <Mic className="h-5 w-5" />
-              <span>Nói lại câu này</span>
+              <span>{recorderError ? "Thử lại ghi âm" : "Nói lại câu này"}</span>
             </button>
           )}
         </div>
 
         {/* Live speech feedback or recording indicator */}
-        {(audioState === "recording" || isRecording) && (
+        {isActivelyRecording && (
           <div className="rounded-xl border-2 border-[#221C16] bg-[#FEF3C7] p-3.5 text-center space-y-1 animate-pulse">
             <p className="text-xs font-black text-[#92400E]">
-              🎙 Đang lắng nghe... Hãy đọc câu văn trên rõ ràng
+              🎙 {isListening && !sttError ? "Đang nhận diện lời nói…" : "Đang ghi âm…"} Hãy đọc câu văn trên rõ ràng.
             </p>
             {(interimTranscript || transcript) && (
-              <p className="text-sm font-medium italic text-[#221C16]">
+              <p className="text-sm font-medium italic text-[#221C16] [overflow-wrap:anywhere]">
                 &ldquo;{transcript || interimTranscript}&rdquo;
               </p>
             )}
@@ -518,17 +654,24 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
         {/* Evaluation & Text Match Result Section */}
         {audioState === "evaluating" && (
           <div className="rounded-2xl border-2 border-[#221C16] bg-[#FAF6EE] p-4 sm:p-5 space-y-4 shadow-[2px_2px_0px_#221C16]">
-            {!isSttSupported ? (
+            {!isSttSupported || sttError ? (
               <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
                 <p>
-                  Đã ghi âm thành công! Hãy bấm <b>&ldquo;Nghe lại giọng mình&rdquo;</b> bên dưới để tự đối chiếu với câu mẫu.
+                  {sttError
+                    ? "Không thể nhận diện giọng nói cho lượt này. Bản ghi cục bộ vẫn được giữ để bạn nghe lại hoặc thử lại."
+                    : "Đã ghi âm. Hãy bấm “Nghe lại giọng mình” bên dưới để tự đối chiếu với câu mẫu."}
                 </p>
+              </div>
+            ) : similarityResult === null ? (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+                <p>Chưa nhận được văn bản. Bạn có thể nghe lại bản ghi hoặc nói lại câu này.</p>
               </div>
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E0D5] pb-2.5">
                 <span className="text-xs font-bold text-[#6B6258]">
-                  Độ khớp văn bản (Text Match):
+                  Khớp văn bản nhận diện với câu mẫu:
                 </span>
                 {similarityResult !== null && (
                   <span
@@ -546,17 +689,24 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
               </div>
             )}
 
+            {similarityResult !== null && (
+              <p className="text-[11px] font-medium leading-5 text-[#8C8275]">
+                Chỉ phản ánh mức khớp giữa văn bản nhận diện và câu mẫu; không đánh giá phát âm, giọng hay mức độ thành thạo.
+              </p>
+            )}
+
             {/* Word Alignment Visual Diff */}
             {similarityResult && similarityResult.alignment.length > 0 && (
               <div className="space-y-1.5">
                 <p className="text-[11px] font-bold text-[#8C8275]">Đối chiếu từng từ:</p>
-                <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-white border border-[#E5E0D5]">
+                <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-white border border-[#E5E0D5] [overflow-wrap:anywhere]">
                   {similarityResult.alignment.map((item, idx) => {
                     if (item.status === "match") {
                       return (
                         <span
                           key={idx}
                           className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-bold text-emerald-900"
+                          aria-label={`Khớp: ${item.reference || item.spoken}`}
                         >
                           <Check className="h-3 w-3 text-emerald-700" />
                           <span>{item.reference || item.spoken}</span>
@@ -569,6 +719,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
                           key={idx}
                           title="Từ bị đọc thiếu"
                           className="inline-flex items-center rounded border border-dashed border-rose-400 bg-rose-50 px-1.5 py-0.5 text-xs font-bold text-rose-700 line-through opacity-75"
+                          aria-label={`Đọc thiếu: ${item.reference}`}
                         >
                           {item.reference}
                         </span>
@@ -580,6 +731,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
                           key={idx}
                           title={`Bạn nói: "${item.spoken}"`}
                           className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-900 border border-amber-300"
+                          aria-label={`Thay thế: câu mẫu ${item.reference}; nhận diện ${item.spoken}`}
                         >
                           <span>{item.reference}</span>
                           <span className="text-[10px] font-normal text-amber-700">({item.spoken})</span>
@@ -592,6 +744,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
                         key={idx}
                         title="Từ nói thừa"
                         className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600 italic"
+                        aria-label={`Từ thừa: ${item.spoken}`}
                       >
                         +{item.spoken}
                       </span>
@@ -605,7 +758,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
             {transcript && (
               <div className="text-xs text-[#6B6258] space-y-0.5">
                 <span className="font-bold">Nhận diện được:</span>
-                <p className="italic bg-white p-2 rounded-lg border border-[#E5E0D5] text-[#221C16]">
+                <p className="italic bg-white p-2 rounded-lg border border-[#E5E0D5] text-[#221C16] [overflow-wrap:anywhere]">
                   &ldquo;{transcript}&rdquo;
                 </p>
               </div>
@@ -654,7 +807,7 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
           <button
             type="button"
             onClick={handlePrevious}
-            disabled={currentIndex === 0 || audioState === "recording"}
+            disabled={currentIndex === 0 || isActivelyRecording || audioState === "requesting_microphone"}
             className="brick-button-secondary px-3 py-1.5 text-xs font-bold flex items-center gap-1 disabled:opacity-40"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -664,14 +817,14 @@ export function ShadowingPlayer({ source, onClose, onExit }: ShadowingPlayerProp
           <button
             type="button"
             onClick={handleNext}
-            disabled={audioState === "recording"}
+            disabled={isActivelyRecording || audioState === "requesting_microphone"}
             className="brick-button-secondary px-3 py-1.5 text-xs font-bold flex items-center gap-1"
           >
             <span>{currentIndex + 1 < totalSentences ? "Bỏ qua" : "Kết thúc"}</span>
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </footer>
-      </main>
-    </div>
+      </div>
+    </section>
   );
 }

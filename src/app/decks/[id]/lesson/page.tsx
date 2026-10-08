@@ -15,10 +15,10 @@ export default async function DeckLessonPage({
   const { id } = await params;
   const { create, lessonId } = await searchParams;
 
-  const [deck, lessons, weakCandidates] = await Promise.all([
+  const [deck, lessons, practiceEvidence] = await Promise.all([
     deckService.getDeckById(id),
     lessonService.getLessonsByDeckId(id),
-    practiceEvidenceService.getFocusedPracticeCandidates(id, 20).catch(() => []),
+    practiceEvidenceService.getDeckPracticeEvidence(id),
   ]);
 
   if (!deck) notFound();
@@ -27,7 +27,7 @@ export default async function DeckLessonPage({
   const selectedLessonId =
     typeof lessonId === "string" ? lessonId : Array.isArray(lessonId) ? lessonId[0] : undefined;
 
-  const weakWordIds = weakCandidates.map((c) => c.card.id);
+  const weakWordIds = practiceEvidence.needPracticeCards.map((item) => item.card.id);
 
   return (
     <div className="app-shell">

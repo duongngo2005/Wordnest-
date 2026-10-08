@@ -212,7 +212,22 @@ describe("Story Practice Evidence Integration Loop", () => {
     expect(clozeMistakes.total).toBe(2);
     expect(clozeMistakes.mistakes.every((m) => m.questionType === "story_cloze")).toBe(true);
 
-    // 7. Verify Smart Practice detects these mistakes
+    // 7. Verify Smart Practice detects confirmed weak words
+    // Under multi-axis practice evidence, confirmed weakness requires >= 2 attempts on a specific axis.
+    // Simulate a follow-up first-pass attempt confirming weakness on production axis:
+    await db.practiceAttempt.create({
+      data: {
+        flashcardId: cardDedicateId,
+        sessionId: "sess_followup_story",
+        attemptNumber: 1,
+        mode: "quiz",
+        questionType: "story_cloze",
+        correct: false,
+        answer: "wrong",
+        expectedAnswer: "dedicate",
+      },
+    });
+
     const evidence = await practiceEvidenceService.getDeckPracticeEvidence(deckId);
     expect(evidence.needPracticeCards.length).toBeGreaterThanOrEqual(1);
 

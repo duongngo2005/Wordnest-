@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PracticeAttempt } from "@prisma/client";
 import { buildProgressAnalytics } from "./progress-service";
+import { aggregateCardPracticeEvidence } from "./practice-evidence-service";
 
 const now = new Date("2026-09-23T10:00:00.000Z");
 
@@ -21,6 +22,50 @@ function attempt(partial: Partial<PracticeAttempt>): PracticeAttempt {
     createdAt: now,
     ...partial,
   };
+}
+
+function evidenceMap(attempts: PracticeAttempt[]) {
+  const byCard = new Map<string, PracticeAttempt[]>();
+  for (const practiceAttempt of attempts) {
+    const cardAttempts = byCard.get(practiceAttempt.flashcardId) ?? [];
+    cardAttempts.push(practiceAttempt);
+    byCard.set(practiceAttempt.flashcardId, cardAttempts);
+  }
+  return new Map(
+    [...byCard.entries()].map(([flashcardId, cardAttempts]) => [
+      flashcardId,
+      aggregateCardPracticeEvidence(flashcardId, cardAttempts),
+    ])
+  );
+}
+
+function analyticsForPracticeAttempts(practiceAttempts: PracticeAttempt[]) {
+  return buildProgressAnalytics({
+    scope: { kind: "deck", id: "deck-1", name: "Day 1" },
+    decks: [
+      {
+        id: "deck-1",
+        name: "Day 1",
+        folderId: null,
+        folderName: null,
+        cards: [
+          {
+            id: "card-1",
+            deckId: "deck-1",
+            term: "allocate",
+            normalizedTerm: "allocate",
+            meaningVi: "phân bổ",
+            state: 0,
+            due: now,
+          },
+        ],
+      },
+    ],
+    reviewLogs: [],
+    practiceEvidence: evidenceMap(practiceAttempts),
+    quizAttempts: [],
+    now,
+  });
 }
 
 describe("buildProgressAnalytics", () => {
@@ -58,11 +103,11 @@ describe("buildProgressAnalytics", () => {
       reviewLogs: [
         { cardId: "card-1", rating: 3, review: new Date("2026-09-23T09:00:00.000Z") },
       ],
-      practiceAttempts: [
+      practiceEvidence: evidenceMap([
         attempt({ id: "attempt-1", correct: false, createdAt: new Date("2026-09-22T10:00:00.000Z") }),
         attempt({ id: "attempt-2", correct: false, createdAt: now }),
         attempt({ id: "retry", attemptNumber: 2, correct: true, createdAt: now }),
-      ],
+      ]),
       quizAttempts: [{ deckId: "deck-1" }],
       now,
     });
@@ -85,7 +130,7 @@ describe("buildProgressAnalytics", () => {
       scope: { kind: "deck", id: "empty", name: "Trống" },
       decks: [],
       reviewLogs: [],
-      practiceAttempts: [],
+      practiceEvidence: new Map(),
       quizAttempts: [],
       now,
     });
@@ -120,7 +165,7 @@ describe("buildProgressAnalytics", () => {
         { cardId: "overdue", rating: 1, review: new Date("2026-09-23T08:00:00.000Z") },
         { cardId: "overdue", rating: 2, review: new Date("2026-09-23T09:00:00.000Z") },
       ],
-      practiceAttempts: [attempt({ flashcardId: "overdue", id: "single-attempt" })],
+      practiceEvidence: evidenceMap([attempt({ flashcardId: "overdue", id: "single-attempt" })]),
       quizAttempts: [],
       now,
     });
@@ -131,5 +176,172 @@ describe("buildProgressAnalytics", () => {
     expect(analytics.upcomingDue[0]).toMatchObject({ date: "2026-09-23", count: 1 });
     expect(analytics.upcomingDue[1]).toMatchObject({ date: "2026-09-24", count: 1 });
     expect(analytics.upcomingDue.every((day) => day.date !== "2026-09-22")).toBe(true);
+  });
+
+  it("reports recognition and production lifetime first-pass accuracy independently", () => {
+    const recognitionAttempts = Array.from({ length: 10 }, (_, index) =>
+      attempt({
+        id: `recognition-${index}`,
+        questionType: "multiple_choice_en_vi",
+        correct: index < 8,
+        createdAt: new Date(`2026-09-${String(index + 1).padStart(2, "0")}T10:00:00.000Z`),
+      })
+    );
+    const productionFirstPass = attempt({
+      id: "production-first-pass",
+      questionType: "typed_vi_en",
+      correct: false,
+      createdAt: new Date("2026-09-22T10:00:00.000Z"),
+    });
+    const productionRetry = attempt({
+      id: "production-retry",
+      questionType: "typed_vi_en",
+      attemptNumber: 2,
+      correct: true,
+      createdAt: new Date("2026-09-22T10:01:00.000Z"),
+    });
+    const practiceEvidence = new Map([
+      [
+        "card-1",
+        aggregateCardPracticeEvidence("card-1", [
+          ...recognitionAttempts,
+          productionFirstPass,
+          productionRetry,
+        ]),
+      ],
+    ]);
+
+    const analytics = buildProgressAnalytics({
+      scope: { kind: "deck", id: "deck-1", name: "Day 1" },
+      decks: [
+        {
+          id: "deck-1",
+          name: "Day 1",
+          folderId: null,
+          folderName: null,
+          cards: [
+            {
+              id: "card-1",
+              deckId: "deck-1",
+              term: "allocate",
+              normalizedTerm: "allocate",
+              meaningVi: "phân bổ",
+              state: 0,
+              due: now,
+            },
+          ],
+        },
+      ],
+      reviewLogs: [],
+      practiceEvidence,
+      quizAttempts: [],
+      now,
+    });
+
+    expect(analytics.practice).toMatchObject({
+      recognition: { total: 10, correct: 8, accuracy: 80 },
+      production: { total: 1, correct: 0, accuracy: 0 },
+    });
+  });
+
+  it("keeps a recognition-only result separate from missing production evidence", () => {
+    const analytics = analyticsForPracticeAttempts(
+      Array.from({ length: 10 }, (_, index) =>
+        attempt({
+          id: `recognition-only-${index}`,
+          questionType: "fill_in_blank",
+          correct: index < 8,
+          createdAt: new Date(now.getTime() + index),
+        })
+      )
+    );
+
+    expect(analytics.practice.recognition).toMatchObject({ total: 10, correct: 8, accuracy: 80 });
+    expect(analytics.practice.production).toMatchObject({ total: 0, correct: 0, accuracy: null });
+  });
+
+  it("keeps a production-only result separate from missing recognition evidence", () => {
+    const analytics = analyticsForPracticeAttempts(
+      Array.from({ length: 5 }, (_, index) =>
+        attempt({
+          id: `production-only-${index}`,
+          questionType: "typed_vi_en",
+          correct: index < 3,
+          createdAt: new Date(now.getTime() + index),
+        })
+      )
+    );
+
+    expect(analytics.practice.recognition.accuracy).toBeNull();
+    expect(analytics.practice.production).toMatchObject({ total: 5, correct: 3, accuracy: 60 });
+  });
+
+  it("keeps both lifetime denominators independent when their accuracies diverge", () => {
+    const recognition = Array.from({ length: 10 }, (_, index) =>
+      attempt({
+        id: `both-recognition-${index}`,
+        questionType: "multiple_choice_vi_en",
+        correct: index < 9,
+        createdAt: new Date(now.getTime() + index),
+      })
+    );
+    const production = Array.from({ length: 5 }, (_, index) =>
+      attempt({
+        id: `both-production-${index}`,
+        questionType: "typed_vi_en",
+        correct: index < 2,
+        createdAt: new Date(now.getTime() + 100 + index),
+      })
+    );
+
+    const analytics = analyticsForPracticeAttempts([...recognition, ...production]);
+
+    expect(analytics.practice.recognition).toMatchObject({ total: 10, correct: 9, accuracy: 90 });
+    expect(analytics.practice.production).toMatchObject({ total: 5, correct: 2, accuracy: 40 });
+    expect(analytics.practice.firstPass).toMatchObject({ total: 15, correct: 11, accuracy: 73.3 });
+  });
+
+  it("preserves the legacy overall denominator across all first-pass question types", () => {
+    const analytics = analyticsForPracticeAttempts([
+      attempt({ id: "story-vocabulary", questionType: "story_contextual_vocab", correct: true }),
+      attempt({ id: "story-cloze", questionType: "story_cloze", correct: false }),
+      attempt({ id: "story-comprehension", questionType: "story_comprehension", correct: true }),
+      attempt({ id: "legacy-other", questionType: "legacy_non_vocab", correct: false }),
+      attempt({ id: "production-retry", questionType: "typed_vi_en", attemptNumber: 2, correct: true }),
+    ]);
+
+    expect(analytics.practice.recognition).toMatchObject({ total: 1, correct: 1, accuracy: 100 });
+    expect(analytics.practice.production).toMatchObject({ total: 1, correct: 0, accuracy: 0 });
+    expect(analytics.practice.firstPass).toMatchObject({ total: 4, correct: 2, accuracy: 50 });
+    expect(analytics.practice.retry).toMatchObject({ total: 1, correct: 1, accuracy: 100 });
+  });
+
+  it("marks a one-attempt axis as insufficient without changing its mathematical accuracy", () => {
+    const analytics = analyticsForPracticeAttempts([
+      attempt({ id: "single-recognition", questionType: "multiple_choice", correct: true }),
+    ]);
+
+    expect(analytics.practice.recognition).toMatchObject({
+      total: 1,
+      correct: 1,
+      accuracy: 100,
+      hasSufficientEvidence: false,
+    });
+  });
+
+  it("does not let high lifetime accuracy replace a recent weak-axis signal", () => {
+    const analytics = analyticsForPracticeAttempts(
+      Array.from({ length: 100 }, (_, index) =>
+        attempt({
+          id: `lifetime-${index}`,
+          questionType: "multiple_choice_en_vi",
+          correct: index < 90,
+          createdAt: new Date(now.getTime() + index),
+        })
+      )
+    );
+
+    expect(analytics.practice.recognition).toMatchObject({ total: 100, correct: 90, accuracy: 90 });
+    expect(analytics.today.weakCards).toBe(1);
   });
 });

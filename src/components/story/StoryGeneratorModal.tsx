@@ -27,12 +27,20 @@ import {
   type StoryLength,
 } from "@/lib/validation/story";
 import { useAiTasks } from "@/components/ai/AiTaskProvider";
+import {
+  ContextualTargetPicker,
+  type ContextualTargetWord,
+} from "@/components/contextual/ContextualTargetPicker";
 import { getSpeechPreferences, isCloudSpeechVoice } from "@/lib/speech-preferences";
+import {
+  resolveContextualTargetSelection,
+  resolveStoryTargetTerms,
+  toggleContextualTargetId,
+  type ContextualTargetIntent,
+} from "@/lib/contextual-target-selection";
 import type { StoryData } from "./StoryReader";
 
-export type DeckStoryWord = {
-  term: string;
-  meaningVi: string;
+export type DeckStoryWord = ContextualTargetWord & {
   definitionEn: string | null;
   ipa: string | null;
   partOfSpeech: string | null;
@@ -48,6 +56,7 @@ type StoryGeneratorModalProps = {
   open: boolean;
   deck: { id: string; name: string };
   words: DeckStoryWord[];
+  weakWordIds?: string[];
   initialMode?: CreationMode;
   onClose: () => void;
   onStoryCreated: (story: StoryData) => void;
@@ -125,15 +134,25 @@ export function StoryGeneratorModal({
   open,
   deck,
   words,
+  weakWordIds = [],
   initialMode = "prompt",
   onClose,
   onStoryCreated,
 }: StoryGeneratorModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [step, setStep] = useState<ModalStep>("options");
   const [mode, setMode] = useState<CreationMode>(initialMode);
-  const [selectedTerms, setSelectedTerms] = useState<string[]>([]);
+  const deckCardIds = useMemo(() => words.map((word) => word.id), [words]);
+  const [selectedWordIds, setSelectedWordIds] = useState<string[]>(() =>
+    resolveContextualTargetSelection({
+      intent: "general",
+      deckCardIds: words.map((word) => word.id),
+    }).selectedIds
+  );
+  const [targetIntent, setTargetIntent] = useState<ContextualTargetIntent>("general");
   const [cefr, setCefr] = useState<StoryCefr>("B1");
   const [length, setLength] = useState<StoryLength>("medium");
   const [topicChoice, setTopicChoice] = useState("Daily Life");
@@ -153,9 +172,13 @@ export function StoryGeneratorModal({
   useEffect(() => {
     if (!open) return;
     const dialog = dialogRef.current;
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (dialog && !dialog.open) dialog.showModal();
+    const focusFrame = requestAnimationFrame(() => closeButtonRef.current?.focus());
     return () => {
+      cancelAnimationFrame(focusFrame);
       if (dialog?.open) dialog.close();
+      openerRef.current?.focus();
     };
   }, [open]);
 
@@ -167,8 +190,10 @@ export function StoryGeneratorModal({
     setValidatedStory(null);
   };
 
-  const selectedWordSet = useMemo(() => new Set(selectedTerms), [selectedTerms]);
-  const allWordsSelected = words.length > 0 && words.every((word) => selectedWordSet.has(word.term));
+  const selectedTerms = useMemo(
+    () => resolveStoryTargetTerms(words, selectedWordIds),
+    [selectedWordIds, words]
+  );
   const topic = topicChoice === "Custom" ? customTopic.trim() : topicChoice;
   const guidance = getStoryGenerationGuidance(length, selectedTerms.length);
 
@@ -180,28 +205,53 @@ export function StoryGeneratorModal({
     onClose();
   };
 
-  const toggleTerm = (term: string) => {
-    setSelectedTerms((current) =>
-      current.includes(term) ? current.filter((item) => item !== term) : [...current, term]
-    );
+  const resetStoryDraft = () => {
     setError(null);
     setPrompt("");
     setValidatedStory(null);
     setValidationSuccessMsg(null);
   };
 
-  const selectAllTerms = () => {
-    setSelectedTerms(words.map((w) => w.term));
-    setError(null);
-    setPrompt("");
-    setValidatedStory(null);
+  const applyTargetIntent = (intent: ContextualTargetIntent) => {
+    const selection = resolveContextualTargetSelection({
+      intent,
+      deckCardIds,
+      weakCardIds: weakWordIds,
+      manualIds: selectedWordIds,
+    });
+    setSelectedWordIds(selection.selectedIds);
+    setTargetIntent(intent);
+    resetStoryDraft();
   };
 
-  const deselectAllTerms = () => {
-    setSelectedTerms([]);
-    setError(null);
-    setPrompt("");
-    setValidatedStory(null);
+  const toggleTargetWord = (id: string) => {
+    setSelectedWordIds(
+      toggleContextualTargetId({
+        selectedIds: selectedWordIds,
+        targetId: id,
+        deckCardIds,
+      }).selectedIds
+    );
+    setTargetIntent("manual");
+    resetStoryDraft();
+  };
+
+  const selectAllTargets = () => {
+    setSelectedWordIds(
+      resolveContextualTargetSelection({
+        intent: "manual",
+        deckCardIds,
+        manualIds: deckCardIds,
+      }).selectedIds
+    );
+    setTargetIntent("manual");
+    resetStoryDraft();
+  };
+
+  const clearTargets = () => {
+    setSelectedWordIds([]);
+    setTargetIntent("manual");
+    resetStoryDraft();
   };
 
   const validateOptions = () => {
@@ -424,6 +474,7 @@ export function StoryGeneratorModal({
             </h2>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             className="wn-button wn-button-quiet wn-icon-button shrink-0"
             onClick={closeDialog}
@@ -490,90 +541,18 @@ export function StoryGeneratorModal({
                 </button>
               </div>
 
-              {/* VOCABULARY SELECTION: Textarea-like Box */}
-              <section className="space-y-2" aria-labelledby="story-vocab-label">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-md border-2 border-[#221C16] bg-[#F59E0B] text-xs font-black text-[#221C16] shadow-[1px_1px_0_#221C16]">
-                      1
-                    </span>
-                    <h3 id="story-vocab-label" className="text-sm font-black text-[#221C16] sm:text-base">
-                      Chọn từ vựng đưa vào câu chuyện
-                    </h3>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span
-                      aria-live="polite"
-                      className="text-xs font-black text-[#8A5817]"
-                    >
-                      {selectedTerms.length}/{words.length}
-                    </span>
-                    {!allWordsSelected ? (
-                      <button
-                        type="button"
-                        onClick={selectAllTerms}
-                        className="story-select-all-btn"
-                        disabled={isSubmitting || words.length === 0}
-                      >
-                        Chọn tất cả
-                      </button>
-                    ) : null}
-                    {selectedTerms.length > 0 ? (
-                      <button
-                        type="button"
-                        onClick={deselectAllTerms}
-                        className="story-select-all-btn"
-                        disabled={isSubmitting}
-                      >
-                        Bỏ chọn
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-
-                {words.length === 0 ? (
-                  <p className="story-workbench-empty p-4 text-center text-xs font-bold">
-                    Deck này chưa có từ nào. Hãy thêm flashcard vào deck trước khi tạo truyện!
-                  </p>
-                ) : (
-                  <div
-                    className="story-vocab-tray"
-                    role="group"
-                    aria-label="Danh sách từ vựng cần chọn"
-                  >
-                    {words.map((word) => {
-                      const isSelected = selectedWordSet.has(word.term);
-                      return (
-                        <label
-                          key={word.term}
-                          className={`story-vocab-chip ${isSelected ? "is-selected" : ""}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleTerm(word.term)}
-                            disabled={isSubmitting}
-                            className="sr-only"
-                          />
-                          <span
-                            aria-hidden="true"
-                            className={`flex h-4 w-4 items-center justify-center rounded-[3px] border border-[#221C16] text-[10px] ${
-                              isSelected ? "bg-[var(--accent-strong)] text-white" : "bg-white"
-                            }`}
-                          >
-                            {isSelected ? <Check className="h-3 w-3 stroke-[3]" /> : null}
-                          </span>
-                          <span className="font-extrabold tracking-tight">{word.term}</span>
-                          {word.meaningVi ? (
-                            <span className="text-xs text-[#6B6258] font-bold">({word.meaningVi})</span>
-                          ) : null}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
+              <ContextualTargetPicker
+                idPrefix="story"
+                words={words}
+                weakWordIds={weakWordIds}
+                selectedIds={selectedWordIds}
+                intent={targetIntent}
+                disabled={isSubmitting}
+                onIntentChange={applyTargetIntent}
+                onToggleWord={toggleTargetWord}
+                onSelectAll={selectAllTargets}
+                onClear={clearTargets}
+              />
 
               {/* 3 HORIZONTAL BLOCKS: Length, CEFR, Topic */}
               <div className="space-y-2.5">

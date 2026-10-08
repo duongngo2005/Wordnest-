@@ -3,28 +3,33 @@ import { ResourceNotFoundError } from "@/lib/http/errors";
 import { MAX_QUIZ_RESPONSE_MS, type QuizSubmissionInput } from "@/lib/validation/quiz";
 import { normalizeStoryVocabulary } from "@/lib/story/story-vocabulary";
 import {
+  createTypedAnswerHints,
+  type TypedAnswerHints,
+} from "@/lib/quiz/typed-answer-hints";
+import {
   createStoryClozePrompt,
   extractSentenceContainingUsageWithBoundary,
 } from "@/lib/story/story-context";
 import { Flashcard, Prisma } from "@prisma/client";
 import { z } from "zod";
-import { practiceEvidenceService } from "./practice-evidence-service";
+import { practiceEvidenceService, type FocusedPracticeCandidate, type PracticeEvidenceSummary } from "./practice-evidence-service";
 
 export const TYPED_ANSWER_NORMALIZATION_VERSION = 1;
 
 /**
- * Normalizes an answer string for deterministic comparison (v1).
+ * Normalizes a surface string for deterministic comparison (v2).
  *
  * Rules:
  * 1. Unicode normalization (NFC)
  * 2. Case-insensitive (lowercase)
  * 3. Normalize curly/smart apostrophes and backticks to standard straight apostrophe (')
  * 4. Normalize curly double quotes to straight double quotes
- * 5. Collapse internal whitespace sequences (\s+ -> single space)
- * 6. Strip insignificant outer/edge punctuation (.,!?:;"'()[]{})
- * 7. Trim leading/trailing whitespace
+ * 5. Strip insignificant outer/edge punctuation (.,!?:;"'()[]{})
+ * 6. Normalize internal hyphens, en-dashes, and em-dashes to single spaces for compound equivalence
+ * 7. Collapse internal whitespace sequences (\s+ -> single space)
+ * 8. Trim leading/trailing whitespace
  */
-export function normalizeTypedAnswer(input: string): string {
+export function normalizeSurfaceForm(input: string): string {
   if (!input) return "";
 
   let normalized = input.normalize("NFC").toLowerCase();
@@ -35,24 +40,76 @@ export function normalizeTypedAnswer(input: string): string {
   // Normalize curly double quotes to straight double quotes
   normalized = normalized.replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"');
 
+  // Strip insignificant edge punctuation (preserve internal letters, hyphens, apostrophes)
+  normalized = normalized.replace(/^[\s.,!?:;"'()[\]{}]+|[\s.,!?:;"'()[\]{}]+$/g, "");
+
+  // Normalize internal hyphens, en-dashes, and em-dashes to spaces for open/hyphenated compound equivalence
+  // e.g. "time-consuming" -> "time consuming", "state-of-the-art" -> "state of the art"
+  normalized = normalized.replace(/[\u2013\u2014-]/g, " ");
+
   // Collapse internal whitespace and trim
   normalized = normalized.replace(/\s+/g, " ").trim();
 
-  // Strip insignificant edge punctuation (preserve internal hyphens, apostrophes, etc.)
-  normalized = normalized.replace(/^[\s.,!?:;"'()[\]{}]+|[\s.,!?:;"'()[\]{}]+$/g, "");
-
   // Re-collapse and trim in case stripping outer punctuation exposed extra spaces
-  return normalized.replace(/\s+/g, " ").trim();
+  return normalized.replace(/^[\s.,!?:;"'()[\]{}]+|[\s.,!?:;"'()[\]{}]+$/g, "").trim();
+}
+
+/**
+ * Extracts accepted candidate answers from a canonical target term string.
+ * Supports:
+ * - Slash-separated alternatives (e.g. "movie / film" -> ["movie", "film"], "organize / organise" -> ["organize", "organise"])
+ * - Trailing parenthetical annotations (e.g. "present (v)" -> ["present", "present (v)"], "book (n)" -> ["book", "book (n)"])
+ */
+export function getAcceptedTypedAnswers(expectedAnswer: string): string[] {
+  if (!expectedAnswer) return [];
+
+  // Split by slash if present
+  const rawParts = expectedAnswer.includes("/")
+    ? expectedAnswer.split("/").map((p) => p.trim()).filter(Boolean)
+    : [expectedAnswer.trim()];
+
+  const accepted = new Set<string>();
+
+  for (const part of rawParts) {
+    if (!part) continue;
+    accepted.add(part);
+
+    // Trailing parenthetical annotation pattern: e.g. "book (n)" -> "book", "lead (metal)" -> "lead"
+    const withoutTrailingParen = part.replace(/\s*\([^)]*\)\s*$/, "").trim();
+    if (withoutTrailingParen && withoutTrailingParen !== part) {
+      accepted.add(withoutTrailingParen);
+    }
+  }
+
+  return Array.from(accepted);
 }
 
 /**
  * Deterministic comparison between user answer and expected answer.
+ * Checks whether user answer's normalized surface form matches ANY accepted candidate's normalized surface form.
  */
 export function isTypedAnswerMatch(answer: string, expectedAnswer: string): boolean {
-  const normAnswer = normalizeTypedAnswer(answer);
-  const normExpected = normalizeTypedAnswer(expectedAnswer);
-  if (!normAnswer || !normExpected) return false;
-  return normAnswer === normExpected;
+  if (!answer || !expectedAnswer) return false;
+
+  const normalizedUser = normalizeSurfaceForm(answer);
+  if (!normalizedUser) return false;
+
+  const acceptedCandidates = getAcceptedTypedAnswers(expectedAnswer);
+  for (const candidate of acceptedCandidates) {
+    const normalizedCandidate = normalizeSurfaceForm(candidate);
+    if (normalizedCandidate && normalizedCandidate === normalizedUser) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Backwards-compatible alias for normalizeSurfaceForm.
+ */
+export function normalizeTypedAnswer(input: string): string {
+  return normalizeSurfaceForm(input);
 }
 
 export type ChoiceQuestionType =
@@ -96,6 +153,7 @@ export interface TypedViEnQuizQuestion {
   type: "typed_vi_en";
   prompt: string;
   promptDetail?: string;
+  spellingHints: TypedAnswerHints;
   options?: never;
   correctAnswer?: never;
   explanation?: never;
@@ -166,6 +224,7 @@ export function sanitizeQuizQuestionForClient(question: ServerQuizQuestion): Qui
       type: "typed_vi_en",
       prompt: question.prompt,
       promptDetail: question.promptDetail,
+      spellingHints: createTypedAnswerHints(question.correctAnswer),
       selectionReason: question.selectionReason,
       mode: question.mode,
     };
@@ -301,6 +360,126 @@ export function maskSentenceWithTerm(sentence: string, term: string): { maskedSe
   return { maskedSentence: sentence, found: false };
 }
 
+/**
+ * Selects candidate cards for a Regular Quiz using Breadth-First Sampling (Phase 2A).
+ *
+ * Priority order:
+ * GROUP 1: Cards without first-pass practice evidence (firstPassAttempts === 0 or !lastFirstPassAt).
+ * GROUP 2: Cards previously practiced, sorted by oldest lastFirstPassAt first (least recently practiced).
+ *
+ * Tie-break within each group: randomized shuffle so insertion/deck order does not bias selection.
+ */
+export function selectBreadthQuizCards(
+  cards: Flashcard[],
+  summaries?: Map<string, PracticeEvidenceSummary>,
+  count = 10
+): Flashcard[] {
+  if (!cards || cards.length === 0) return [];
+
+  const safeCount = Math.max(1, Math.min(count, cards.length));
+
+  if (!summaries || summaries.size === 0) {
+    return shuffleArray(cards).slice(0, safeCount);
+  }
+
+  const neverPracticed: Flashcard[] = [];
+  const previouslyPracticed: Array<{ card: Flashcard; lastFirstPassAt: Date }> = [];
+
+  for (const card of cards) {
+    const summary = summaries.get(card.id);
+    if (!summary || summary.firstPassAttempts <= 0 || !summary.lastFirstPassAt) {
+      neverPracticed.push(card);
+    } else {
+      previouslyPracticed.push({
+        card,
+        lastFirstPassAt: summary.lastFirstPassAt,
+      });
+    }
+  }
+
+  // Shuffle Group 1 to avoid creation order bias
+  const shuffledNever = shuffleArray(neverPracticed);
+
+  // Sort Group 2: oldest first-pass attempt first (least recently practiced)
+  // Pre-shuffle to randomize tie-breaks for cards practiced at the exact same second
+  const shuffledPreviously = shuffleArray(previouslyPracticed);
+  shuffledPreviously.sort((a, b) => a.lastFirstPassAt.getTime() - b.lastFirstPassAt.getTime());
+
+  const prioritized = [...shuffledNever, ...shuffledPreviously.map((item) => item.card)];
+  return prioritized.slice(0, safeCount);
+}
+
+/**
+ * Selects an adaptive question modality for a flashcard in a Regular Quiz based on
+ * pedagogical readiness from practice evidence (Phase 2A).
+ *
+ * Readiness Rules:
+ * - LEVEL 0: No practice evidence (firstPassAttempts === 0) -> Strictly Recognition (MC EN->VI or VI->EN).
+ * - LEVEL 1: Limited evidence (firstPassAttempts > 0, but < 2 first-pass correct) -> Recognition / Contextual Recognition.
+ * - LEVEL 2: Ready for production (either had prior first-pass typed attempt OR >= 2 first-pass correct) -> typed_vi_en.
+ * - LEVEL 3: Previous first-pass typed failure -> typed_vi_en is preferred to re-test production.
+ */
+export function selectRegularQuizModality(
+  card: Flashcard,
+  summary: PracticeEvidenceSummary | undefined,
+  allowedTypes: QuizQuestionType[]
+): QuizQuestionType {
+  const hasExample = Boolean(card.exampleEn && card.exampleEn.length > 5);
+  const hasMeaning = Boolean(card.meaningVi && card.meaningVi.trim().length > 0);
+  const canType = allowedTypes.includes("typed_vi_en") && hasMeaning;
+  const canFill = allowedTypes.includes("fill_in_blank") && hasExample;
+  const canMcViEn = allowedTypes.includes("multiple_choice_vi_en") && hasMeaning;
+  const canMcEnVi = allowedTypes.includes("multiple_choice_en_vi");
+
+  const hasRecognition = canMcEnVi || canMcViEn || canFill;
+
+  // If caller specifically requested ONLY typed_vi_en (e.g. explicit typed mode):
+  if (!hasRecognition && canType) {
+    return "typed_vi_en";
+  }
+
+  const pickRecognition = (): QuizQuestionType => {
+    const recTypes: QuizQuestionType[] = [];
+    if (canMcEnVi) recTypes.push("multiple_choice_en_vi");
+    if (canMcViEn) recTypes.push("multiple_choice_vi_en");
+    if (recTypes.length > 0) {
+      return recTypes[Math.floor(Math.random() * recTypes.length)];
+    }
+    if (canFill) return "fill_in_blank";
+    if (canType) return "typed_vi_en";
+    return "multiple_choice_en_vi";
+  };
+
+  const pickContextualOrRecognition = (): QuizQuestionType => {
+    if (canFill) return "fill_in_blank";
+    return pickRecognition();
+  };
+
+  // LEVEL 0: No first-pass practice evidence -> strictly Recognition
+  if (!summary || summary.firstPassAttempts === 0) {
+    return pickRecognition();
+  }
+
+  // LEVEL 3: Previous first-pass typed failure -> typed_vi_en is preferred to re-test production
+  if (canType && summary.breakdownByQuestionType.typedRecall.incorrect > 0) {
+    return "typed_vi_en";
+  }
+
+  // LEVEL 2: Ready for production
+  // Qualifies if EITHER:
+  // (A) Prior first-pass typed attempt exists, OR
+  // (B) At least 2 first-pass correct in recognition/context (retryCorrect strictly does NOT count)
+  const hasPriorTypedFirstPass = summary.breakdownByQuestionType.typedRecall.attempts > 0;
+  const hasSufficientRecognitionSuccess = summary.firstPassCorrect >= 2;
+
+  if (canType && (hasPriorTypedFirstPass || hasSufficientRecognitionSuccess)) {
+    return "typed_vi_en";
+  }
+
+  // LEVEL 1: Limited evidence (< 2 first-pass correct)
+  return pickContextualOrRecognition();
+}
+
 export class QuizService {
   /**
    * Generates a randomized list of quiz questions from given flashcards.
@@ -313,7 +492,8 @@ export class QuizService {
   generateQuestions(
     cards: Flashcard[],
     count?: number,
-    allowedTypes?: QuizQuestionType[]
+    allowedTypes?: QuizQuestionType[],
+    evidenceSummaries?: Map<string, PracticeEvidenceSummary>
   ): ServerQuizQuestion[];
   generateQuestions(
     cards: Flashcard[],
@@ -322,36 +502,62 @@ export class QuizService {
       "multiple_choice_en_vi",
       "multiple_choice_vi_en",
       "fill_in_blank",
-    ]
+      "typed_vi_en",
+    ],
+    evidenceSummaries?: Map<string, PracticeEvidenceSummary>
   ): ServerQuizQuestion[] {
     if (!cards || cards.length === 0) {
       return [];
     }
 
-    const shuffledCards = shuffleArray(cards);
-    const selectedCards = shuffledCards.slice(0, Math.min(count, cards.length));
+    const safeCount = Math.max(1, Math.min(count, cards.length));
+    const selectedCards = evidenceSummaries
+      ? selectBreadthQuizCards(cards, evidenceSummaries, safeCount)
+      : shuffleArray(cards).slice(0, safeCount);
     const questions: ServerQuizQuestion[] = [];
 
     // Helper pools for distractors
     const allTerms = Array.from(new Set(cards.map((c) => c.term.trim())));
     const allMeanings = Array.from(new Set(cards.map((c) => c.meaningVi.trim())));
 
+    // Determine raw question modality for each selected card
+    const rawAssignedTypes: QuizQuestionType[] = [];
+    for (const card of selectedCards) {
+      const summary = evidenceSummaries?.get(card.id);
+      rawAssignedTypes.push(selectRegularQuizModality(card, summary, allowedTypes));
+    }
+
+    // Session guardrail: At most 50% of the session can be typed_vi_en in a mixed session
+    const allowsRecognition =
+      allowedTypes.includes("multiple_choice_en_vi") ||
+      allowedTypes.includes("multiple_choice_vi_en") ||
+      allowedTypes.includes("fill_in_blank");
+
+    const maxTypedAllowed = allowsRecognition
+      ? Math.max(1, Math.floor(selectedCards.length / 2))
+      : selectedCards.length;
+    let allowedTypedRemaining = maxTypedAllowed;
+
     for (let i = 0; i < selectedCards.length; i++) {
       const card = selectedCards[i];
-      const questionId = `q_${card.id}_${i}_${Date.now()}`;
+      let chosenType = rawAssignedTypes[i];
 
-      // Pick question type based on card properties and allowed types
-      const availableTypesForCard = allowedTypes.filter((type) => {
-        if (type === "fill_in_blank") {
-          return card.exampleEn && card.exampleEn.length > 5;
+      if (chosenType === "typed_vi_en") {
+        if (allowedTypedRemaining > 0) {
+          allowedTypedRemaining--;
+        } else {
+          // Downgrade excess typed questions to contextual recognition or MC
+          if (card.exampleEn && card.exampleEn.length > 5 && allowedTypes.includes("fill_in_blank")) {
+            chosenType = "fill_in_blank";
+          } else if (allowedTypes.includes("multiple_choice_vi_en") && card.meaningVi) {
+            chosenType = "multiple_choice_vi_en";
+          } else {
+            chosenType = "multiple_choice_en_vi";
+          }
         }
-        return true;
-      });
+      }
 
-      const chosenType =
-        availableTypesForCard.length > 0
-          ? availableTypesForCard[Math.floor(Math.random() * availableTypesForCard.length)]
-          : "multiple_choice_en_vi";
+      const questionId = `q_${card.id}_${i}_${Date.now()}`;
 
       const explanation = {
         term: card.term,
@@ -567,6 +773,7 @@ export class QuizService {
       "multiple_choice_en_vi",
       "multiple_choice_vi_en",
       "fill_in_blank",
+      "typed_vi_en",
     ],
     storyId?: string
   ): Promise<{ deck: { id: string; name: string }; sessionId: string; questions: QuizQuestion[] }> {
@@ -605,7 +812,8 @@ export class QuizService {
       questions = clozeQuestions.slice(0, safeCount);
     } else {
       const safeCount = Math.max(1, Math.min(count, 30));
-      questions = this.generateQuestions(deck.cards, safeCount, allowedTypes);
+      const evidence = await practiceEvidenceService.getDeckPracticeEvidence(deckId);
+      questions = this.generateQuestions(deck.cards, safeCount, allowedTypes, evidence.summaries);
     }
 
     const session = await db.quizSession.create({
@@ -633,7 +841,8 @@ export class QuizService {
    */
   async getFocusedPracticeQuiz(
     deckId: string,
-    count = 10
+    count = 10,
+    targetCardIds?: string[]
   ): Promise<{
     deck: { id: string; name: string };
     sessionId: string;
@@ -649,10 +858,27 @@ export class QuizService {
       throw new ResourceNotFoundError("Không tìm thấy bộ thẻ.");
     }
 
-    const candidates = await practiceEvidenceService.getFocusedPracticeCandidates(
-      deckId,
-      Math.max(1, Math.min(count, 30))
-    );
+    let candidates: FocusedPracticeCandidate[];
+    if (targetCardIds !== undefined) {
+      if (targetCardIds.length === 0) {
+        return {
+          deck: { id: deck.id, name: deck.name },
+          sessionId: "",
+          questions: [],
+          totalEligible: 0,
+        };
+      }
+      candidates = await practiceEvidenceService.getTargetedPracticeCandidates(
+        deckId,
+        targetCardIds,
+        Math.max(1, Math.min(count, 30))
+      );
+    } else {
+      candidates = await practiceEvidenceService.getFocusedPracticeCandidates(
+        deckId,
+        Math.max(1, Math.min(count, 30))
+      );
+    }
 
     if (candidates.length === 0) {
       return {

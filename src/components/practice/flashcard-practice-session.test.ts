@@ -13,13 +13,6 @@ const cards: PracticeFlashcardData[] = [
 ];
 
 describe("createFlashcardPracticeSession", () => {
-  it("assigns EN → VI once to every card without changing the first-pass order", () => {
-    const session = createFlashcardPracticeSession(cards, "en_vi");
-
-    expect(session.map((item) => item.card.id)).toEqual(cards.map((card) => card.id));
-    expect(session.every((item) => item.direction === "en_vi")).toBe(true);
-  });
-
   it("assigns VI → EN once to every card without changing the first-pass order", () => {
     const session = createFlashcardPracticeSession(cards, "vi_en");
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookOpen, Plus, Sparkles, Trash2 } from "lucide-react";
 import { StoryGeneratorModal, type DeckStoryWord } from "./StoryGeneratorModal";
@@ -12,6 +12,7 @@ interface StoryPageContainerProps {
   deck: { id: string; name: string };
   initialStories: StoryData[];
   deckWords: DeckStoryWord[];
+  weakWordIds?: string[];
   initialGeneratorMode?: "ai";
   initialStoryId?: string;
 }
@@ -20,6 +21,7 @@ export function StoryPageContainer({
   deck,
   initialStories,
   deckWords,
+  weakWordIds = [],
   initialGeneratorMode,
   initialStoryId,
 }: StoryPageContainerProps) {
@@ -36,6 +38,7 @@ export function StoryPageContainer({
   const [status, setStatus] = useState("");
   const [isReadingMode, setIsReadingMode] = useState(false);
   const [isShadowing, setIsShadowing] = useState(false);
+  const shadowingTriggerRef = useRef<HTMLButtonElement | null>(null);
   const activeStory = stories.find((story) => story.id === activeStoryId) ?? stories[0] ?? null;
 
   useEffect(() => {
@@ -49,6 +52,16 @@ export function StoryPageContainer({
   const setReadingMode = (nextReadingMode: boolean) => {
     if (nextReadingMode !== isReadingMode) playUISound("paperFlip");
     setIsReadingMode(nextReadingMode);
+  };
+
+  const startShadowing = (trigger: HTMLButtonElement) => {
+    shadowingTriggerRef.current = trigger;
+    setIsShadowing(true);
+  };
+
+  const exitShadowing = () => {
+    setIsShadowing(false);
+    window.requestAnimationFrame(() => shadowingTriggerRef.current?.focus());
   };
 
   const addStory = (story: StoryData) => {
@@ -136,7 +149,7 @@ export function StoryPageContainer({
             type: "story",
             cefr: activeStory.cefr,
           }}
-          onExit={() => setIsShadowing(false)}
+          onExit={exitShadowing}
         />
       ) : activeStory ? (
         <StoryReader
@@ -149,7 +162,7 @@ export function StoryPageContainer({
           }}
           readingMode={isReadingMode}
           onReadingModeChange={setReadingMode}
-          onStartShadowing={() => setIsShadowing(true)}
+          onStartShadowing={startShadowing}
           storyActionNotice={
             storyPendingDelete?.id === activeStory.id ? (
               <section
@@ -212,6 +225,7 @@ export function StoryPageContainer({
         open={isGeneratorOpen}
         deck={deck}
         words={deckWords}
+        weakWordIds={weakWordIds}
         initialMode={initialGeneratorMode}
         onClose={() => setIsGeneratorOpen(false)}
         onStoryCreated={addStory}

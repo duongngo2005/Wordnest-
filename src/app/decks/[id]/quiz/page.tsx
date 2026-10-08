@@ -11,7 +11,12 @@ export const revalidate = 0;
 
 interface QuizPageProps {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ mode?: string; storyId?: string; lessonId?: string }>;
+  searchParams?: Promise<{
+    mode?: string;
+    storyId?: string;
+    lessonId?: string;
+    cardIds?: string | string[];
+  }>;
 }
 
 const getDeckOverview = cache((deckId: string) => deckService.getDeckOverview(deckId));
@@ -32,6 +37,16 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
   const modeParam = resolvedSearchParams.mode;
   const storyId = resolvedSearchParams.storyId;
   const lessonId = resolvedSearchParams.lessonId;
+  const cardIdsParam = resolvedSearchParams.cardIds;
+  const targetCardIds =
+    typeof cardIdsParam === "string"
+      ? cardIdsParam.split(",").map((s) => s.trim()).filter(Boolean)
+      : Array.isArray(cardIdsParam)
+      ? cardIdsParam.map((s) => s.trim()).filter(Boolean)
+      : cardIdsParam !== undefined
+      ? []
+      : undefined;
+
   const initialMode =
     modeParam === "lesson_practice"
       ? ("lesson_practice" as const)
@@ -105,7 +120,7 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
         err instanceof Error ? err.message : "Không thể tạo bài luyện tập từ câu chuyện này.";
     }
   } else if (initialMode === "focused_practice") {
-    const focusedQuiz = await quizService.getFocusedPracticeQuiz(deck.id, 10);
+    const focusedQuiz = await quizService.getFocusedPracticeQuiz(deck.id, 10, targetCardIds);
     if (focusedQuiz.questions.length === 0) {
       return (
         <div className="min-h-[100dvh] bg-[#FAF6EE] flex flex-col selection:bg-[#FDE68A] selection:text-[#221C16]">
@@ -152,7 +167,12 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
         ? (["story_cloze"] as const)
         : initialMode === "typed"
         ? (["typed_vi_en"] as const)
-        : (["multiple_choice_en_vi", "multiple_choice_vi_en", "fill_in_blank"] as const);
+        : ([
+            "multiple_choice_en_vi",
+            "multiple_choice_vi_en",
+            "fill_in_blank",
+            "typed_vi_en",
+          ] as const);
 
     try {
       quiz = await quizService.getDeckQuiz(deck.id, 10, [...allowedTypes], storyId);

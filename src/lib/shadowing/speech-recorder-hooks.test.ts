@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useSpeechRecognition } from "./useSpeechRecognition";
-import { useAudioRecorder } from "./useAudioRecorder";
+import { getAudioRecorderCapability, useAudioRecorder } from "./useAudioRecorder";
+
+function requireHookResult<T>(result: T | null): T {
+  if (result === null) throw new Error("Hook result was not captured during render");
+  return result;
+}
 
 describe("Speech & Audio Recorder Hooks Unit Tests", () => {
   beforeEach(() => {
@@ -25,12 +30,12 @@ describe("Speech & Audio Recorder Hooks Unit Tests", () => {
 
       renderToStaticMarkup(React.createElement(TestComp));
 
-      expect(hookResult).toBeDefined();
-      expect(hookResult?.isSupported).toBe(false);
-      expect(hookResult?.isListening).toBe(false);
+      const result = requireHookResult<ReturnType<typeof useSpeechRecognition>>(hookResult);
+      expect(result.isSupported).toBe(false);
+      expect(result.isListening).toBe(false);
 
       // Calling startListening in unsupported environment triggers onError callback
-      hookResult?.startListening();
+      result.startListening();
       expect(reportedError).toBe("UNSUPPORTED");
     });
   });
@@ -46,10 +51,24 @@ describe("Speech & Audio Recorder Hooks Unit Tests", () => {
 
       renderToStaticMarkup(React.createElement(TestComp));
 
-      expect(hookResult).toBeDefined();
-      expect(hookResult?.isRecording).toBe(false);
-      expect(hookResult?.audioUrl).toBeNull();
-      expect(hookResult?.error).toBeNull();
+      const result = requireHookResult<ReturnType<typeof useAudioRecorder>>(hookResult);
+      expect(result.isRecording).toBe(false);
+      expect(result.audioUrl).toBeNull();
+      expect(result.error).toBeNull();
+    });
+
+    it("reports a controlled unsupported state when MediaRecorder is absent", () => {
+      vi.stubGlobal("window", { MediaRecorder: undefined });
+      vi.stubGlobal("navigator", {
+        mediaDevices: { getUserMedia: vi.fn() },
+      });
+
+      expect(getAudioRecorderCapability()).toEqual({
+        isSupported: false,
+        error: "Trình duyệt này không hỗ trợ lưu bản ghi âm.",
+      });
+
+      vi.unstubAllGlobals();
     });
   });
 });
