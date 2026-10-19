@@ -14,19 +14,20 @@ enum FlashcardStatus {
 }
 
 model Deck {
-  id           String        @id @default(cuid())
-  name         String
-  description  String?
-  folderId     String?
-  folder       Folder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  position     Int           @default(0)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  cards        Flashcard[]
-  stories      Story[]
-  lessons      Lesson[]
-  quizAttempts QuizAttempt[]
-  quizSessions QuizSession[]
+  id                    String                     @id @default(cuid())
+  name                  String
+  description           String?
+  folderId              String?
+  folder                Folder?                    @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  position              Int                        @default(0)
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  cards                 Flashcard[]                @relation("LegacyFlashcardDeck")
+  vocabularyMemberships DeckVocabularyMembership[]
+  stories               Story[]
+  lessons               Lesson[]
+  quizAttempts          QuizAttempt[]
+  quizSessions          QuizSession[]
 
   @@index([folderId])
   @@index([folderId, position])
@@ -51,8 +52,12 @@ model Folder {
 
 model Flashcard {
   id               String          @id @default(cuid())
-  deckId           String
-  deck             Deck            @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  // `deckId` preserves the former one-to-many source during the staged
+  // migration. New application code must use `deckMemberships`; this nullable
+  // field exists only for backwards-compatible storage and is never the source
+  // of truth for deck membership.
+  deckId           String?
+  deck             Deck?           @relation("LegacyFlashcardDeck", fields: [deckId], references: [id], onDelete: SetNull)
   term             String
   normalizedTerm   String
   meaningVi        String
@@ -84,12 +89,48 @@ model Flashcard {
   updatedAt        DateTime        @updatedAt
   reviewLogs       ReviewLog[]
   practiceAttempts PracticeAttempt[]
+  deckMemberships  DeckVocabularyMembership[]
+  canonicalVocabularyIdentity VocabularyIdentity? @relation("VocabularyIdentityCanonicalFlashcard")
 
   @@unique([deckId, normalizedTerm])
   @@index([deckId])
   @@index([due])
   @@index([deckId, due])
   @@map("flashcards")
+}
+
+// A Deck membership is organizational source metadata only. It never has its
+// own Flashcard, FSRS state, ReviewLog, or PracticeAttempt; each points to the
+// one canonical Flashcard row.
+model DeckVocabularyMembership {
+  id          String    @id @default(cuid())
+  deckId      String
+  flashcardId String
+  deck        Deck      @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  flashcard   Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([deckId, flashcardId])
+  @@index([flashcardId])
+  @@map("deck_vocabulary_memberships")
+}
+
+// A global vocabulary identity is deliberately separate from the deck-owned
+// Flashcard row. Every newly written Flashcard is protected by SQLite triggers
+// that reserve exactly one normalized identity. Historical duplicate groups
+// are retained without auto-merging their Flashcards or learning history and
+// are marked for explicit human resolution.
+model VocabularyIdentity {
+  id                      String     @id @default(cuid())
+  normalizedTerm          String     @unique
+  canonicalFlashcardId    String?    @unique
+  canonicalFlashcard      Flashcard? @relation("VocabularyIdentityCanonicalFlashcard", fields: [canonicalFlashcardId], references: [id], onDelete: SetNull)
+  hasHistoricalDuplicates Boolean    @default(false)
+  historicalDuplicateCount Int       @default(0)
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
+
+  @@map("vocabulary_identities")
 }
 
 model ReviewLog {
@@ -115,8 +156,8 @@ model ReviewLog {
 
 model Story {
   id          String   @id @default(cuid())
-  deckId      String
-  deck        Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  deckId      String?
+  deck        Deck?    @relation(fields: [deckId], references: [id], onDelete: SetNull)
   title       String
   content     String
   cefr        String
@@ -132,8 +173,8 @@ model Story {
 
 model Lesson {
   id          String   @id @default(cuid())
-  deckId      String
-  deck        Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  deckId      String?
+  deck        Deck?    @relation(fields: [deckId], references: [id], onDelete: SetNull)
   title       String
   content     String
   cefr        String
@@ -147,8 +188,8 @@ model Lesson {
 
 model QuizAttempt {
   id        String   @id @default(cuid())
-  deckId    String
-  deck      Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  deckId    String?
+  deck      Deck?    @relation(fields: [deckId], references: [id], onDelete: SetNull)
   score     Int
   total     Int
   accuracy  Float
@@ -160,8 +201,8 @@ model QuizAttempt {
 
 model QuizSession {
   id        String   @id @default(cuid())
-  deckId    String
-  deck      Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  deckId    String?
+  deck      Deck?    @relation(fields: [deckId], references: [id], onDelete: SetNull)
   questions Json
   expiresAt DateTime
   createdAt DateTime @default(now())
@@ -196,6 +237,18 @@ model PracticeAttempt {
   @@map("practice_attempts")
 }
 
+// A compact, global activity ledger. It records foreground, recently-active
+// WordNest time per study-day without attaching time to a Flashcard, Deck, or
+// FSRS history.
+model DailyOnlineActivity {
+  date          String   @id
+  activeSeconds Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("daily_online_activity")
+}
+
 model AiJob {
   id           String    @id @default(cuid())
   type         String    @default("story_generation")
@@ -203,10 +256,28 @@ model AiJob {
   stage        String?   @default("queued") // queued | generating_story | validating_vocabulary | repairing_story | generating_translations | saving | completed
   progress     Int       @default(0)
   input        Json
+  result       Json?
   resultId     String?
   resultUrl    String?
   errorCode    String?
   errorMessage String?
+  cancelRequestedAt DateTime?
+  idempotencyKey String? @unique
+  // A worker claim is fenced by this token. A stale worker cannot persist over
+  // a later recovery claim because every worker-side mutation checks it.
+  workerId         String?
+  leaseToken       String?
+  leaseExpiresAt   DateTime?
+  heartbeatAt      DateTime?
+  availableAt      DateTime?
+  attemptCount     Int       @default(0)
+  totalItems       Int       @default(0)
+  processedItems   Int       @default(0)
+  acceptedItems    Int       @default(0)
+  failedItems      Int       @default(0)
+  currentItemId    String?
+  currentTerm      String?
+  items            AiJobItem[]
   createdAt    DateTime  @default(now())
   startedAt    DateTime?
   completedAt  DateTime?
@@ -214,5 +285,36 @@ model AiJob {
 
   @@index([status])
   @@index([type, status])
+  @@index([status, createdAt, id])
+  @@index([status, availableAt, createdAt, id])
+  @@index([leaseExpiresAt])
   @@map("ai_jobs")
+}
+
+// Durable, independently reviewable checkpoints for a flashcard batch. These
+// are staging records only: an accepted draft has no Flashcard row until the
+// user explicitly confirms it through the server-side confirmation endpoint.
+model AiJobItem {
+  id               String   @id @default(cuid())
+  jobId            String
+  job              AiJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  sequence         Int
+  requestedTerm    String
+  status           String   @default("pending")
+  stage            String   @default("pending")
+  attemptCount     Int      @default(0)
+  retryAfter       DateTime?
+  failureCategory  String?
+  failureReason    String?
+  draft            Json?
+  savedFlashcardId String?  @unique
+  createdAt        DateTime @default(now())
+  startedAt        DateTime?
+  completedAt      DateTime?
+  updatedAt        DateTime @updatedAt
+
+  @@unique([jobId, sequence])
+  @@index([jobId, status, sequence])
+  @@index([status, retryAfter])
+  @@map("ai_job_items")
 }

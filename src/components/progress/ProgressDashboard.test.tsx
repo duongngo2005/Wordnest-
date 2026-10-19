@@ -114,6 +114,33 @@ const mockAnalytics: ProgressAnalytics = {
     ],
     allActiveDates: ["2026-09-26"],
   },
+  onlineTime: {
+    todaySeconds: 1_500,
+    totalSeconds: 7_200,
+    activeDays: 2,
+    days: [
+      { date: "2026-09-25", label: "T.6, 25", activeSeconds: 5_700 },
+      { date: "2026-09-26", label: "T.7, 26", activeSeconds: 1_500 },
+    ],
+  },
+  globalTyping: {
+    total: 7,
+    correct: 5,
+    incorrect: 2,
+    accuracy: 71.4,
+    uniqueCards: 4,
+    sessions: 2,
+    assistedTotal: 1,
+    assistedCorrect: 1,
+    unassistedCorrect: 4,
+    activity: [
+      { date: "2026-09-25", label: "T.6, 25", count: 2, correct: 1, accuracy: 50 },
+    ],
+    recentAccuracyChange: 10,
+    frequentMistakes: [
+      { flashcardId: "card-1", term: "ephemeral", meaningVi: "phù du", count: 2 },
+    ],
+  },
 };
 
 describe("ProgressDashboard component", () => {
@@ -168,6 +195,46 @@ describe("ProgressDashboard component", () => {
     expect(html).toContain("Luyện lại (Củng cố)");
     expect(html).toContain("100% · 2/2");
     expect(html).not.toContain("Dạng câu hỏi");
+  });
+
+  it("renders global typing statistics separately from FSRS activity", () => {
+    const html = renderToStaticMarkup(<ProgressDashboard analytics={mockAnalytics} />);
+    expect(html).toContain("Luyện gõ Việt → Anh");
+    expect(html).toContain("Hoạt động thực hành riêng, không phải lượt ôn FSRS");
+    expect(html).toContain("Đúng lần đầu");
+    expect(html).toContain("Thẻ riêng");
+    expect(html).toContain("Từ hay gõ sai");
+    expect(html).toContain("Độ chính xác 7 ngày gần đây tăng 10 điểm.");
+  });
+
+  it("renders one compact 14-day usage chart with summary metrics", () => {
+    const html = renderToStaticMarkup(<ProgressDashboard analytics={mockAnalytics} />);
+
+    expect(html).toContain("Thời gian sử dụng");
+    expect(html).toContain("25 phút");
+    expect(html).toContain("2 giờ");
+    expect(html).toContain("Hôm nay");
+    expect(html).toContain("Tổng 14 ngày");
+    expect(html).toContain("Ngày hoạt động");
+    expect(html).toContain("2 ngày");
+    expect(html).toContain('aria-label="Thời gian sử dụng trong 14 ngày gần đây"');
+    expect(html).toContain('data-testid="online-time-day-2026-09-25"');
+    expect(html).not.toContain("Xem thời lượng theo ngày");
+  });
+
+  it("keeps the usage panel factual when tracking has not begun", () => {
+    const analytics = {
+      ...mockAnalytics,
+      onlineTime: {
+        todaySeconds: 0,
+        totalSeconds: 0,
+        activeDays: 0,
+        days: [],
+      },
+    } satisfies ProgressAnalytics;
+
+    const html = renderToStaticMarkup(<ProgressDashboard analytics={analytics} />);
+    expect(html).toContain("Chưa có thời gian sử dụng được ghi nhận");
   });
 
   it("renders no-evidence and one-attempt states without presenting 0% or 100% as ability", () => {

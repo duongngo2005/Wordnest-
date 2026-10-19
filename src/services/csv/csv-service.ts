@@ -13,13 +13,18 @@ export class CsvService {
   async exportDeckToCsv(deckId: string): Promise<{ filename: string; csvContent: string }> {
     const deck = await db.deck.findUnique({
       where: { id: deckId },
-      include: { cards: { orderBy: { createdAt: "asc" } } },
+      include: {
+        vocabularyMemberships: {
+          orderBy: { createdAt: "asc" },
+          include: { flashcard: true },
+        },
+      },
     });
 
     if (!deck) throw new Error(`Bộ thẻ với ID ${deckId} không tồn tại.`);
 
     const headers = ["term", "definition", "translation", "ipa", "partOfSpeech", "cefr", "example", "exampleVi"];
-    const rows = deck.cards.map((card) => [
+    const rows = deck.vocabularyMemberships.map(({ flashcard: card }) => [
       escapeCsvField(card.term),
       escapeCsvField(card.definitionEn),
       escapeCsvField(card.meaningVi),

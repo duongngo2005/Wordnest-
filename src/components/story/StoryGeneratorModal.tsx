@@ -168,6 +168,7 @@ export function StoryGeneratorModal({
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const jobIdempotencyKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -284,10 +285,12 @@ export function StoryGeneratorModal({
     setStatus("Đang gửi yêu cầu tạo truyện...");
     setIsSubmitting(true);
     try {
+      const idempotencyKey = jobIdempotencyKeyRef.current || crypto.randomUUID();
+      jobIdempotencyKeyRef.current = idempotencyKey;
       const response = await fetch("/api/ai/story-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestOptions()),
+        body: JSON.stringify({ ...requestOptions(), idempotencyKey }),
       });
       const data = await responseData(response);
       if (!data.jobId) {
@@ -295,6 +298,7 @@ export function StoryGeneratorModal({
       }
       setSubmittedJobId(String(data.jobId));
       await refreshJobs();
+      jobIdempotencyKeyRef.current = null;
       setStatus("");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Không thể tạo tác vụ AI. Hãy thử lại.");

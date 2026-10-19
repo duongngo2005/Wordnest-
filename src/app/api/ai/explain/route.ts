@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { InvalidJsonBodyError, readJsonBody } from "@/lib/http/json";
 import { ResourceNotFoundError } from "@/lib/http/errors";
-import { AIError, AIProviderUnavailableError } from "@/services/ai/ai-core";
+import { AIError, AIProviderUnavailableError, AIQueueBusyError } from "@/services/ai/ai-core";
 import { explainService } from "@/services/ai/explain-service";
 import { explainAnswerRequestSchema } from "@/lib/validation/explain";
 
@@ -46,6 +46,13 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: error.message },
         { status: 503 }
+      );
+    }
+
+    if (error instanceof AIQueueBusyError) {
+      return NextResponse.json(
+        { success: false, code: "AI_BUSY", error: "AI đang bận tạo nội dung — hãy thử lại sau." },
+        { status: 409 }
       );
     }
 

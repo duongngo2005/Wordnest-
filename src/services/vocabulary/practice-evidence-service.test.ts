@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { db } from "@/lib/db";
 import {
   aggregateCardPracticeEvidence,
@@ -801,6 +801,104 @@ describe("PracticeEvidenceService", () => {
       // After: card has naturally graduated out of focused practice candidates!
       const after = await practiceEvidenceService.getFocusedPracticeCandidates(deckId);
       expect(after.some((c) => c.card.id === gradCard.id)).toBe(false);
+    });
+  });
+
+  describe("Typed Challenge projection", () => {
+    it("uses typed_vi_en evidence only and keeps its recent window bounded", async () => {
+      const typedStrong = await db.flashcard.create({
+        data: { deckId, term: "typed-strong", normalizedTerm: "typed-strong", meaningVi: "gõ mạnh" },
+      });
+      const typedWeak = await db.flashcard.create({
+        data: { deckId, term: "typed-weak", normalizedTerm: "typed-weak", meaningVi: "gõ yếu" },
+      });
+
+      await db.practiceAttempt.createMany({
+        data: [
+          {
+            flashcardId: typedStrong.id,
+            sessionId: "typed-strong-1",
+            questionId: "typed-strong-q-1",
+            attemptNumber: 1,
+            mode: "quiz",
+            questionType: "typed_vi_en",
+            correct: true,
+            answer: "typed-strong",
+            expectedAnswer: "typed-strong",
+            createdAt: new Date("2026-01-01T10:00:00Z"),
+          },
+          {
+            flashcardId: typedStrong.id,
+            sessionId: "typed-strong-2",
+            questionId: "typed-strong-q-2",
+            attemptNumber: 1,
+            mode: "quiz",
+            questionType: "typed_vi_en",
+            correct: true,
+            answer: "typed-strong",
+            expectedAnswer: "typed-strong",
+            createdAt: new Date("2026-01-02T10:00:00Z"),
+          },
+          {
+            flashcardId: typedStrong.id,
+            sessionId: "story-cloze-only",
+            questionId: "story-cloze-q",
+            attemptNumber: 1,
+            mode: "story_practice",
+            questionType: "story_cloze",
+            correct: false,
+            answer: "wrong",
+            expectedAnswer: "typed-strong",
+            createdAt: new Date("2026-10-07T10:00:00Z"),
+          },
+          ...Array.from({ length: 6 }, (_, index) => ({
+            flashcardId: typedWeak.id,
+            sessionId: `typed-weak-${index}`,
+            questionId: `typed-weak-q-${index}`,
+            attemptNumber: 1,
+            mode: "quiz",
+            questionType: "typed_vi_en",
+            correct: false,
+            answer: "wrong",
+            expectedAnswer: "typed-weak",
+            createdAt: new Date(`2026-02-${String(index + 1).padStart(2, "0")}T10:00:00Z`),
+          })),
+          {
+            flashcardId: typedWeak.id,
+            sessionId: "typed-weak-5",
+            questionId: "typed-weak-q-5",
+            attemptNumber: 2,
+            mode: "quiz",
+            questionType: "typed_vi_en",
+            correct: false,
+            answer: "wrong-again",
+            expectedAnswer: "typed-weak",
+            createdAt: new Date("2026-02-06T10:01:00Z"),
+          },
+        ],
+      });
+
+      const queryRaw = vi.spyOn(db, "$queryRaw");
+      const perCardAttemptQuery = vi.spyOn(db.practiceAttempt, "findMany");
+      const projection = await practiceEvidenceService.getDeckTypedChallengeEvidence(deckId);
+
+      expect(queryRaw).toHaveBeenCalledTimes(2);
+      expect(perCardAttemptQuery).not.toHaveBeenCalled();
+      queryRaw.mockRestore();
+      perCardAttemptQuery.mockRestore();
+      expect(projection.get(typedStrong.id)).toMatchObject({
+        state: "STRONG",
+        lifetimeFirstPassAttempts: 2,
+        latestFirstPassCorrect: true,
+      });
+      expect(projection.get(typedWeak.id)).toMatchObject({
+        state: "NEEDS_PRACTICE",
+        lifetimeFirstPassAttempts: 6,
+        recentIncorrectCount: 5,
+        latestFirstPassCorrect: false,
+        latestFirstPassMatchingRetryCorrect: false,
+      });
+      expect(projection.get(typedWeak.id)?.recentFirstPassAttempts).toHaveLength(5);
     });
   });
 });

@@ -138,6 +138,8 @@ describe("DeckView - Phase 1B UX Consolidation", () => {
     // Anchor 2: Thử thách (Quiz route /decks/[id]/quiz)
     expect(html).toContain("Thử thách");
     expect(html).toContain('href="/decks/deck-xyz/quiz"');
+    expect(html).toContain("Tự nhớ &amp; viết");
+    expect(html).toContain("Nhìn nghĩa tiếng Việt, tự nhớ và gõ từ tiếng Anh.");
 
     // Anchor 3: Đọc & Ngữ cảnh
     expect(html).toContain("Đọc &amp; Ngữ cảnh");

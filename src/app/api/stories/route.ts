@@ -10,6 +10,7 @@ import { storyService } from "@/services/vocabulary";
 import { AIError } from "@/services/ai";
 import { aiErrorResponse } from "@/lib/http/ai-error";
 import { normalizeStoryVocabulary } from "@/lib/story/story-vocabulary";
+import { aiJobService } from "@/services/ai/ai-job-service";
 
 class StoryRequestValidationError extends Error {}
 
@@ -18,10 +19,12 @@ export async function POST(request: Request) {
   try {
     const body = await readJsonBody(request);
     const isExternalJson = typeof body === "object" && body !== null && "rawStory" in body;
-    const story = isExternalJson
-      ? await createStoryFromValidatedJson(body)
-      : await createStoryWithAi(body);
-    return NextResponse.json({ success: true, story }, { status: 201 });
+    if (isExternalJson) {
+      const story = await createStoryFromValidatedJson(body);
+      return NextResponse.json({ success: true, story }, { status: 201 });
+    }
+    const job = await enqueueStoryWithAi(body);
+    return NextResponse.json({ success: true, jobId: job.id, status: job.status, job }, { status: 202 });
   } catch (error) {
     if (error instanceof InvalidJsonBodyError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
@@ -38,13 +41,20 @@ export async function POST(request: Request) {
   }
 }
 
-async function createStoryWithAi(body: unknown) {
+async function enqueueStoryWithAi(body: unknown) {
   const validation = generateStoryRequestSchema.safeParse(body);
   if (!validation.success) {
     throw new StoryRequestValidationError(validation.error.issues[0]?.message || "Dữ liệu không hợp lệ");
   }
-  const story = await storyService.createStory(validation.data);
-  return prepareRequestedNarration(story, validation.data.narrationVoiceId);
+  const rawKey = body && typeof body === "object" ? (body as Record<string, unknown>).idempotencyKey : undefined;
+  return aiJobService.createStoryJob({
+    deckId: validation.data.deckId,
+    targetWords: validation.data.targetWords,
+    cefr: validation.data.cefr,
+    length: validation.data.length,
+    topic: validation.data.topic,
+    narrationVoiceId: validation.data.narrationVoiceId,
+  }, typeof rawKey === "string" ? rawKey : undefined);
 }
 
 async function createStoryFromValidatedJson(body: unknown) {

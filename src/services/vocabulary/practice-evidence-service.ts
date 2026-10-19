@@ -1062,6 +1062,231 @@ export class PracticeEvidenceService {
   }
 
   /**
+   * Returns direct Vietnamese-to-English evidence for an explicit canonical
+   * card set. Global practice uses this rather than inventing a second
+   * weakness model: `typed_vi_en` remains the only evidence source and retry
+   * attempts remain separate from first-pass retrieval evidence.
+   *
+   * The query is deliberately batched. It is used for a bounded personal
+   * vocabulary library and avoids a per-card query when building a global
+   * queue that also includes vocabulary with no Deck membership.
+   */
+  async getTypedChallengeEvidenceForFlashcardIds(
+    flashcardIds: readonly string[],
+    options: { excludeAssistedGlobalTypingCorrect?: boolean } = {}
+  ): Promise<Map<string, PracticeAxisSummary>> {
+    const cardIds = Array.from(new Set(flashcardIds.filter(Boolean)));
+    if (cardIds.length === 0) return new Map();
+
+    const attempts = await db.practiceAttempt.findMany({
+      where: {
+        flashcardId: { in: cardIds },
+        questionType: "typed_vi_en",
+        ...(options.excludeAssistedGlobalTypingCorrect
+          ? {
+              OR: [
+                { mode: { not: "global_typing_hint" } },
+                { correct: false },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+
+    const attemptsByCardId = new Map<string, PracticeAttempt[]>();
+    for (const attempt of attempts) {
+      const cardAttempts = attemptsByCardId.get(attempt.flashcardId) ?? [];
+      cardAttempts.push(attempt);
+      attemptsByCardId.set(attempt.flashcardId, cardAttempts);
+    }
+
+    const summaries = new Map<string, PracticeAxisSummary>();
+    for (const cardId of cardIds) {
+      const cardAttempts = attemptsByCardId.get(cardId);
+      if (!cardAttempts?.length) continue;
+      summaries.set(
+        cardId,
+        aggregateCardPracticeEvidence(cardId, cardAttempts).productionAxis
+      );
+    }
+    return summaries;
+  }
+
+  /**
+   * Returns a compact, transient view of direct Vietnamese-to-English recall.
+   *
+   * This is intentionally narrower than the Production evidence axis: it reads
+   * typed_vi_en only, so Story Cloze evidence never changes regular Challenge
+   * sampling. The returned summaries retain the canonical classifier and retry
+   * correlation rules, but are not persisted as a third evidence axis.
+   */
+  async getDeckTypedChallengeEvidence(deckId: string): Promise<Map<string, PracticeAxisSummary>> {
+    type RawTypedAttempt = {
+      id: string;
+      flashcardId: string;
+      sessionId: string;
+      questionId: string | null;
+      prompt: string | null;
+      attemptNumber: number;
+      mode: string;
+      questionType: string;
+      correct: boolean | number;
+      answer: string;
+      expectedAnswer: string;
+      responseMs: number | null;
+      createdAt: Date | string;
+    };
+
+    const [rawAttempts, rawLifetime] = await Promise.all([
+      db.$queryRaw<RawTypedAttempt[]>`
+        WITH RankedFirstPass AS (
+          SELECT
+            pa.id,
+            pa.flashcardId,
+            pa.sessionId,
+            pa.questionId,
+            pa.prompt,
+            pa.attemptNumber,
+            pa.mode,
+            pa.questionType,
+            pa.correct,
+            pa.answer,
+            pa.expectedAnswer,
+            pa.responseMs,
+            pa.createdAt,
+            ROW_NUMBER() OVER (
+              PARTITION BY pa.flashcardId
+              ORDER BY pa.createdAt DESC, pa.id DESC
+            ) AS rowNumber
+          FROM practice_attempts pa
+          INNER JOIN flashcards f ON f.id = pa.flashcardId
+          INNER JOIN deck_vocabulary_memberships dvm ON dvm.flashcardId = f.id
+          WHERE dvm.deckId = ${deckId}
+            AND pa.questionType = 'typed_vi_en'
+            AND pa.attemptNumber = 1
+            AND (pa.mode <> 'global_typing_hint' OR pa.correct = false)
+        ),
+        SelectedFirstPass AS (
+          SELECT * FROM RankedFirstPass WHERE rowNumber <= ${EVIDENCE_CONFIG.RECENT_WINDOW_SIZE}
+        )
+        SELECT
+          id, flashcardId, sessionId, questionId, prompt, attemptNumber,
+          mode, questionType, correct, answer, expectedAnswer, responseMs, createdAt
+        FROM SelectedFirstPass
+        UNION ALL
+        SELECT
+          retry.id, retry.flashcardId, retry.sessionId, retry.questionId, retry.prompt, retry.attemptNumber,
+          retry.mode, retry.questionType, retry.correct, retry.answer, retry.expectedAnswer, retry.responseMs, retry.createdAt
+        FROM practice_attempts retry
+        INNER JOIN SelectedFirstPass firstPass
+          ON retry.flashcardId = firstPass.flashcardId
+         AND retry.sessionId = firstPass.sessionId
+         AND (
+           (retry.questionId IS NOT NULL AND retry.questionId = firstPass.questionId)
+           OR (retry.questionId IS NULL AND firstPass.questionId IS NULL)
+         )
+        WHERE retry.questionType = 'typed_vi_en'
+          AND retry.attemptNumber = 2
+          AND (retry.mode <> 'global_typing_hint' OR retry.correct = false)
+        ORDER BY createdAt ASC, attemptNumber ASC, id ASC;
+      `,
+      db.$queryRaw<
+        Array<{
+          flashcardId: string;
+          firstPassAttempts: bigint | number;
+          firstPassCorrect: bigint | number;
+          firstPassIncorrect: bigint | number;
+          retryAttempts: bigint | number;
+          retryCorrect: bigint | number;
+          retryIncorrect: bigint | number;
+        }>
+      >`
+        SELECT
+          pa.flashcardId,
+          COUNT(CASE WHEN pa.attemptNumber = 1 THEN 1 END) AS firstPassAttempts,
+          COUNT(CASE WHEN pa.attemptNumber = 1 AND pa.correct THEN 1 END) AS firstPassCorrect,
+          COUNT(CASE WHEN pa.attemptNumber = 1 AND NOT pa.correct THEN 1 END) AS firstPassIncorrect,
+          COUNT(CASE WHEN pa.attemptNumber = 2 THEN 1 END) AS retryAttempts,
+          COUNT(CASE WHEN pa.attemptNumber = 2 AND pa.correct THEN 1 END) AS retryCorrect,
+          COUNT(CASE WHEN pa.attemptNumber = 2 AND NOT pa.correct THEN 1 END) AS retryIncorrect
+        FROM practice_attempts pa
+        INNER JOIN flashcards f ON f.id = pa.flashcardId
+        INNER JOIN deck_vocabulary_memberships dvm ON dvm.flashcardId = f.id
+        WHERE dvm.deckId = ${deckId}
+          AND pa.questionType = 'typed_vi_en'
+          AND (pa.mode <> 'global_typing_hint' OR pa.correct = false)
+        GROUP BY pa.flashcardId;
+      `,
+    ]);
+
+    const lifetimeByCardId = new Map(rawLifetime.map((row) => [row.flashcardId, row]));
+    const attemptsByCardId = new Map<string, PracticeAttempt[]>();
+
+    for (const raw of rawAttempts) {
+      const attempt: PracticeAttempt = {
+        id: raw.id,
+        flashcardId: raw.flashcardId,
+        sessionId: raw.sessionId,
+        questionId: raw.questionId,
+        prompt: raw.prompt,
+        attemptNumber: Number(raw.attemptNumber),
+        mode: raw.mode,
+        questionType: raw.questionType,
+        correct: Boolean(raw.correct),
+        answer: raw.answer,
+        expectedAnswer: raw.expectedAnswer,
+        responseMs: raw.responseMs === null ? null : Number(raw.responseMs),
+        createdAt: raw.createdAt instanceof Date ? raw.createdAt : new Date(raw.createdAt),
+      };
+      const attempts = attemptsByCardId.get(attempt.flashcardId) ?? [];
+      attempts.push(attempt);
+      attemptsByCardId.set(attempt.flashcardId, attempts);
+    }
+
+    const summaries = new Map<string, PracticeAxisSummary>();
+    for (const [flashcardId, lifetime] of lifetimeByCardId) {
+      const firstPassAttempts = Number(lifetime.firstPassAttempts);
+      const firstPassCorrect = Number(lifetime.firstPassCorrect);
+      const firstPassIncorrect = Number(lifetime.firstPassIncorrect);
+      const retryAttempts = Number(lifetime.retryAttempts);
+      const retryCorrect = Number(lifetime.retryCorrect);
+      const retryIncorrect = Number(lifetime.retryIncorrect);
+      const summary = aggregateCardPracticeEvidence(
+        flashcardId,
+        attemptsByCardId.get(flashcardId) ?? [],
+        {
+          firstPassAttempts,
+          firstPassCorrect,
+          firstPassIncorrect,
+          retryAttempts,
+          retryCorrect,
+          retryIncorrect,
+          prodFirstPassAttempts: firstPassAttempts,
+          prodFirstPassCorrect: firstPassCorrect,
+          prodFirstPassIncorrect: firstPassIncorrect,
+          prodRetryAttempts: retryAttempts,
+          prodRetryCorrect: retryCorrect,
+          prodRetryIncorrect: retryIncorrect,
+          breakdownByQuestionType: {
+            typedRecall: {
+              attempts: firstPassAttempts + retryAttempts,
+              correct: firstPassCorrect + retryCorrect,
+              incorrect: firstPassIncorrect + retryIncorrect,
+            },
+            storyCloze: { attempts: 0, correct: 0, incorrect: 0 },
+            multipleChoice: { attempts: 0, correct: 0, incorrect: 0 },
+            other: { attempts: 0, correct: 0, incorrect: 0 },
+          },
+        }
+      );
+      summaries.set(flashcardId, summary.productionAxis);
+    }
+
+    return summaries;
+  }
+
+  /**
    * Fetches and aggregates practice evidence for all cards in one or more decks
    * through fixed, batched queries. A string preserves the existing single-deck API.
    */
@@ -1084,11 +1309,10 @@ export class PracticeEvidenceService {
     }
 
     // 1. Fetch cards for the requested deck scope.
-    const cards = await db.flashcard.findMany({
-      where: { deckId: { in: deckIds } },
+    const scopedCards = await db.flashcard.findMany({
+      where: { deckMemberships: { some: { deckId: { in: deckIds } } } },
       select: {
         id: true,
-        deckId: true,
         term: true,
         normalizedTerm: true,
         meaningVi: true,
@@ -1106,8 +1330,21 @@ export class PracticeEvidenceService {
         due: true,
         state: true,
         lastReviewAt: true,
+        deckMemberships: {
+          where: { deckId: { in: deckIds } },
+          select: { deckId: true },
+          orderBy: { deckId: "asc" },
+        },
       },
       orderBy: { createdAt: "asc" },
+    });
+
+    // A card may belong to several requested Decks. Evidence is a property of
+    // the canonical card, so process it once and retain one deterministic Deck
+    // context only for callers that need to render a source label.
+    const cards = scopedCards.flatMap(({ deckMemberships, ...card }) => {
+      const membership = deckMemberships[0];
+      return membership ? [{ ...card, deckId: membership.deckId }] : [];
     });
 
     if (cards.length === 0) {
@@ -1172,6 +1409,7 @@ export class PracticeEvidenceService {
         WHERE pa.flashcardId IN (${Prisma.join(cardIds)})
           AND pa.attemptNumber = 1
           AND pa.questionType != 'story_comprehension'
+          AND (pa.mode <> 'global_typing_hint' OR pa.correct = false)
       ),
       SelectedFirstPass AS (
         SELECT * FROM AxisAttempts WHERE rn <= 5 AND evidenceAxis IS NOT NULL
@@ -1191,6 +1429,7 @@ export class PracticeEvidenceService {
        AND ((rpa.questionId IS NOT NULL AND rpa.questionId = sfp.questionId) OR (rpa.questionId IS NULL AND sfp.questionId IS NULL))
       WHERE rpa.flashcardId IN (${Prisma.join(cardIds)})
         AND rpa.attemptNumber = 2
+        AND (rpa.mode <> 'global_typing_hint' OR rpa.correct = false)
       ORDER BY createdAt ASC, attemptNumber ASC, id ASC;
     `;
 
@@ -1260,6 +1499,7 @@ export class PracticeEvidenceService {
         COUNT(CASE WHEN questionType IN ('multiple_choice', 'multiple_choice_en_vi', 'multiple_choice_vi_en', 'fill_in_blank', 'story_contextual_vocab') AND attemptNumber = 2 AND NOT correct THEN 1 END) as recogRetryIncorrect
       FROM practice_attempts
       WHERE flashcardId IN (${Prisma.join(cardIds)})
+        AND (mode <> 'global_typing_hint' OR correct = false)
       GROUP BY flashcardId;
     `;
 
@@ -1445,7 +1685,7 @@ export class PracticeEvidenceService {
       WITH FilteredAttempts AS (
         SELECT
           pa.flashcardId,
-          f.deckId,
+          dvm.deckId,
           CASE
             WHEN pa.questionType IN ('multiple_choice', 'multiple_choice_en_vi', 'multiple_choice_vi_en', 'fill_in_blank', 'story_contextual_vocab') THEN 'recognition'
             WHEN pa.questionType IN ('typed_vi_en', 'story_cloze') THEN 'production'
@@ -1456,8 +1696,10 @@ export class PracticeEvidenceService {
           pa.id
         FROM practice_attempts pa
         INNER JOIN flashcards f ON f.id = pa.flashcardId
-        WHERE f.deckId IN (${Prisma.join(deckIds)})
+        INNER JOIN deck_vocabulary_memberships dvm ON dvm.flashcardId = f.id
+        WHERE dvm.deckId IN (${Prisma.join(deckIds)})
           AND pa.questionType IN ('multiple_choice', 'multiple_choice_en_vi', 'multiple_choice_vi_en', 'fill_in_blank', 'story_contextual_vocab', 'typed_vi_en', 'story_cloze')
+          AND (pa.mode <> 'global_typing_hint' OR pa.correct = false)
       ),
       FirstPassRanked AS (
         SELECT
@@ -1511,7 +1753,7 @@ export class PracticeEvidenceService {
        AND recent.axis = lifetime.axis;
     `;
 
-    const axisStatesByCardId = new Map<
+    const axisStatesByCardAndDeck = new Map<
       string,
       { deckId: string; recognition: AxisEvidenceState; production: AxisEvidenceState }
     >();
@@ -1541,16 +1783,17 @@ export class PracticeEvidenceService {
         retryIncorrect: Number(row.retryIncorrect),
         latestFirstPassCorrect,
       }).state;
-      const current = axisStatesByCardId.get(row.flashcardId) ?? {
+      const key = `${row.deckId}:${row.flashcardId}`;
+      const current = axisStatesByCardAndDeck.get(key) ?? {
         deckId: row.deckId,
         recognition: "NO_EVIDENCE" as AxisEvidenceState,
         production: "NO_EVIDENCE" as AxisEvidenceState,
       };
       current[row.axis] = state;
-      axisStatesByCardId.set(row.flashcardId, current);
+      axisStatesByCardAndDeck.set(key, current);
     }
 
-    for (const { deckId, recognition, production } of axisStatesByCardId.values()) {
+    for (const { deckId, recognition, production } of axisStatesByCardAndDeck.values()) {
       if (
         isWeakCardSummary({
           recognitionAxis: { state: recognition },
@@ -1656,7 +1899,7 @@ export class PracticeEvidenceService {
     const cards = await db.flashcard.findMany({
       where: {
         id: { in: uniqueCardIds },
-        deckId,
+        deckMemberships: { some: { deckId } },
       },
     });
 
@@ -1665,10 +1908,10 @@ export class PracticeEvidenceService {
     }
 
     // Maintain the order of targetCardIds
-    const cardMap = new Map(cards.map((c) => [c.id, c]));
+    const cardMap = new Map(cards.map((c) => [c.id, { ...c, deckId }]));
     const orderedCards = uniqueCardIds
       .map((id) => cardMap.get(id))
-      .filter((c): c is typeof cards[0] => c !== undefined);
+      .filter((c): c is NonNullable<typeof c> => c !== undefined);
 
     // 4. Resolve story context
     const stories = await db.story.findMany({
@@ -1746,7 +1989,7 @@ export class PracticeEvidenceService {
 
     // 2. Build where filter for PracticeAttempt
     const baseWhere: Prisma.PracticeAttemptWhereInput = {
-      flashcard: { deckId },
+      flashcard: { deckMemberships: { some: { deckId } } },
       correct: false,
       attemptNumber: 1,
     };
@@ -1823,7 +2066,7 @@ export class PracticeEvidenceService {
     // 4. Compute counts for tabs
     const allAttemptsCount = await db.practiceAttempt.count({
       where: {
-        flashcard: { deckId },
+        flashcard: { deckMemberships: { some: { deckId } } },
         correct: false,
         attemptNumber: 1,
       },
@@ -1831,7 +2074,7 @@ export class PracticeEvidenceService {
 
     const resolvedCount = await db.practiceAttempt.count({
       where: {
-        flashcard: { deckId },
+        flashcard: { deckMemberships: { some: { deckId } } },
         correct: false,
         attemptNumber: 1,
         OR: [

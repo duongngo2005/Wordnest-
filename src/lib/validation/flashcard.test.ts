@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  aiBatchFlashcardResponseSchema,
   generatedFlashcardItemSchema,
   manualFlashcardItemSchema,
   updateFlashcardRequestSchema,
@@ -9,6 +8,7 @@ import {
 describe("Flashcard Zod Validation", () => {
   it("validates a complete flashcard item correctly", () => {
     const validCard = {
+      requestedTerm: "resilient",
       term: "resilient",
       meaningVi: "kiên cường, có khả năng phục hồi nhanh",
       definitionEn: "able to withstand or recover quickly from difficult conditions",
@@ -30,11 +30,13 @@ describe("Flashcard Zod Validation", () => {
     }
   });
 
-  it("handles null and omitted optional fields with defaults", () => {
+  it("requires a controlled POS for AI output while keeping optional metadata defaulted", () => {
     const minimalCard = {
+      requestedTerm: "apple",
       term: "apple",
       meaningVi: "quả táo",
       definitionEn: "a round fruit with red or green skin and firm white flesh",
+      partOfSpeech: "noun",
       exampleEn: "He ate a fresh apple.",
       exampleVi: "Anh ấy đã ăn một quả táo tươi.",
       imageUseful: true,
@@ -45,7 +47,7 @@ describe("Flashcard Zod Validation", () => {
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.ipa).toBeNull();
-      expect(parsed.data.partOfSpeech).toBeNull();
+      expect(parsed.data.partOfSpeech).toBe("noun");
       expect(parsed.data.cefr).toBeNull();
       expect(parsed.data.imageUseful).toBe(true);
       expect(parsed.data.imageSearchQuery).toBe("red apple fruit");
@@ -54,11 +56,13 @@ describe("Flashcard Zod Validation", () => {
 
   it("rejects invalid CEFR level", () => {
     const invalidCard = {
+      requestedTerm: "apple",
       term: "apple",
       meaningVi: "quả táo",
       definitionEn: "a fruit",
       exampleEn: "An apple a day.",
       exampleVi: "Một quả táo mỗi ngày.",
+      partOfSpeech: "noun",
       cefr: "Z9", // Invalid!
       imageUseful: false,
     };
@@ -67,29 +71,18 @@ describe("Flashcard Zod Validation", () => {
     expect(parsed.success).toBe(false);
   });
 
-  it("validates batch response wrapper", () => {
-    const batchData = {
-      flashcards: [
-        {
-          term: "take responsibility",
-          meaningVi: "chịu trách nhiệm",
-          definitionEn: "to accept blame or duty for something",
-          ipa: "/teɪk rɪˌspɒn.sɪˈbɪl.ə.ti/",
-          partOfSpeech: "phrase",
-          cefr: "B1",
-          exampleEn: "Good leaders always take responsibility for team mistakes.",
-          exampleVi: "Những nhà lãnh đạo giỏi luôn chịu trách nhiệm về sai lầm của đội ngũ.",
-          imageUseful: false,
-          imageSearchQuery: null,
-        },
-      ],
+  it("keeps legacy/image drafts parseable but rejects malformed controlled POS", () => {
+    const base = {
+      requestedTerm: "address",
+      term: "address",
+      meaningVi: "đề cập và xử lý vấn đề",
+      definitionEn: "to deal with a problem",
+      exampleEn: "We need to address this problem.",
+      exampleVi: "Chúng ta cần xử lý vấn đề này.",
     };
 
-    const parsed = aiBatchFlashcardResponseSchema.safeParse(batchData);
-    expect(parsed.success).toBe(true);
-    if (parsed.success) {
-      expect(parsed.data.flashcards.length).toBe(1);
-    }
+    expect(generatedFlashcardItemSchema.safeParse(base).success).toBe(true);
+    expect(generatedFlashcardItemSchema.safeParse({ ...base, partOfSpeech: "noun/verb" }).success).toBe(false);
   });
 
   it("accepts a manual flashcard with only a word and Vietnamese meaning", () => {
@@ -159,11 +152,13 @@ describe("Flashcard Zod Validation", () => {
   describe("visualScore and AUTO_IMAGE_MIN_SCORE pipeline", () => {
     it("activates imageUseful when visualScore >= AUTO_IMAGE_MIN_SCORE (75)", () => {
       const card = {
+        requestedTerm: "parachute",
         term: "parachute",
         meaningVi: "cái dù nhảy",
         definitionEn: "a cloth canopy that fills with air to slow the fall of a person or object",
         exampleEn: "He pulled the cord to open his parachute.",
         exampleVi: "Anh ấy đã giật dây để mở dù.",
+        partOfSpeech: "noun",
         visualScore: 92,
         imageSearchQuery: "skydiver open parachute sky",
       };
@@ -179,11 +174,13 @@ describe("Flashcard Zod Validation", () => {
 
     it("suppresses imageSearchQuery and marks imageUseful as false when visualScore < 75", () => {
       const card = {
+        requestedTerm: "perspective",
         term: "perspective",
         meaningVi: "góc nhìn, quan điểm",
         definitionEn: "a particular attitude towards or way of regarding something",
         exampleEn: "Try to see the problem from my perspective.",
         exampleVi: "Hãy thử nhìn nhận vấn đề từ góc nhìn của tôi.",
+        partOfSpeech: "noun",
         visualScore: 35,
         imageSearchQuery: "person thinking concept",
       };
@@ -199,11 +196,13 @@ describe("Flashcard Zod Validation", () => {
 
     it("resolves legacy imageUseful boolean correctly", () => {
       const legacyTrueCard = {
+        requestedTerm: "microscope",
         term: "microscope",
         meaningVi: "kính hiển vi",
         definitionEn: "an optical instrument",
         exampleEn: "He looked through the microscope.",
         exampleVi: "Anh ấy nhìn qua kính hiển vi.",
+        partOfSpeech: "noun",
         imageUseful: true,
         imageSearchQuery: "laboratory microscope instrument",
       };

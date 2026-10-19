@@ -50,8 +50,15 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    await deckService.deleteCard(id);
-    return NextResponse.json({ success: true, message: "Đã xóa thẻ" });
+    const deckId = new URL(request.url).searchParams.get("deckId");
+    if (!deckId) {
+      return NextResponse.json(
+        { success: false, error: "Cần xác định bộ thẻ nguồn để gỡ liên kết từ vựng an toàn." },
+        { status: 400 }
+      );
+    }
+    await deckService.removeCardFromDeck(id, deckId);
+    return NextResponse.json({ success: true, message: "Đã gỡ từ khỏi bộ thẻ; hồ sơ từ vựng và lịch sử học vẫn được giữ." });
   } catch (error) {
     if (error instanceof ResourceNotFoundError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 404 });

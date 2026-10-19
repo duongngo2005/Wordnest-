@@ -40,23 +40,30 @@ export class TodayLearningService {
 
     const deckIds = orderedDecks.map((deck) => deck.id);
     const [totalRows, dueRows, newRows, weakCountByDeckId] = await Promise.all([
-      db.flashcard.groupBy({
-        by: ["deckId"],
-        where: { deckId: { in: deckIds } },
-        _count: { _all: true },
-      }),
-      db.flashcard.groupBy({
+      db.deckVocabularyMembership.groupBy({
         by: ["deckId"],
         where: {
           deckId: { in: deckIds },
-          state: { gt: 0 },
-          due: { lte: now },
         },
         _count: { _all: true },
       }),
-      db.flashcard.groupBy({
+      db.deckVocabularyMembership.groupBy({
         by: ["deckId"],
-        where: { deckId: { in: deckIds }, state: 0 },
+        where: {
+          deckId: { in: deckIds },
+          flashcard: {
+            state: { gt: 0 },
+            due: { lte: now },
+          },
+        },
+        _count: { _all: true },
+      }),
+      db.deckVocabularyMembership.groupBy({
+        by: ["deckId"],
+        where: {
+          deckId: { in: deckIds },
+          flashcard: { state: 0 },
+        },
         _count: { _all: true },
       }),
       practiceEvidenceService.getDeckWeakCardCounts(deckIds),

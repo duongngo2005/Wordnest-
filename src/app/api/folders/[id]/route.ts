@@ -3,6 +3,7 @@ import { ResourceConflictError, ResourceNotFoundError } from "@/lib/http/errors"
 import { InvalidJsonBodyError, readJsonBody } from "@/lib/http/json";
 import { updateFolderSchema } from "@/lib/validation/folder";
 import { folderService } from "@/services/vocabulary";
+import { StaleDeletionPreviewError } from "@/services/vocabulary/deletion-preview";
 
 export async function GET(
   request: Request,
@@ -10,6 +11,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    if (new URL(request.url).searchParams.get("impact") === "delete") {
+      const impact = await folderService.getFolderDeletionImpact(id);
+      return NextResponse.json({ success: true, impact });
+    }
     const folder = await folderService.getFolder(id);
     if (!folder) {
       return NextResponse.json({ success: false, error: "Không tìm thấy learning collection." }, { status: 404 });
@@ -65,7 +70,14 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    await folderService.deleteFolder(id);
+    const previewFingerprint = request.headers.get("x-wordnest-deletion-preview");
+    if (!previewFingerprint) {
+      return NextResponse.json(
+        { success: false, error: "Hãy xem trước ảnh hưởng hiện tại trước khi xác nhận xóa bộ sưu tập." },
+        { status: 400 }
+      );
+    }
+    await folderService.deleteFolder(id, previewFingerprint);
     return NextResponse.json({
       success: true,
       message: "Đã xóa collection. Các bộ thẻ vẫn được giữ trong mục Chưa phân loại.",
@@ -73,6 +85,9 @@ export async function DELETE(
   } catch (error) {
     if (error instanceof ResourceNotFoundError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 404 });
+    }
+    if (error instanceof StaleDeletionPreviewError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 409 });
     }
     console.error("Error deleting learning collection:", error);
     return NextResponse.json(

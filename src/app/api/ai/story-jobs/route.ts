@@ -3,6 +3,12 @@ import { readJsonBody, InvalidJsonBodyError } from "@/lib/http/json";
 import { generateStoryRequestSchema } from "@/lib/validation/story";
 import { aiJobService } from "@/services/ai/ai-job-service";
 
+function idempotencyKeyFrom(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const value = (body as Record<string, unknown>).idempotencyKey;
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(value) ? value : undefined;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await readJsonBody(request);
@@ -17,14 +23,18 @@ export async function POST(request: Request) {
       );
     }
 
-    const job = await aiJobService.createStoryJob({
+    const input = {
       deckId: validation.data.deckId,
       targetWords: validation.data.targetWords,
       cefr: validation.data.cefr,
       length: validation.data.length,
       topic: validation.data.topic,
       narrationVoiceId: validation.data.narrationVoiceId,
-    });
+    };
+    const idempotencyKey = idempotencyKeyFrom(body);
+    const job = idempotencyKey
+      ? await aiJobService.createStoryJob(input, idempotencyKey)
+      : await aiJobService.createStoryJob(input);
 
     return NextResponse.json(
       {
@@ -58,8 +68,11 @@ export async function GET(request: Request) {
     const activeOnly = searchParams.get("active") === "true";
 
     if (activeOnly) {
-      const activeJobs = await aiJobService.getActiveAndRecentJobs();
-      return NextResponse.json({ success: true, jobs: activeJobs });
+      const [activeJobs, counts] = await Promise.all([
+        aiJobService.getActiveAndRecentJobs(),
+        aiJobService.getQueueCounts(),
+      ]);
+      return NextResponse.json({ success: true, jobs: activeJobs, counts });
     }
 
     return NextResponse.json(

@@ -15,11 +15,10 @@ import { PracticeAttempt } from "@prisma/client";
  * as baseline characterization prior to optimization.
  */
 async function referenceGetDeckPracticeEvidence(deckId: string) {
-  const cards = await db.flashcard.findMany({
-    where: { deckId },
+  const scopedCards = await db.flashcard.findMany({
+    where: { deckMemberships: { some: { deckId } } },
     select: {
       id: true,
-      deckId: true,
       term: true,
       normalizedTerm: true,
       meaningVi: true,
@@ -37,8 +36,16 @@ async function referenceGetDeckPracticeEvidence(deckId: string) {
       due: true,
       state: true,
       lastReviewAt: true,
+      deckMemberships: {
+        where: { deckId },
+        select: { deckId: true },
+      },
     },
     orderBy: { createdAt: "asc" },
+  });
+  const cards = scopedCards.flatMap(({ deckMemberships, ...card }) => {
+    const membership = deckMemberships[0];
+    return membership ? [{ ...card, deckId: membership.deckId }] : [];
   });
 
   if (cards.length === 0) {
@@ -597,4 +604,3 @@ describe("Practice Evidence Characterization Tests (Phase 1A Baseline)", () => {
     expect(act.counts.NEEDS_PRACTICE).toBe(1);
   });
 });
-

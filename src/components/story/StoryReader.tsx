@@ -186,7 +186,8 @@ function VocabularyNoteContent({
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [cardAdded, setCardAdded] = useState(false);
   const [addCardError, setAddCardError] = useState<string | null>(null);
-  const formIsDifferent = panel.canonicalTerm && normalize(panel.canonicalTerm) !== normalize(panel.selectedText);
+  const targetTerm = panel.canonicalTerm || translation?.canonicalTerm || translation?.selectedText || panel.selectedText;
+  const formIsDifferent = normalize(targetTerm) !== normalize(panel.selectedText);
 
   const handleAddCard = async () => {
     if (!translation) return;
@@ -198,7 +199,7 @@ function VocabularyNoteContent({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           deckId,
-          term: translation.selectedText,
+          term: targetTerm,
           meaningVi: translation.meaningVi || translation.contextualMeaningVi,
           definitionEn: translation.definitionEn,
           ipa: translation.ipa || undefined,
@@ -229,7 +230,7 @@ function VocabularyNoteContent({
           <h2 id="story-vocabulary-note-title" className="mt-1 break-words font-[family-name:var(--font-story-display)] text-[1.7rem] font-semibold leading-none tracking-[-0.025em] text-[#221C16] sm:text-[2rem]">
             {panel.selectedText}
           </h2>
-          {formIsDifferent ? <p className="mt-1 text-xs font-semibold text-[#756A5D]">Dạng của: <strong className="text-[#221C16]">{panel.canonicalTerm}</strong></p> : null}
+          {formIsDifferent ? <p className="mt-1 text-xs font-semibold text-[#756A5D]">Dạng từ điển: <strong className="text-[#221C16]">{targetTerm}</strong></p> : null}
           {ipa || partOfSpeech ? <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#756A5D]">{ipa ? <span className="font-mono font-semibold">{ipa}</span> : null}{partOfSpeech ? <span className="italic">{partOfSpeech}</span> : null}</p> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -253,13 +254,23 @@ function VocabularyNoteContent({
           {panel.sentence ? <blockquote className="border-l border-dashed border-[#C9BFAE] pl-3 text-sm italic leading-6 text-[#5D5247]">“{panel.sentence}”</blockquote> : null}
           {panel.source === "ai" && translation?.definitionVi ? <p className="text-xs leading-6 text-[#5D5247]"><span className="font-bold text-[#302820]">Ghi chú:</span> {translation.definitionVi}</p> : null}
           {panel.source === "ai" && translation ? (
-            <div className="flex items-center justify-between gap-3 border-t border-dashed border-[#C9BFAE] pt-3">
-              <p className="text-xs leading-5 text-[#756A5D]">{cardAdded ? "Đã lưu vào bộ từ." : "Lưu từ mới này để ôn bằng flashcard?"}</p>
-              <button type="button" onClick={handleAddCard} disabled={isAddingCard || cardAdded} aria-busy={isAddingCard} className="wn-button wn-button-secondary shrink-0 px-3 py-2 text-xs">
-                {cardAdded ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
-                {cardAdded ? "Đã lưu" : isAddingCard ? "Đang lưu…" : "Lưu vào deck"}
-              </button>
-            </div>
+            <section className="space-y-3 border-t border-dashed border-[#C9BFAE] pt-3" aria-label="Xem trước thẻ từ truyện">
+              <p className="wn-story-kicker">Xem trước thẻ · một nghĩa đã chọn</p>
+              <dl className="grid gap-2 text-xs leading-5 text-[#5D5247]">
+                <div><dt className="font-bold text-[#302820]">Term</dt><dd>{targetTerm}</dd></div>
+                <div><dt className="font-bold text-[#302820]">Từ loại</dt><dd>{translation.partOfSpeech || "Chưa xác định"}</dd></div>
+                <div><dt className="font-bold text-[#302820]">Nghĩa</dt><dd>{translation.meaningVi}</dd></div>
+                <div><dt className="font-bold text-[#302820]">Định nghĩa</dt><dd>{translation.definitionEn}</dd></div>
+                <div><dt className="font-bold text-[#302820]">Ví dụ</dt><dd className="italic">{translation.exampleEn}</dd><dd>{translation.exampleVi}</dd></div>
+              </dl>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs leading-5 text-[#756A5D]">{cardAdded ? "Đã lưu vào bộ từ." : "Kiểm tra thẻ này trước khi lưu để ôn bằng flashcard."}</p>
+                <button type="button" onClick={handleAddCard} disabled={isAddingCard || cardAdded} aria-busy={isAddingCard} className="wn-button wn-button-secondary shrink-0 px-3 py-2 text-xs">
+                  {cardAdded ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
+                  {cardAdded ? "Đã lưu" : isAddingCard ? "Đang lưu…" : "Lưu vào deck"}
+                </button>
+              </div>
+            </section>
           ) : null}
           {addCardError ? <p role="alert" className="text-xs font-semibold text-[#A63222]">{addCardError}</p> : null}
         </div>
@@ -438,7 +449,7 @@ export function StoryReader({
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.translation) throw new Error(data?.error || "Không thể dịch từ này lúc này.");
       if (requestId.current !== currentRequest) return;
-      setPanel({ selectedText: cleanText, canonicalTerm: null, source: "ai", sentence: surroundingSentence, translation: data.translation });
+      setPanel({ selectedText: cleanText, canonicalTerm: data.canonicalTerm || data.translation.canonicalTerm || null, source: "ai", sentence: surroundingSentence, translation: data.translation });
     } catch (error) {
       if (requestId.current !== currentRequest) return;
       setPanel({ selectedText: cleanText, canonicalTerm: null, source: "ai", sentence: surroundingSentence, error: error instanceof Error ? error.message : "Không thể dịch từ này lúc này." });

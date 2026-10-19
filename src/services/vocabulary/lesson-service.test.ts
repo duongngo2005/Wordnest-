@@ -3,7 +3,7 @@ import { buildLessonPrompt } from "@/lib/lesson/lesson-prompt";
 import { LessonService } from "./lesson-service";
 import type { AIService } from "@/services/ai";
 import { db } from "@/lib/db";
-import { FlashcardStatus, type Deck, type Flashcard, type Lesson } from "@prisma/client";
+import { FlashcardStatus, type Lesson } from "@prisma/client";
 
 describe("Lesson Generation & Service Unit Tests", () => {
   describe("buildLessonPrompt", () => {
@@ -100,6 +100,17 @@ describe("Lesson Generation & Service Unit Tests", () => {
       ],
     };
 
+    const mockDeckWithMemberships = {
+      ...mockDeck,
+      vocabularyMemberships: mockDeck.cards.map((flashcard) => ({
+        id: `membership-${flashcard.id}`,
+        deckId: mockDeck.id,
+        flashcardId: flashcard.id,
+        createdAt: new Date(),
+        flashcard,
+      })),
+    };
+
     beforeEach(() => {
       vi.restoreAllMocks();
     });
@@ -126,7 +137,7 @@ describe("Lesson Generation & Service Unit Tests", () => {
     });
 
     it("generates a lesson passage and persists with coverage and translations", async () => {
-      vi.spyOn(db.deck, "findUnique").mockResolvedValue(mockDeck as unknown as (Deck & { cards: Flashcard[] }));
+      vi.spyOn(db.deck, "findUnique").mockResolvedValue(mockDeckWithMemberships as never);
 
       const mockAi: Partial<AIService> = {
         callStructured: vi.fn().mockResolvedValue({
@@ -182,7 +193,7 @@ describe("Lesson Generation & Service Unit Tests", () => {
     });
 
     it("triggers targeted repair when some target words are omitted", async () => {
-      vi.spyOn(db.deck, "findUnique").mockResolvedValue(mockDeck as unknown as (Deck & { cards: Flashcard[] }));
+      vi.spyOn(db.deck, "findUnique").mockResolvedValue(mockDeckWithMemberships as never);
 
       const callStructuredMock = vi
         .fn()
@@ -231,7 +242,7 @@ describe("Lesson Generation & Service Unit Tests", () => {
     });
 
     it("throws an error if no target words could be integrated after generation and repair", async () => {
-      vi.spyOn(db.deck, "findUnique").mockResolvedValue(mockDeck as unknown as (Deck & { cards: Flashcard[] }));
+      vi.spyOn(db.deck, "findUnique").mockResolvedValue(mockDeckWithMemberships as never);
 
       const mockAi: Partial<AIService> = {
         callStructured: vi.fn().mockResolvedValue({

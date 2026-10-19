@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { InvalidJsonBodyError, readJsonBody } from "@/lib/http/json";
 import { addCardFromStoryRequestSchema } from "@/lib/validation/story";
+import { validateLexicalDraft } from "@/lib/flashcards/lexical-authoring";
 import { storyService } from "@/services/vocabulary";
 
 export async function POST(request: Request) {
@@ -11,6 +12,14 @@ export async function POST(request: Request) {
     if (!validation.success) {
       const msg = validation.error.issues?.[0]?.message || "Dữ liệu tạo thẻ không hợp lệ";
       return NextResponse.json({ success: false, error: msg }, { status: 400 });
+    }
+
+    const lexicalValidation = validateLexicalDraft(validation.data);
+    if (!lexicalValidation.valid) {
+      return NextResponse.json(
+        { success: false, error: `Bản nháp thẻ từ truyện chưa hợp lệ: ${lexicalValidation.errors[0]}` },
+        { status: 400 }
+      );
     }
 
     const result = await storyService.addCardFromStory(validation.data);

@@ -36,10 +36,41 @@ interface QuizRunnerProps {
   };
   initialQuestions: QuizQuestion[];
   initialSessionId: string;
-  initialMode?: "multiple_choice" | "typed" | "story_cloze" | "focused_practice" | "story_practice" | "lesson_practice";
+  initialMode?: QuizMode;
   storyId?: string;
   lessonId?: string;
+  /** Locks the normal deck Challenge to direct Vietnamese-to-English recall. */
+  isProductionChallenge?: boolean;
+  /** Reuses the runner for a fixed server-created session, such as global typing. */
+  lockedMode?: boolean;
+  /** API endpoint that creates and submits this session. Defaults to the Deck quiz endpoint. */
+  apiBasePath?: string;
+  /** GET URL to create another session with the same scope and setup choices. */
+  newSessionUrl?: string;
+  backHref?: string;
+  backLabel?: string;
+  sessionLabel?: string;
+  resultTitle?: string;
+  resultScopeLabel?: string;
+  onCompleted?: (result: QuizSubmissionResult, sessionId: string, records: AnswerRecord[]) => void;
+  onRetryIncorrect?: () => void;
+  /** Called before a session records an assisted spelling-hint answer. */
+  onTypedHintRequested?: (sessionId: string, questionId: string) => Promise<void>;
+  /** Controls whether a fixed-source recall session may expose spelling hints. */
+  typedHintPolicy?: "available" | "hidden";
+  /** Controls the opt-in randomized letter mask used by Global and Due Typing. */
+  letterHintPolicy?: "available" | "hidden";
 }
+
+type QuizMode =
+  | "multiple_choice"
+  | "typed"
+  | "story_cloze"
+  | "focused_practice"
+  | "story_practice"
+  | "lesson_practice"
+  | "global_typing"
+  | "due_typing";
 
 export function QuizRunner({
   deck,
@@ -48,21 +79,38 @@ export function QuizRunner({
   initialMode = "multiple_choice",
   storyId,
   lessonId,
+  isProductionChallenge = false,
+  lockedMode = false,
+  apiBasePath,
+  newSessionUrl,
+  backHref,
+  backLabel = "Quay lại bộ từ",
+  sessionLabel,
+  resultTitle,
+  resultScopeLabel,
+  onCompleted,
+  onRetryIncorrect,
+  onTypedHintRequested,
+  typedHintPolicy = "available",
+  letterHintPolicy = "hidden",
 }: QuizRunnerProps) {
-  const [currentMode, setCurrentMode] = useState<
-    "multiple_choice" | "typed" | "story_cloze" | "focused_practice" | "story_practice" | "lesson_practice"
-  >(initialMode);
+  const [currentMode, setCurrentMode] = useState<QuizMode>(initialMode);
   const [questions, setQuestions] = useState<QuizQuestion[]>(initialQuestions);
   const [sessionId, setSessionId] = useState(initialSessionId);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [typedAnswer, setTypedAnswer] = useState("");
   const [typedHintStyle, setTypedHintStyle] = useState<TypedAnswerHintStyle>("partial");
+  const [isHintVisible, setIsHintVisible] = useState(false);
+  const [isMarkingHint, setIsMarkingHint] = useState(false);
+  const [isLetterHintVisible, setIsLetterHintVisible] = useState(false);
+  const [isMarkingLetterHint, setIsMarkingLetterHint] = useState(false);
   const [isCheckingTyped, setIsCheckingTyped] = useState(false);
   const [checkedTypedData, setCheckedTypedData] = useState<{
     correct: boolean;
     expectedAnswer: string;
     explanation: QuizQuestionExplanation;
+    collisionSiblingAnswer?: boolean;
   } | null>(null);
   const [isAnswerChecked, setIsAnswerChecked] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
@@ -80,6 +128,8 @@ export function QuizRunner({
   const typedInputRef = useRef<HTMLInputElement | null>(null);
   const firstChoiceRef = useRef<HTMLButtonElement | null>(null);
   const hasPresentedQuestionRef = useRef(false);
+  const isComposingAnswerRef = useRef(false);
+  const requestedLetterHintQuestionIdsRef = useRef(new Set<string>());
 
   const activeQuestions = isRetrying ? retryQuestions : questions;
   const activeIndex = isRetrying ? currentRetryIndex : currentIndex;
@@ -87,6 +137,34 @@ export function QuizRunner({
   const isTypedQuestion =
     currentQuestion?.type === "typed_vi_en" || currentQuestion?.type === "story_cloze";
   const total = activeQuestions.length;
+  const resolvedApiBasePath = apiBasePath ?? `/api/decks/${deck.id}/quiz`;
+  const resolvedBackHref = backHref ?? `/decks/${deck.id}`;
+
+  const markLetterHintUsed = useCallback(
+    async (question: QuizQuestion): Promise<boolean> => {
+      if (
+        question.type !== "typed_vi_en" ||
+        !question.letterHint ||
+        requestedLetterHintQuestionIdsRef.current.has(question.id)
+      ) {
+        return true;
+      }
+
+      setIsMarkingLetterHint(true);
+      setSubmissionError(null);
+      try {
+        await onTypedHintRequested?.(sessionId, question.id);
+        requestedLetterHintQuestionIdsRef.current.add(question.id);
+        return true;
+      } catch (error) {
+        setSubmissionError(error instanceof Error ? error.message : "Không thể ghi nhận việc dùng gợi ý.");
+        return false;
+      } finally {
+        setIsMarkingLetterHint(false);
+      }
+    },
+    [onTypedHintRequested, sessionId]
+  );
 
   useEffect(() => {
     questionShownAtRef.current = Date.now();
@@ -142,6 +220,7 @@ export function QuizRunner({
   const handleSubmitTypedAnswer = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (
+      isComposingAnswerRef.current ||
       isAnswerChecked ||
       isCheckingTyped ||
       !currentQuestion ||
@@ -157,7 +236,11 @@ export function QuizRunner({
     const responseMs = Math.max(0, Date.now() - (questionShownAtRef.current ?? Date.now()));
 
     try {
-      const res = await fetch(`/api/decks/${deck.id}/quiz/check`, {
+      if (isLetterHintVisible && !(await markLetterHintUsed(currentQuestion))) {
+        return;
+      }
+
+      const res = await fetch(`${resolvedApiBasePath}/check`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -177,6 +260,7 @@ export function QuizRunner({
         correct: boolean;
         expectedAnswer: string;
         explanation: QuizQuestionExplanation;
+        collisionSiblingAnswer?: boolean;
       };
 
       setCheckedTypedData(checkResult);
@@ -213,6 +297,49 @@ export function QuizRunner({
     }
   };
 
+  const handleShowTypedHint = async () => {
+    if (
+      isHintVisible ||
+      isMarkingHint ||
+      !currentQuestion ||
+      currentQuestion.type !== "typed_vi_en"
+    ) {
+      return;
+    }
+    setIsMarkingHint(true);
+    setSubmissionError(null);
+    try {
+      await onTypedHintRequested?.(sessionId, currentQuestion.id);
+      setIsHintVisible(true);
+    } catch (error) {
+      setSubmissionError(error instanceof Error ? error.message : "Không thể ghi nhận việc dùng gợi ý.");
+    } finally {
+      setIsMarkingHint(false);
+    }
+  };
+
+  const handleToggleLetterHint = async () => {
+    if (
+      isMarkingLetterHint ||
+      isAnswerChecked ||
+      isCheckingTyped ||
+      !currentQuestion ||
+      currentQuestion.type !== "typed_vi_en" ||
+      !currentQuestion.letterHint
+    ) {
+      return;
+    }
+
+    if (isLetterHintVisible) {
+      const marked = await markLetterHintUsed(currentQuestion);
+      if (!marked) return;
+      setIsLetterHintVisible(false);
+      return;
+    }
+
+    if (await markLetterHintUsed(currentQuestion)) setIsLetterHintVisible(true);
+  };
+
   const submitFinalResults = useCallback(
     async (firstPass: AnswerRecord[], retries: AnswerRecord[]) => {
       setIsSubmitting(true);
@@ -234,7 +361,7 @@ export function QuizRunner({
       ];
 
       try {
-        const res = await fetch(`/api/decks/${deck.id}/quiz`, {
+        const res = await fetch(resolvedApiBasePath, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -249,6 +376,7 @@ export function QuizRunner({
         }
         setSubmissionResult(data.data);
         setIsFinished(true);
+        onCompleted?.(data.data as QuizSubmissionResult, sessionId, firstPass);
       } catch (err) {
         console.error("Failed to submit quiz results:", err);
         const isConnectionFailure =
@@ -265,7 +393,7 @@ export function QuizRunner({
         setIsSubmitting(false);
       }
     },
-    [deck.id, sessionId]
+    [onCompleted, resolvedApiBasePath, sessionId]
   );
 
   const handleNextQuestion = useCallback(async () => {
@@ -276,6 +404,7 @@ export function QuizRunner({
         setCurrentRetryIndex((prev) => prev + 1);
         setSelectedOption(null);
         setTypedAnswer("");
+        setIsHintVisible(false);
         setCheckedTypedData(null);
         setIsAnswerChecked(false);
         setIsCorrect(null);
@@ -288,6 +417,7 @@ export function QuizRunner({
         setCurrentIndex((prev) => prev + 1);
         setSelectedOption(null);
         setTypedAnswer("");
+        setIsHintVisible(false);
         setCheckedTypedData(null);
         setIsAnswerChecked(false);
         setIsCorrect(null);
@@ -364,10 +494,13 @@ export function QuizRunner({
         }
         setQuestions(data.data.questions);
         setSessionId(data.data.sessionId);
+        requestedLetterHintQuestionIdsRef.current.clear();
         setCurrentMode(newMode);
         setCurrentIndex(0);
         setSelectedOption(null);
         setTypedAnswer("");
+        setIsHintVisible(false);
+        setIsLetterHintVisible(false);
         setCheckedTypedData(null);
         setIsAnswerChecked(false);
         setIsCorrect(null);
@@ -396,6 +529,7 @@ export function QuizRunner({
     setIsAnswerChecked(false);
     setSelectedOption(null);
     setTypedAnswer("");
+    setIsHintVisible(false);
     setCheckedTypedData(null);
     setIsCorrect(null);
     setSubmissionError(null);
@@ -404,14 +538,18 @@ export function QuizRunner({
   const handleRestart = async () => {
     setIsSubmitting(true);
     try {
-      const contextualSource = getContextualPracticeSource({
-        deckId: deck.id,
-        mode: currentMode,
-        storyId,
-        lessonId,
-      });
+      const contextualSource = lockedMode
+        ? null
+        : getContextualPracticeSource({
+            deckId: deck.id,
+            mode: currentMode,
+            storyId,
+            lessonId,
+          });
       const url =
-        contextualSource
+        lockedMode && newSessionUrl
+          ? newSessionUrl
+          : contextualSource
           ? getContextualPracticeRestartHref(deck.id, contextualSource)
           : currentMode === "focused_practice"
           ? `/api/decks/${deck.id}/quiz?mode=focused_practice`
@@ -424,6 +562,7 @@ export function QuizRunner({
         if (data.success && data.data.questions) {
           setQuestions(data.data.questions);
           setSessionId(data.data.sessionId);
+          requestedLetterHintQuestionIdsRef.current.clear();
         }
       }
     } catch (e) {
@@ -432,6 +571,8 @@ export function QuizRunner({
       setCurrentIndex(0);
       setSelectedOption(null);
       setTypedAnswer("");
+      setIsHintVisible(false);
+      setIsLetterHintVisible(false);
       setCheckedTypedData(null);
       setIsAnswerChecked(false);
       setIsCorrect(null);
@@ -452,12 +593,14 @@ export function QuizRunner({
     const finalTotal = submissionResult?.firstPassTotal ?? questions.length;
     const finalAccuracy =
       submissionResult?.accuracy ?? (finalTotal > 0 ? Number(((finalScore / finalTotal) * 100).toFixed(1)) : 0);
-    const contextualSource = getContextualPracticeSource({
-      deckId: deck.id,
-      mode: currentMode,
-      storyId,
-      lessonId,
-    });
+    const contextualSource = lockedMode
+      ? null
+      : getContextualPracticeSource({
+          deckId: deck.id,
+          mode: currentMode,
+          storyId,
+          lessonId,
+        });
 
     return (
       <QuizResults
@@ -469,6 +612,12 @@ export function QuizRunner({
         retryRecords={retryRecords}
         submissionResult={submissionResult}
         contextualSource={contextualSource}
+        isProductionChallenge={isProductionChallenge}
+        resultTitle={resultTitle}
+        resultScopeLabel={resultScopeLabel}
+        backHref={resolvedBackHref}
+        backLabel={backLabel}
+        onRetryIncorrect={onRetryIncorrect}
         onRestart={handleRestart}
       />
     );
@@ -485,8 +634,8 @@ export function QuizRunner({
           Bộ từ vựng cần có ít nhất một từ để tạo câu hỏi luyện tập.
         </p>
         <div className="hidden sm:block">
-          <Link href={`/decks/${deck.id}`} className="brick-button-primary px-4 py-2 text-xs">
-            Quay lại bộ thẻ
+          <Link href={resolvedBackHref} className="brick-button-primary px-4 py-2 text-xs">
+            {backLabel}
           </Link>
         </div>
       </div>
@@ -501,8 +650,12 @@ export function QuizRunner({
     (!isTypedQuestion ? currentQuestion.correctAnswer : "");
   const progressPercent = Math.round(((activeIndex + 1) / total) * 100);
   const typedSpellingHint =
-    currentQuestion.type === "typed_vi_en"
-      ? currentQuestion.spellingHints[typedHintStyle]
+    typedHintPolicy === "available" && isHintVisible && !isProductionChallenge && currentQuestion.type === "typed_vi_en"
+      ? currentQuestion.spellingHints?.[typedHintStyle] ?? null
+      : null;
+  const letterHint =
+    letterHintPolicy === "available" && !isProductionChallenge && currentQuestion.type === "typed_vi_en"
+      ? currentQuestion.letterHint ?? null
       : null;
 
   const getQuestionTypeLabel = (type: string) => {
@@ -532,16 +685,33 @@ export function QuizRunner({
       <div className="space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <Link
-            href={`/decks/${deck.id}`}
+            href={resolvedBackHref}
             onClick={() => playUISound("softTap")}
             className="hidden w-fit items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[2px_2px_0px_#221C16] transition-all hover:bg-[#FAF6EE] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none sm:inline-flex"
           >
             <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
-            <span>Thoát Quiz</span>
+            <span>{backLabel}</span>
           </Link>
 
-          {/* Mode Switcher */}
-          <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-1 shadow-[2px_2px_0px_#221C16]">
+          {/* Normal Challenge is intentionally not a multi-mode quiz. */}
+          {lockedMode ? (
+            <div
+              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-white shadow-[2px_2px_0px_#221C16]"
+              aria-label={sessionLabel ?? "Luyện tập cố định"}
+            >
+              <Keyboard className="w-3.5 h-3.5" strokeWidth={2.5} />
+              <span>{sessionLabel ?? "Luyện tập"}</span>
+            </div>
+          ) : isProductionChallenge ? (
+            <div
+              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border-2 border-[#221C16] bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-white shadow-[2px_2px_0px_#221C16]"
+              aria-label="Thử thách tự nhớ và viết"
+            >
+              <Keyboard className="w-3.5 h-3.5" strokeWidth={2.5} />
+              <span>Thử thách · Tự nhớ &amp; viết</span>
+            </div>
+          ) : (
+            <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border-2 border-[#221C16] bg-[#FAF6EE] p-1 shadow-[2px_2px_0px_#221C16]">
             {currentMode === "lesson_practice" ? (
               <div className="inline-flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 text-xs font-black rounded-lg bg-[var(--accent)] text-white border-2 border-[#221C16] shadow-[2px_2px_0px_#221C16]">
                 <Sparkles className="w-3.5 h-3.5" strokeWidth={2.5} />
@@ -625,7 +795,8 @@ export function QuizRunner({
                 <span>Luyện tập trung</span>
               </button>
             )}
-          </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs font-black text-[#221C16] bg-[#FFFDF9] px-2.5 py-1.5 rounded-xl border-2 border-[#221C16] shadow-[1.5px_1.5px_0px_#221C16]">
@@ -686,6 +857,12 @@ export function QuizRunner({
               {currentQuestion.promptDetail}
             </p>
           )}
+          {currentQuestion.type === "typed_vi_en" && currentQuestion.cueContext ? (
+            <div className="mx-auto max-w-xl rounded-xl border border-dashed border-[#C9BFAE] bg-[#FEF8ED] px-3 py-2 text-left text-sm leading-6 text-[#4A4036]">
+              <p className="text-[10px] font-black uppercase tracking-wider text-[#756A5D]">Ngữ cảnh</p>
+              <p className="italic">{currentQuestion.cueContext}</p>
+            </div>
+          ) : null}
         </div>
 
         {/* Question Body: Typed vs Multiple Choice */}
@@ -708,7 +885,19 @@ export function QuizRunner({
                   ? "Điền từ thích hợp vào chỗ trống trong câu trên:"
                   : "Nhập từ hoặc cụm từ tiếng Anh tương ứng:"}
               </label>
-              {currentQuestion.type === "typed_vi_en" ? (
+              {typedHintPolicy === "available" && !isProductionChallenge && currentQuestion.type === "typed_vi_en" && !isHintVisible ? (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => void handleShowTypedHint()}
+                    disabled={isAnswerChecked || isCheckingTyped || isMarkingHint}
+                    className="wn-button wn-button-quiet min-h-[44px] px-3 text-xs font-black disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isMarkingHint ? "Đang mở gợi ý…" : "Hiện gợi ý chính tả"}
+                  </button>
+                </div>
+              ) : null}
+              {typedHintPolicy === "available" && !isProductionChallenge && currentQuestion.type === "typed_vi_en" && isHintVisible ? (
                 <fieldset className="space-y-2">
                   <legend className="text-center text-[11px] font-bold text-[#6B6258]">
                     Kiểu gợi ý chính tả
@@ -757,12 +946,47 @@ export function QuizRunner({
                   {typedSpellingHint}
                 </p>
               ) : null}
+              {letterHint ? (
+                <div className="space-y-2">
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      data-testid="random-letter-hint-toggle"
+                      onClick={() => void handleToggleLetterHint()}
+                      disabled={isAnswerChecked || isCheckingTyped || isMarkingLetterHint}
+                      aria-pressed={isLetterHintVisible}
+                      aria-label={isLetterHintVisible ? "Tắt gợi ý chữ cái" : "Bật gợi ý chữ cái"}
+                      className="wn-button wn-button-quiet min-h-[44px] px-3 text-xs font-black disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {isMarkingLetterHint
+                        ? "Đang bật gợi ý…"
+                        : `Gợi ý — ${isLetterHintVisible ? "Tắt" : "Bật"}`}
+                    </button>
+                  </div>
+                  <div className="flex min-h-10 items-center justify-center" aria-live="polite">
+                    {isLetterHintVisible ? (
+                      <output
+                        data-testid="random-letter-hint"
+                        className="select-none whitespace-pre-wrap text-center font-mono text-lg font-black tracking-[0.16em] text-[#9A3412] sm:text-xl"
+                      >
+                        {letterHint}
+                      </output>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               <input
                 id="typed-recall-input"
                 ref={typedInputRef}
                 type="text"
                 value={typedAnswer}
                 onChange={(e) => setTypedAnswer(e.target.value)}
+                onCompositionStart={() => {
+                  isComposingAnswerRef.current = true;
+                }}
+                onCompositionEnd={() => {
+                  isComposingAnswerRef.current = false;
+                }}
                 disabled={isAnswerChecked || isCheckingTyped}
                 autoFocus
                 autoComplete="off"
@@ -797,7 +1021,7 @@ export function QuizRunner({
               <div className="flex justify-end pt-1">
                 <button
                   type="submit"
-                  disabled={isCheckingTyped || typedAnswer.trim().length === 0}
+                  disabled={isCheckingTyped || isMarkingHint || typedAnswer.trim().length === 0}
                   className="brick-button-primary w-full sm:w-auto min-h-[44px] px-6 py-3 text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isCheckingTyped ? (
@@ -925,6 +1149,11 @@ export function QuizRunner({
                             Bạn trả lời: <strong className="line-through">{typedAnswer.trim()}</strong>
                           </span>
                         )}
+                        {checkedTypedData?.collisionSiblingAnswer ? (
+                          <span className="text-xs font-semibold text-[#7F1D1D] block">
+                            Bạn đã nhập một từ khác trong bộ có gợi ý tiếng Việt tương tự.
+                          </span>
+                        ) : null}
                         <span className="text-xs font-bold text-[#7F1D1D] block">
                           Đáp án: <strong className="underline decoration-2">{expectedAnswer}</strong>
                         </span>

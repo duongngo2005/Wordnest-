@@ -32,12 +32,12 @@ test("create deck → add card → review → typed retry → focused practice w
   await page.locator("#typed-recall-input").fill("allocate");
   await page.getByRole("button", { name: "Kiểm tra" }).tap();
   await page.getByRole("button", { name: "Xem kết quả bài Quiz" }).tap();
-  await expect(page.getByText("Kết quả bài Quiz", { exact: true })).toBeVisible();
+  await expect(page.getByText("Kết quả Thử thách", { exact: true })).toBeVisible();
   await page.goto(`/decks/${deckId}/quiz?mode=typed`);
   await page.locator("#typed-recall-input").fill("alocate");
   await page.getByRole("button", { name: "Kiểm tra" }).tap();
   await page.getByRole("button", { name: "Xem kết quả bài Quiz" }).tap();
-  await expect(page.getByText("Kết quả bài Quiz", { exact: true })).toBeVisible();
+  await expect(page.getByText("Kết quả Thử thách", { exact: true })).toBeVisible();
   await page.goto(`/decks/${deckId}`);
   await page.getByTestId("btn-start-focused-practice").tap();
   await expect(page.getByText("Luyện tập trung", { exact: true })).toBeVisible();

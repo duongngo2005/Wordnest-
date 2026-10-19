@@ -45,6 +45,12 @@ interface QuizResultsProps {
   retryRecords?: AnswerRecord[];
   submissionResult: QuizSubmissionResult | null;
   contextualSource?: ContextualPracticeSource | null;
+  isProductionChallenge?: boolean;
+  resultTitle?: string;
+  resultScopeLabel?: string;
+  backHref?: string;
+  backLabel?: string;
+  onRetryIncorrect?: () => void;
   onRestart: () => void;
 }
 
@@ -57,6 +63,12 @@ export function QuizResults({
   retryRecords = [],
   submissionResult,
   contextualSource = null,
+  isProductionChallenge = false,
+  resultTitle,
+  resultScopeLabel,
+  backHref,
+  backLabel = "Về bộ thẻ",
+  onRetryIncorrect,
   onRestart,
 }: QuizResultsProps) {
   const [filter, setFilter] = useState<"all" | "correct" | "incorrect">("all");
@@ -114,10 +126,10 @@ export function QuizResults({
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-black text-[#221C16] tracking-tight">
-              Kết quả bài Quiz
+              {resultTitle ?? (isProductionChallenge ? "Kết quả Thử thách" : "Kết quả bài Quiz")}
             </h1>
             <p className="text-sm text-[#6B6258] font-semibold">
-              {getHeadlineMessage()} Bộ từ vựng: <span className="text-[#221C16] font-bold">{deck.name}</span>
+              {getHeadlineMessage()} {resultScopeLabel ?? "Bộ từ vựng"}: <span className="text-[#221C16] font-bold">{deck.name}</span>
             </p>
           </div>
 
@@ -166,8 +178,17 @@ export function QuizResults({
         <div className="bg-[#F0FDF4] border-2 border-[#16A34A] rounded-xl p-3 text-xs sm:text-sm font-bold text-[#166534] flex items-center justify-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-[#16A34A] shrink-0" />
           <span>
-            Quiz đã ghi nhận {correctCount} câu <strong className="underline decoration-wavy">đúng</strong> và{" "}
-            {incorrectCount} câu <strong className="underline decoration-wavy">sai</strong>. Luyện tập không thay đổi lịch ôn.
+            {isProductionChallenge ? (
+              <>
+                Kết quả lần đầu được tính vào <strong className="underline decoration-wavy">Tự nhớ &amp; viết</strong>: {correctCount} câu đúng và{" "}
+                {incorrectCount} câu sai. Luyện lại giúp củng cố, không thay đổi lịch ôn.
+              </>
+            ) : (
+              <>
+                Quiz đã ghi nhận {correctCount} câu <strong className="underline decoration-wavy">đúng</strong> và{" "}
+                {incorrectCount} câu <strong className="underline decoration-wavy">sai</strong>. Luyện tập không thay đổi lịch ôn.
+              </>
+            )}
           </span>
         </div>
 
@@ -194,6 +215,17 @@ export function QuizResults({
             </Link>
           ) : null}
 
+          {onRetryIncorrect && incorrectCount > 0 ? (
+            <button
+              type="button"
+              onClick={onRetryIncorrect}
+              className="brick-button-primary w-full justify-center px-5 py-3 text-xs font-black shadow-[3px_3px_0px_#221C16] sm:w-auto sm:text-sm"
+            >
+              <Target className="w-4 h-4" aria-hidden="true" />
+              <span>Ôn lại các từ vừa sai</span>
+            </button>
+          ) : null}
+
           {contextualSource ? (
             <Link
               href={contextualSource.returnHref}
@@ -209,18 +241,18 @@ export function QuizResults({
             className={`${contextualSource ? "brick-button-secondary" : "brick-button-primary"} px-5 py-3 text-xs sm:text-sm font-black gap-2 shadow-[3px_3px_0px_#221C16]`}
           >
             <RotateCcw className="w-4 h-4" />
-            <span>Làm lại bài Quiz</span>
+            <span>{isProductionChallenge ? "Làm lại Thử thách" : "Làm lại bài Quiz"}</span>
           </button>
 
-          <div className="hidden sm:block">
+          {backHref ? <div className="hidden sm:block">
             <Link
-              href={`/decks/${deck.id}`}
+              href={backHref}
               className="brick-button-secondary gap-2 px-5 py-3 text-xs font-black shadow-[3px_3px_0px_#221C16] sm:text-sm"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Về bộ thẻ</span>
+              <span>{backLabel}</span>
             </Link>
-          </div>
+          </div> : null}
 
           <Link
             href="/progress"

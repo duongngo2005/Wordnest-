@@ -24,6 +24,7 @@ import { splitStoryIntoNarrationChunks } from "@/lib/story/story-narration";
 import { getNarrationTtsService } from "@/lib/tts/tts-runtime";
 import type { CloudTtsVoiceId } from "@/lib/tts/voice-catalog";
 import { storyService } from "@/services/vocabulary/story-service";
+import type { Prisma } from "@prisma/client";
 
 export type StoryPipelineStage =
   | "queued"
@@ -46,6 +47,8 @@ export type StoryPipelineOptions = {
   signal?: AbortSignal;
   onStageChange?: (stage: StoryPipelineStage, progress: number) => Promise<void>;
   ollamaProvider?: OllamaAiProvider;
+  /** Worker-only: return validated content without independently persisting it. */
+  persist?: boolean;
 };
 
 const MAX_COVERAGE_REPAIR_PASSES = 4;
@@ -494,7 +497,17 @@ export type StoryPipelineResult = {
   };
 };
 
-export async function executeStoryPipeline(options: StoryPipelineOptions): Promise<StoryPipelineResult> {
+export type StoryPipelineDraftResult = Omit<StoryPipelineResult, "story"> & {
+  story: null;
+  draft: Prisma.StoryUncheckedCreateInput;
+};
+
+export function executeStoryPipeline(options: StoryPipelineOptions & { persist: false }): Promise<StoryPipelineDraftResult>;
+export function executeStoryPipeline(options: StoryPipelineOptions): Promise<StoryPipelineResult>;
+
+export async function executeStoryPipeline(
+  options: StoryPipelineOptions
+): Promise<StoryPipelineResult | StoryPipelineDraftResult> {
   const totalStart = performance.now();
   const timings: StoryPipelineTimings = {
     initialGenerationMs: 0,
@@ -785,7 +798,7 @@ Respond with JSON only matching this schema:
     contextualTranslations: allTranslations,
   };
 
-  const story = await storyService.persistGeneratedStory({
+  const persistenceInput = {
     deckId,
     requestedTerms,
     cefr,
@@ -793,7 +806,13 @@ Respond with JSON only matching this schema:
     topic,
     generated: finalGenerated,
     narrationVoiceId,
-  });
+  };
+  const draft = options.persist === false
+    ? await storyService.prepareGeneratedStoryData(persistenceInput)
+    : undefined;
+  const story = options.persist === false
+    ? null
+    : await storyService.persistGeneratedStory(persistenceInput);
   timings.persistenceMs = Math.round(performance.now() - persistStart);
 
   await onStageChange?.("completed", 100);
@@ -802,7 +821,7 @@ Respond with JSON only matching this schema:
 
   const repetition = analyzeRepetition(currentContent, requestedTerms);
 
-  return {
+  const result = {
     story,
     usage: coverage.used,
     coveragePercent: coverage.coveragePercent,
@@ -815,6 +834,10 @@ Respond with JSON only matching this schema:
       collisions: coverage.collisions || [],
     },
   };
+  if (options.persist === false) {
+    return { ...result, story: null, draft: draft! };
+  }
+  return { ...result, story: story! };
 }
 
 async function callStructuredWithRetry<T>({

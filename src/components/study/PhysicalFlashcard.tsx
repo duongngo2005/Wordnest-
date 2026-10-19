@@ -5,13 +5,14 @@ import { FlashcardData } from "../flashcards/FlashcardItem";
 import { PronounceButton } from "../flashcards/PronounceButton";
 import { CefrBadge } from "../flashcards/CefrBadge";
 import { Rating, ReviewSchedulePreview } from "@/lib/fsrs";
-import { HelpCircle, Loader2, RotateCcw, ThumbsUp, Zap } from "lucide-react";
+import { Edit3, HelpCircle, Loader2, RotateCcw, ThumbsUp, Zap } from "lucide-react";
 
 export interface PhysicalFlashcardProps {
   card: FlashcardData;
   isRevealed: boolean;
   onReveal: () => void;
   onRate: (rating: Rating) => void;
+  onEdit?: () => void;
   onNextFreePractice?: () => void;
   mode: "scheduled-review" | "free-practice";
   reviewSchedule: ReviewSchedulePreview | null;
@@ -24,6 +25,7 @@ export function PhysicalFlashcard({
   isRevealed,
   onReveal,
   onRate,
+  onEdit,
   onNextFreePractice,
   mode,
   reviewSchedule,
@@ -100,7 +102,7 @@ export function PhysicalFlashcard({
               <span>Hiện đáp án</span>
             </button>
             <span className="hidden text-[11px] font-semibold text-[#8C8275] select-none sm:block">
-              Nhấn nút hoặc phím <kbd className="font-mono font-bold text-[#221C16] bg-[#FAF6EE] px-1.5 py-0.5 rounded border border-[#DCD3C5]">Space</kbd>
+              Nhấn <kbd className="font-mono font-bold text-[#221C16] bg-[#FAF6EE] px-1.5 py-0.5 rounded border border-[#DCD3C5]">Space</kbd> để xem đáp án · <kbd className="font-mono font-bold text-[#221C16] bg-[#FAF6EE] px-1.5 py-0.5 rounded border border-[#DCD3C5]">S</kbd> để đọc từ
             </span>
           </div>
         </div>
@@ -131,8 +133,21 @@ export function PhysicalFlashcard({
               ) : null}
             </div>
 
-            <div onClick={handleAudioClick}>
-              <PronounceButton text={card.term} size="md" />
+            <div className="flex shrink-0 items-center gap-1.5">
+              {onEdit ? (
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  aria-label={`Chỉnh sửa thẻ ${card.term}`}
+                  className="wn-button wn-button-quiet min-h-[36px] gap-1 px-2 text-xs font-black"
+                >
+                  <Edit3 className="h-3.5 w-3.5 text-[var(--accent)]" strokeWidth={2.5} />
+                  <span>Sửa</span>
+                </button>
+              ) : null}
+              <div onClick={handleAudioClick}>
+                <PronounceButton text={card.term} size="md" />
+              </div>
             </div>
           </div>
 
@@ -276,7 +291,7 @@ export function PhysicalFlashcard({
 
                 <div className="text-center">
                   <span className="text-[11px] font-semibold text-[#8C8275] select-none">
-                    Dùng phím <kbd className="font-mono font-bold text-[#221C16]">1</kbd>, <kbd className="font-mono font-bold text-[#221C16]">2</kbd>, <kbd className="font-mono font-bold text-[#221C16]">3</kbd>, <kbd className="font-mono font-bold text-[#221C16]">4</kbd> để đánh giá
+                    <kbd className="font-mono font-bold text-[#221C16]">S</kbd> đọc từ{card.exampleEn ? <>, <kbd className="font-mono font-bold text-[#221C16]">E</kbd> đọc ví dụ</> : null}; <kbd className="font-mono font-bold text-[#221C16]">1</kbd>, <kbd className="font-mono font-bold text-[#221C16]">2</kbd>, <kbd className="font-mono font-bold text-[#221C16]">3</kbd>, <kbd className="font-mono font-bold text-[#221C16]">4</kbd> để đánh giá
                   </span>
                 </div>
               </div>

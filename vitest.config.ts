@@ -8,6 +8,7 @@ export default defineConfig({
       DATABASE_URL: "file:./vitest.db",
     },
     globalSetup: "./tests/vitest-global-setup.ts",
+    setupFiles: ["./tests/vitest-database-cleanup.ts"],
     exclude: [...configDefaults.exclude, "tests/e2e/**"],
     fileParallelism: false,
   },

@@ -41,6 +41,284 @@ describe("maskSentenceWithTerm", () => {
   });
 });
 
+describe("V1.1A: Production-only Challenge session", () => {
+  const service = new QuizService();
+
+  it("selects only unique typed_vi_en questions, prioritizes typed failures, and ignores Story Cloze failures", async () => {
+    const deck = await db.deck.create({ data: { name: "Production Challenge selector integration" } });
+    try {
+      const cards = await Promise.all(
+        Array.from({ length: 27 }, (_, index) =>
+          db.flashcard.create({
+            data: {
+              deckId: deck.id,
+              term: `term-${String(index).padStart(2, "0")}`,
+              normalizedTerm: `term-${String(index).padStart(2, "0")}`,
+              meaningVi: `nghĩa ${index}`,
+            },
+          })
+        )
+      );
+      const unusableCue = await db.flashcard.create({
+        data: {
+          deckId: deck.id,
+          term: "no-cue",
+          normalizedTerm: "no-cue",
+          meaningVi: "   ",
+        },
+      });
+      const typedWeak = cards[0];
+      const typedStrongWithStoryClozeFailure = cards[1];
+      const baseTime = new Date("2026-01-01T00:00:00.000Z");
+
+      for (let index = 0; index < 5; index++) {
+        await db.practiceAttempt.create({
+          data: {
+            flashcardId: typedWeak.id,
+            sessionId: `typed-weak-${index}`,
+            questionId: `typed-weak-question-${index}`,
+            attemptNumber: 1,
+            mode: "quiz",
+            questionType: "typed_vi_en",
+            correct: false,
+            answer: "wrong",
+            expectedAnswer: typedWeak.term,
+            createdAt: new Date(baseTime.getTime() + index * 1_000),
+          },
+        });
+      }
+      await db.practiceAttempt.create({
+        data: {
+          flashcardId: typedWeak.id,
+          sessionId: "typed-weak-4",
+          questionId: "typed-weak-question-4",
+          attemptNumber: 2,
+          mode: "quiz",
+          questionType: "typed_vi_en",
+          correct: false,
+          answer: "still wrong",
+          expectedAnswer: typedWeak.term,
+          createdAt: new Date(baseTime.getTime() + 5_000),
+        },
+      });
+
+      for (let index = 0; index < 2; index++) {
+        await db.practiceAttempt.create({
+          data: {
+            flashcardId: typedStrongWithStoryClozeFailure.id,
+            sessionId: `typed-strong-${index}`,
+            questionId: `typed-strong-question-${index}`,
+            attemptNumber: 1,
+            mode: "quiz",
+            questionType: "typed_vi_en",
+            correct: true,
+            answer: typedStrongWithStoryClozeFailure.term,
+            expectedAnswer: typedStrongWithStoryClozeFailure.term,
+            createdAt: new Date(baseTime.getTime() + 10_000 + index * 1_000),
+          },
+        });
+      }
+      await db.practiceAttempt.create({
+        data: {
+          flashcardId: typedStrongWithStoryClozeFailure.id,
+          sessionId: "story-cloze-failure",
+          questionId: "story-cloze-question",
+          attemptNumber: 1,
+          mode: "story_practice",
+          questionType: "story_cloze",
+          correct: false,
+          answer: "wrong",
+          expectedAnswer: typedStrongWithStoryClozeFailure.term,
+          createdAt: new Date(baseTime.getTime() + 20_000),
+        },
+      });
+
+      const firstQuestion = await service.getProductionChallengeQuiz(
+        deck.id,
+        1,
+        new Date("2026-02-01T00:00:00.000Z")
+      );
+      expect(firstQuestion.questions).toHaveLength(1);
+      expect(firstQuestion.questions[0]?.cardId).toBe(typedWeak.id);
+
+      const session = await service.getProductionChallengeQuiz(
+        deck.id,
+        25,
+        new Date("2026-02-01T00:00:00.000Z")
+      );
+      expect(session.questions).toHaveLength(25);
+      expect(session.questions.every((question) => question.type === "typed_vi_en")).toBe(true);
+      expect(new Set(session.questions.map((question) => question.cardId)).size).toBe(25);
+      expect(session.questions.some((question) => question.cardId === unusableCue.id)).toBe(false);
+      expect(session.questions[0]?.cardId).toBe(typedWeak.id);
+    } finally {
+      await db.deck.delete({ where: { id: deck.id } });
+    }
+  });
+});
+
+describe("V1.1B: Production Challenge ambiguous Vietnamese cues", () => {
+  const service = new QuizService();
+
+  it("uses safely blanked target-specific context for resolve/address and records evidence only for the target", async () => {
+    const deck = await db.deck.create({ data: { name: "V1.1B cue collision" } });
+    try {
+      const resolve = await db.flashcard.create({
+        data: {
+          deckId: deck.id,
+          term: "resolve",
+          normalizedTerm: "resolve",
+          meaningVi: "giải quyết",
+          partOfSpeech: "verb",
+          definitionEn: "to find a solution to a problem",
+          exampleEn: "The report should resolve the safety concerns.",
+          exampleVi: "Báo cáo nên giải quyết các lo ngại về an toàn.",
+        },
+      });
+      const address = await db.flashcard.create({
+        data: {
+          deckId: deck.id,
+          term: "address",
+          normalizedTerm: "address",
+          meaningVi: "giải quyết",
+          partOfSpeech: "verb",
+          definitionEn: "to deal with a problem or concern",
+          exampleEn: "The report should address the safety concerns.",
+          exampleVi: "Báo cáo nên xử lý các lo ngại về an toàn.",
+        },
+      });
+
+      const quiz = await service.getProductionChallengeQuiz(deck.id, 2);
+      expect(quiz.questions).toHaveLength(2);
+      expect(quiz.questions.every((question) => question.type === "typed_vi_en")).toBe(true);
+      const resolveQuestion = quiz.questions.find((question) => question.cardId === resolve.id);
+      expect(resolveQuestion).toMatchObject({
+        prompt: "giải quyết",
+        promptDetail: "Từ loại: verb",
+        cueContext: "The report should _____ the safety concerns.",
+      });
+
+      const check = await service.checkQuestionAnswer(deck.id, {
+        sessionId: quiz.sessionId,
+        questionId: resolveQuestion!.id,
+        answer: "address",
+      });
+      expect(check).toMatchObject({ correct: false, collisionSiblingAnswer: true, expectedAnswer: "resolve" });
+
+      await service.submitQuizResult(deck.id, {
+        sessionId: quiz.sessionId,
+        answers: quiz.questions.map((question) => ({
+          questionId: question.id,
+          answer: question.cardId === resolve.id ? "address" : "address",
+        })),
+      });
+
+      const attempts = await db.practiceAttempt.findMany({
+        where: { sessionId: quiz.sessionId },
+        orderBy: { flashcardId: "asc" },
+      });
+      expect(attempts).toHaveLength(2);
+      expect(attempts.find((attempt) => attempt.flashcardId === resolve.id)).toMatchObject({
+        questionType: "typed_vi_en",
+        attemptNumber: 1,
+        correct: false,
+        answer: "address",
+        expectedAnswer: "resolve",
+      });
+      expect(attempts.find((attempt) => attempt.flashcardId === address.id)).toMatchObject({
+        correct: true,
+        expectedAnswer: "address",
+      });
+    } finally {
+      await db.deck.delete({ where: { id: deck.id } });
+    }
+  });
+
+  it("does not treat a broad synonym outside the exact cue group as special", async () => {
+    const deck = await db.deck.create({ data: { name: "V1.1B normal mismatch" } });
+    try {
+      const resolve = await db.flashcard.create({
+        data: {
+          deckId: deck.id,
+          term: "resolve",
+          normalizedTerm: "resolve",
+          meaningVi: "giải quyết",
+          partOfSpeech: "verb",
+        },
+      });
+      const quiz = await service.getProductionChallengeQuiz(deck.id, 1);
+      const result = await service.checkQuestionAnswer(deck.id, {
+        sessionId: quiz.sessionId,
+        questionId: quiz.questions[0]!.id,
+        answer: "handle",
+      });
+
+      expect(quiz.questions[0]?.cardId).toBe(resolve.id);
+      expect(result).toMatchObject({ correct: false, expectedAnswer: "resolve" });
+      expect(result.collisionSiblingAnswer).toBeUndefined();
+    } finally {
+      await db.deck.delete({ where: { id: deck.id } });
+    }
+  });
+
+  it("excludes unresolved same-cue same-POS cards instead of creating unfair attempts", async () => {
+    const deck = await db.deck.create({ data: { name: "V1.1B unresolved collision" } });
+    try {
+      await db.flashcard.createMany({
+        data: [
+          {
+            deckId: deck.id,
+            term: "resolve",
+            normalizedTerm: "resolve",
+            meaningVi: "giải quyết",
+            partOfSpeech: "verb",
+            exampleEn: "They resolved the dispute.",
+          },
+          {
+            deckId: deck.id,
+            term: "address",
+            normalizedTerm: "address",
+            meaningVi: "giải quyết",
+            partOfSpeech: "verb",
+            exampleEn: "They addressed the dispute.",
+          },
+        ],
+      });
+
+      const quiz = await service.getProductionChallengeQuiz(deck.id, 2);
+      expect(quiz).toMatchObject({ sessionId: "", questions: [], emptyReason: "ambiguous_cues" });
+      expect(await db.practiceAttempt.count({ where: { flashcard: { deckId: deck.id } } })).toBe(0);
+    } finally {
+      await db.deck.delete({ where: { id: deck.id } });
+    }
+  });
+
+  it("keeps a unique cue concise and adds no unnecessary context", async () => {
+    const deck = await db.deck.create({ data: { name: "V1.1B unique cue" } });
+    try {
+      await db.flashcard.create({
+        data: {
+          deckId: deck.id,
+          term: "resolve",
+          normalizedTerm: "resolve",
+          meaningVi: "tháo gỡ tranh chấp",
+          partOfSpeech: "verb",
+          exampleEn: "The mediator will resolve the dispute.",
+        },
+      });
+
+      const quiz = await service.getProductionChallengeQuiz(deck.id, 1);
+      expect(quiz.questions[0]).toMatchObject({
+        prompt: "tháo gỡ tranh chấp",
+        promptDetail: "Từ loại: verb",
+      });
+      expect(quiz.questions[0]?.type === "typed_vi_en" && quiz.questions[0].cueContext).toBeUndefined();
+    } finally {
+      await db.deck.delete({ where: { id: deck.id } });
+    }
+  });
+});
+
 describe("QuizService.generateQuestions", () => {
   const service = new QuizService();
 
@@ -597,7 +875,7 @@ describe("Phase 2A: Question Generation (typed_vi_en)", () => {
         },
       });
 
-      const quiz = await service.getDeckQuiz(deck.id, 1, ["typed_vi_en"]);
+      const quiz = await service.getProductionChallengeQuiz(deck.id, 1);
       expect(quiz.questions).toHaveLength(1);
       const clientQ = quiz.questions[0];
 
@@ -653,7 +931,7 @@ describe("Phase 2A: checkQuestionAnswer and PracticeAttempt Persistence", () => 
         },
       });
 
-      const quiz = await service.getDeckQuiz(deck.id, 1, ["typed_vi_en"]);
+      const quiz = await service.getProductionChallengeQuiz(deck.id, 1);
       const questionId = quiz.questions[0].id;
 
       // 1. Check wrong spelling
@@ -1524,4 +1802,3 @@ describe("Phase 2B: Story Cloze Generation & Contextual Recall", () => {
     });
   });
 });
-

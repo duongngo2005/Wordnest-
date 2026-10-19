@@ -23,6 +23,15 @@ export type CreateLessonOptions = {
   onStageChange?: (stage: AiJobStage, progress: number) => Promise<void>;
 };
 
+/** Validated, not-yet-persisted lesson content for durable AI job finalization. */
+export type LessonDraft = {
+  deckId: string;
+  title: string;
+  content: string;
+  cefr: StoryCefr;
+  targetWords: Prisma.InputJsonValue;
+};
+
 const lessonAiOutputSchema = z.object({
   title: z.string().trim().min(1).max(200),
   content: z.string().trim().min(1),
@@ -43,6 +52,30 @@ export class LessonService {
     signal,
     onStageChange,
   }: CreateLessonOptions) {
+    const draft = await this.generateLessonDraft({
+      deckId,
+      targetWords,
+      cefr,
+      topic,
+      signal,
+      onStageChange,
+    });
+
+    return db.lesson.create({ data: draft });
+  }
+
+  /**
+   * Builds and validates a lesson without writing it. The dedicated worker uses
+   * this to commit the lesson artifact and its AiJob terminal state together.
+   */
+  async generateLessonDraft({
+    deckId,
+    targetWords,
+    cefr = "B1",
+    topic = "Everyday Situations & Communication",
+    signal,
+    onStageChange,
+  }: CreateLessonOptions): Promise<LessonDraft> {
     if (!targetWords || targetWords.length === 0) {
       throw new Error("Vui lòng chọn ít nhất một từ vựng để tạo bài học.");
     }
@@ -50,14 +83,17 @@ export class LessonService {
     // 1. Resolve deck and verify cards
     const deck = await db.deck.findUnique({
       where: { id: deckId },
-      include: { cards: true },
+      include: { vocabularyMemberships: { include: { flashcard: true } } },
     });
 
     if (!deck) {
       throw new ResourceNotFoundError("Không tìm thấy bộ thẻ.");
     }
 
-    const requestedCards = this.resolveRequestedCards(deck.cards, targetWords);
+    const requestedCards = this.resolveRequestedCards(
+      deck.vocabularyMemberships.map(({ flashcard }) => flashcard),
+      targetWords
+    );
     if (requestedCards.length === 0) {
       throw new Error("Không tìm thấy từ vựng hợp lệ nào trong bộ thẻ đã chọn.");
     }
@@ -173,21 +209,17 @@ Respond with ONLY valid JSON:
     // 6. Stage: saving
     await onStageChange?.("saving", 95);
 
-    const lesson = await db.lesson.create({
-      data: {
-        deckId,
-        title: currentTitle,
-        content: currentContent,
-        cefr,
-        targetWords: createStoryVocabularyMetadata(
-          requestedCards.map((c) => c.term),
-          sanitizedUsage,
-          { contextualTranslations }
-        ) as unknown as Prisma.InputJsonValue,
-      },
-    });
-
-    return lesson;
+    return {
+      deckId,
+      title: currentTitle,
+      content: currentContent,
+      cefr,
+      targetWords: createStoryVocabularyMetadata(
+        requestedCards.map((c) => c.term),
+        sanitizedUsage,
+        { contextualTranslations }
+      ) as unknown as Prisma.InputJsonValue,
+    };
   }
 
   /**

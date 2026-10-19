@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Clock3,
   GraduationCap,
+  Keyboard,
   Layers,
   Sparkles,
   Target,
@@ -18,6 +19,7 @@ import type {
   ProgressRatingCount,
   ProgressStateCount,
 } from "@/services/vocabulary/progress-service";
+import { OnlineTimePanel } from "./OnlineTimePanel";
 import { ReviewActivityHeatmap } from "./ReviewActivityHeatmap";
 
 interface ProgressDashboardProps {
@@ -356,6 +358,106 @@ function PracticePanel({
   );
 }
 
+function GlobalTypingPanel({ analytics }: { analytics: ProgressAnalytics }) {
+  const typing = analytics.globalTyping ?? {
+    total: 0,
+    correct: 0,
+    incorrect: 0,
+    accuracy: null,
+    uniqueCards: 0,
+    sessions: 0,
+    assistedTotal: 0,
+    assistedCorrect: 0,
+    unassistedCorrect: 0,
+    activity: [],
+    recentAccuracyChange: null,
+    frequentMistakes: [],
+  };
+  const hasActivity = typing.total > 0;
+  const trendCopy =
+    typing.recentAccuracyChange === null
+      ? "Cần dữ liệu ở cả hai tuần để so sánh xu hướng."
+      : typing.recentAccuracyChange > 0
+      ? `Độ chính xác 7 ngày gần đây tăng ${typing.recentAccuracyChange} điểm.`
+      : typing.recentAccuracyChange < 0
+      ? `Độ chính xác 7 ngày gần đây giảm ${Math.abs(typing.recentAccuracyChange)} điểm.`
+      : "Độ chính xác hai tuần gần đây giữ nguyên.";
+
+  return (
+    <section className="wn-insight-panel wn-paper-surface min-w-0 rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] p-4 shadow-[3px_3px_0px_#221C16] sm:p-5" aria-labelledby="global-typing-heading">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="global-typing-heading" className="text-lg font-black text-[#221C16]">Luyện gõ Việt → Anh</h2>
+          <p className="mt-0.5 max-w-2xl text-xs font-semibold leading-relaxed text-[#6B6258]">
+            Hoạt động thực hành riêng, không phải lượt ôn FSRS và không thay đổi lịch ôn.
+          </p>
+        </div>
+        <Link href="/practice/typing" className="brick-button-primary min-h-11 px-3 text-xs font-black">
+          <Keyboard aria-hidden="true" className="h-4 w-4" />
+          Luyện gõ
+        </Link>
+      </div>
+
+      {hasActivity ? (
+        <>
+          <dl className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+            {[
+              ["Đã luyện", typing.total],
+              ["Đúng lần đầu", typing.correct],
+              ["Đúng không gợi ý", typing.unassistedCorrect],
+              ["Sai", typing.incorrect],
+              ["Chính xác", `${typing.accuracy}%`],
+              ["Thẻ riêng", typing.uniqueCards],
+              ["Phiên", typing.sessions],
+              ["Có gợi ý", `${typing.assistedCorrect}/${typing.assistedTotal}`],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="rounded-lg border-2 border-[#221C16] bg-[#FAF6EE] p-2.5 shadow-[1.5px_1.5px_0px_#221C16]">
+                <dt className="text-[10px] font-black uppercase tracking-wide text-[#6B6258]">{label}</dt>
+                <dd className="mt-1 font-mono text-xl font-black text-[#221C16]">{value}</dd>
+              </div>
+            ))}
+          </dl>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.7fr)]">
+            <div>
+              <h3 className="text-sm font-black text-[#221C16]">Luyện theo ngày</h3>
+              <ul className="mt-2 grid grid-cols-7 gap-1.5" aria-label="Số câu luyện gõ trong 14 ngày">
+                {typing.activity.map((day) => (
+                  <li key={day.date} className="min-w-0 rounded-md border border-[#DCD3C5] bg-[#FAF6EE] px-1.5 py-2 text-center">
+                    <span className="block truncate font-mono text-[10px] font-bold text-[#6B6258]">{day.date.slice(-2)}</span>
+                    <span className="mt-0.5 block font-mono text-sm font-black text-[#221C16]">{day.count}</span>
+                    <span className="block text-[9px] font-bold text-[#6B6258]">{day.accuracy === null ? "–" : `${day.accuracy}%`}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs font-semibold text-[#6B6258]">{trendCopy}</p>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-black text-[#221C16]">Từ hay gõ sai</h3>
+              {typing.frequentMistakes.length > 0 ? (
+                <ul className="mt-2 divide-y divide-dashed divide-[#DCD3C5]">
+                  {typing.frequentMistakes.map((item) => (
+                    <li key={item.flashcardId} className="flex items-baseline justify-between gap-2 py-2 first:pt-0">
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-black text-[#221C16]">{item.term}</span>
+                        <span className="block truncate text-xs font-semibold text-[#6B6258]">{item.meaningVi}</span>
+                      </span>
+                      <span className="shrink-0 font-mono text-sm font-black text-[#B91C1C]">{item.count} sai</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="mt-2 text-sm font-bold text-[#6B6258]">Chưa có câu sai trong Luyện gõ.</p>}
+            </div>
+          </div>
+        </>
+      ) : (
+        <p className="mt-5 text-sm font-bold text-[#6B6258]">Chưa có lượt Luyện gõ. Bắt đầu với 10 câu để tạo dữ liệu active recall.</p>
+      )}
+    </section>
+  );
+}
+
 function AttentionPanel({
   analytics,
   practiceHref,
@@ -602,6 +704,8 @@ export function ProgressDashboard({ analytics }: ProgressDashboardProps) {
         <ReviewActivityHeatmap activityData={analytics.reviewActivity} />
       )}
 
+      {isGlobal ? <OnlineTimePanel onlineTime={analytics.onlineTime} /> : null}
+
       {/* Attention & Upcoming Due */}
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <AttentionPanel analytics={analytics} practiceHref={quizHref} />
@@ -616,6 +720,8 @@ export function ProgressDashboard({ analytics }: ProgressDashboardProps) {
 
       {/* Practice Results */}
       <PracticePanel analytics={analytics} practiceHref={quizHref} />
+
+      {isGlobal ? <GlobalTypingPanel analytics={analytics} /> : null}
 
       {/* Activity & Card States */}
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]">

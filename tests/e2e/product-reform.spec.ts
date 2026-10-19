@@ -35,7 +35,7 @@ test("keeps collection creation visible and makes its delete control direct", as
   await page.goto(`/decks/${deck.id}`);
   await expect(page.getByRole("button", { name: "Thêm thẻ", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Thêm thẻ", exact: true }).click();
-  await expect(page.getByRole("button", { name: /^AI/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^AI/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^JSON/ })).toBeVisible();
   await expect(page.getByText("Hàng loạt", { exact: true })).toHaveCount(0);
 });
@@ -83,34 +83,6 @@ test("keeps collection deletion inside the collection view rather than on the li
   } finally {
     await db.folder.deleteMany({ where: { id: folder.id } });
   }
-});
-
-test("shows an AI preview before persistence and keeps failed generation non-destructive", async ({ page }, testInfo) => {
-  const deck = await db.deck.create({ data: { name: `AI preview ${testInfo.testId}` } });
-  deckId = deck.id;
-
-  await page.goto(`/decks/${deck.id}`);
-  await page.getByRole("button", { name: "Thêm thẻ", exact: true }).click();
-  await page.getByRole("button", { name: /^AI/ }).click();
-
-  await page.route(`**/api/decks/${deck.id}/cards/ai`, async (route) => {
-    await route.fulfill({
-      json: {
-        success: true,
-        data: {
-          cards: [{ term: "allocate", meaningVi: "phân bổ", partOfSpeech: "verb", cefr: "B2" }],
-          skippedExistingTerms: [],
-          duplicateInputCount: 0,
-        },
-      },
-    });
-  });
-
-  await page.getByRole("textbox", { name: "Từ vựng" }).fill("allocate");
-  await page.getByRole("button", { name: "Tạo bản xem trước" }).click();
-  await expect(page.getByRole("heading", { name: "Bản xem trước" })).toBeVisible();
-  await expect(page.getByText("phân bổ", { exact: true })).toBeVisible();
-  await expect.poll(() => db.flashcard.count({ where: { deckId: deck.id } })).toBe(0);
 });
 
 test("renders global, collection, and deck progress with factual empty states", async ({ page }, testInfo) => {

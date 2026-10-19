@@ -2,6 +2,10 @@ import { FlashcardStatus, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ResourceConflictError, ResourceNotFoundError } from "@/lib/http/errors";
 import type { CreateFolderInput, UpdateFolderInput } from "@/lib/validation/folder";
+import {
+  assertDeletionPreviewIsCurrent,
+  createDeletionPreviewFingerprint,
+} from "./deletion-preview";
 
 export type DeckLearningStatus = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
 
@@ -46,15 +50,32 @@ export interface FolderOption {
   name: string;
 }
 
+export interface FolderDeletionImpact {
+  /** Server-calculated snapshot that must be echoed on the destructive request. */
+  fingerprint: string;
+  decks: number;
+  decksBecomingUncategorized: number;
+  vocabularyMemberships: number;
+  canonicalFlashcards: number;
+  sharedWithOtherCollections: number;
+  canonicalFlashcardsDeleted: number;
+  learningHistoriesDeleted: number;
+  vocabularyPreserved: true;
+  learningDataPreserved: true;
+}
+
 type DeckWithLearningData = {
   id: string;
   name: string;
   description: string | null;
   position: number;
-  cards: Array<{
-    status: FlashcardStatus;
-    state: number;
-    due: Date;
+  vocabularyMemberships: Array<{
+    flashcard: {
+      id: string;
+      status: FlashcardStatus;
+      state: number;
+      due: Date;
+    };
   }>;
 };
 
@@ -74,7 +95,8 @@ function summarizeDeck(deck: DeckWithLearningData, endOfToday: Date): FolderDeck
   let knownCount = 0;
   let dueTodayCount = 0;
 
-  for (const card of deck.cards) {
+  const cards = deck.vocabularyMemberships.map((membership) => membership.flashcard);
+  for (const card of cards) {
     if (card.status === FlashcardStatus.NEW) newCount += 1;
     else if (card.status === FlashcardStatus.LEARNING) learningCount += 1;
     else if (card.status === FlashcardStatus.KNOWN) knownCount += 1;
@@ -82,7 +104,7 @@ function summarizeDeck(deck: DeckWithLearningData, endOfToday: Date): FolderDeck
     if (card.state > 0 && card.due <= endOfToday) dueTodayCount += 1;
   }
 
-  const totalCards = deck.cards.length;
+  const totalCards = cards.length;
   const masteryRate = totalCards > 0 ? Number(((knownCount / totalCards) * 100).toFixed(1)) : 0;
   const learningStatus: DeckLearningStatus =
     totalCards > 0 && knownCount === totalCards
@@ -106,45 +128,50 @@ function summarizeDeck(deck: DeckWithLearningData, endOfToday: Date): FolderDeck
   };
 }
 
-function summarizeFolder(decks: FolderDeckSummary[]): FolderProgress {
-  const progress = decks.reduce<FolderProgress>(
-    (summary, deck) => ({
-      deckCount: summary.deckCount + 1,
-      completedDecks: summary.completedDecks + (deck.learningStatus === "COMPLETED" ? 1 : 0),
-      totalCards: summary.totalCards + deck.totalCards,
-      newCount: summary.newCount + deck.newCount,
-      learningCount: summary.learningCount + deck.learningCount,
-      knownCount: summary.knownCount + deck.knownCount,
-      dueTodayCount: summary.dueTodayCount + deck.dueTodayCount,
-      masteryRate: 0,
-    }),
-    {
-      deckCount: 0,
-      completedDecks: 0,
-      totalCards: 0,
-      newCount: 0,
-      learningCount: 0,
-      knownCount: 0,
-      dueTodayCount: 0,
-      masteryRate: 0,
+function summarizeFolder(decks: DeckWithLearningData[], endOfToday: Date): FolderProgress {
+  const deckSummaries = decks.map((deck) => summarizeDeck(deck, endOfToday));
+  const cardsById = new Map<string, DeckWithLearningData["vocabularyMemberships"][number]["flashcard"]>();
+  for (const deck of decks) {
+    for (const membership of deck.vocabularyMemberships) {
+      cardsById.set(membership.flashcard.id, membership.flashcard);
     }
-  );
+  }
 
+  let newCount = 0;
+  let learningCount = 0;
+  let knownCount = 0;
+  let dueTodayCount = 0;
+  for (const card of cardsById.values()) {
+    if (card.status === FlashcardStatus.NEW) newCount += 1;
+    else if (card.status === FlashcardStatus.LEARNING) learningCount += 1;
+    else if (card.status === FlashcardStatus.KNOWN) knownCount += 1;
+    if (card.state > 0 && card.due <= endOfToday) dueTodayCount += 1;
+  }
+
+  const totalCards = cardsById.size;
   return {
-    ...progress,
-    masteryRate:
-      progress.totalCards > 0
-        ? Number(((progress.knownCount / progress.totalCards) * 100).toFixed(1))
-        : 0,
+    deckCount: decks.length,
+    completedDecks: deckSummaries.filter((deck) => deck.learningStatus === "COMPLETED").length,
+    totalCards,
+    newCount,
+    learningCount,
+    knownCount,
+    dueTodayCount,
+    masteryRate: totalCards > 0 ? Number(((knownCount / totalCards) * 100).toFixed(1)) : 0,
   };
 }
 
 const deckLearningInclude = {
-  cards: {
+  vocabularyMemberships: {
     select: {
-      status: true,
-      state: true,
-      due: true,
+      flashcard: {
+        select: {
+          id: true,
+          status: true,
+          state: true,
+          due: true,
+        },
+      },
     },
   },
 } satisfies Prisma.DeckInclude;
@@ -213,20 +240,40 @@ export class FolderService {
   }
 
   async getLibrary() {
-    const [folders, uncategorized] = await Promise.all([
+    const [folders, uncategorized, unassignedVocabularyCount] = await Promise.all([
       this.getFolders(),
       db.deck.findMany({
         where: { folderId: null },
         include: deckLearningInclude,
         orderBy: { updatedAt: "desc" },
       }),
+      db.flashcard.count({ where: { deckMemberships: { none: {} } } }),
     ]);
     const endOfToday = getEndOfToday();
 
     return {
       folders,
       uncategorizedDecks: uncategorized.map((deck) => summarizeDeck(deck, endOfToday)),
+      unassignedVocabularyCount,
     };
+  }
+
+  async getUnassignedVocabulary() {
+    return db.flashcard.findMany({
+      where: { deckMemberships: { none: {} } },
+      select: {
+        id: true,
+        term: true,
+        meaningVi: true,
+        partOfSpeech: true,
+        due: true,
+        state: true,
+        reps: true,
+        lastReviewAt: true,
+        updatedAt: true,
+      },
+      orderBy: [{ updatedAt: "desc" }, { term: "asc" }],
+    });
   }
 
   async updateFolder(folderId: string, input: UpdateFolderInput) {
@@ -249,10 +296,10 @@ export class FolderService {
     }
   }
 
-  async deleteFolder(folderId: string) {
+  async deleteFolder(folderId: string, expectedImpactFingerprint?: string) {
     return db.$transaction(async (tx) => {
-      const folder = await tx.folder.findUnique({ where: { id: folderId }, select: { id: true } });
-      if (!folder) throw new ResourceNotFoundError("Không tìm thấy learning collection.");
+      const impact = await this.getFolderDeletionImpactInTransaction(tx, folderId);
+      assertDeletionPreviewIsCurrent(expectedImpactFingerprint, impact.fingerprint);
 
       await tx.deck.updateMany({
         where: { folderId },
@@ -260,6 +307,100 @@ export class FolderService {
       });
       await tx.folder.delete({ where: { id: folderId } });
     });
+  }
+
+  /** Calculates the exact organizational impact without mutating a Folder. */
+  async getFolderDeletionImpact(folderId: string): Promise<FolderDeletionImpact> {
+    return db.$transaction((tx) => this.getFolderDeletionImpactInTransaction(tx, folderId));
+  }
+
+  private async getFolderDeletionImpactInTransaction(
+    tx: Prisma.TransactionClient,
+    folderId: string
+  ): Promise<FolderDeletionImpact> {
+    const [folder, decks] = await Promise.all([
+      tx.folder.findUnique({ where: { id: folderId }, select: { id: true, updatedAt: true } }),
+      tx.deck.findMany({
+        where: { folderId },
+        select: {
+          id: true,
+          folderId: true,
+          position: true,
+          updatedAt: true,
+          stories: { select: { id: true, updatedAt: true }, orderBy: { id: "asc" } },
+          lessons: { select: { id: true, updatedAt: true }, orderBy: { id: "asc" } },
+          quizAttempts: { select: { id: true, createdAt: true }, orderBy: { id: "asc" } },
+          quizSessions: { select: { id: true, createdAt: true, expiresAt: true }, orderBy: { id: "asc" } },
+        },
+        orderBy: { id: "asc" },
+      }),
+    ]);
+    if (!folder) throw new ResourceNotFoundError("Không tìm thấy learning collection.");
+
+    const deckIds = decks.map((deck) => deck.id);
+    const memberships = deckIds.length > 0
+      ? await tx.deckVocabularyMembership.findMany({
+          where: { deckId: { in: deckIds } },
+          select: { id: true, deckId: true, flashcardId: true, createdAt: true },
+          orderBy: { id: "asc" },
+        })
+      : [];
+    const cardIds = [...new Set(memberships.map((membership) => membership.flashcardId))];
+    const [cards, reviewLogs, practiceAttempts] = await Promise.all([
+      cardIds.length > 0
+        ? tx.flashcard.findMany({
+            where: { id: { in: cardIds } },
+            select: {
+              id: true,
+              deckMemberships: {
+                select: { id: true, deckId: true, createdAt: true, deck: { select: { folderId: true } } },
+                orderBy: { id: "asc" },
+              },
+            },
+            orderBy: { id: "asc" },
+          })
+        : [],
+      cardIds.length > 0
+        ? tx.reviewLog.findMany({
+            where: { cardId: { in: cardIds } },
+            select: { id: true, cardId: true, createdAt: true },
+            orderBy: { id: "asc" },
+          })
+        : [],
+      cardIds.length > 0
+        ? tx.practiceAttempt.findMany({
+            where: { flashcardId: { in: cardIds } },
+            select: { id: true, flashcardId: true, createdAt: true },
+            orderBy: { id: "asc" },
+          })
+        : [],
+    ]);
+    const sharedWithOtherCollections = cards.filter((card) =>
+      card.deckMemberships.some((membership) =>
+        membership.deck.folderId !== null && membership.deck.folderId !== folderId
+      )
+    ).length;
+    const fingerprint = createDeletionPreviewFingerprint({
+      folder,
+      decks,
+      memberships,
+      cards: cards.map((card) => ({ id: card.id, memberships: card.deckMemberships })),
+      reviewLogs,
+      practiceAttempts,
+    });
+
+    return {
+      fingerprint,
+      decks: deckIds.length,
+      decksBecomingUncategorized: deckIds.length,
+      vocabularyMemberships: memberships.length,
+      canonicalFlashcards: cardIds.length,
+      sharedWithOtherCollections,
+      canonicalFlashcardsDeleted: 0,
+      learningHistoriesDeleted: 0,
+      vocabularyPreserved: true,
+      learningDataPreserved: true,
+    };
   }
 
   async createDeckInFolder(folderId: string, name: string, description?: string) {
@@ -351,7 +492,7 @@ export class FolderService {
     await this.getFolderOrThrow(folderId);
     return db.flashcard.findMany({
       where: {
-        deck: { folderId },
+        deckMemberships: { some: { deck: { folderId } } },
         state: { gt: 0 },
         due: { lte: getEndOfToday() },
       },
@@ -386,7 +527,7 @@ export class FolderService {
       color: folder.color,
       position: folder.position,
       decks,
-      progress: summarizeFolder(decks),
+      progress: summarizeFolder(folder.decks, endOfToday),
     };
   }
 

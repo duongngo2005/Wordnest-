@@ -45,7 +45,9 @@ export default async function DeckLessonPage({
           }))}
           initialLessons={lessons.map((lesson) => ({
             id: lesson.id,
-            deckId: lesson.deckId,
+            // getLessonsByDeckId scopes this list to the open Deck. Retained
+            // unassigned lessons are intentionally not rendered on this page.
+            deckId: lesson.deckId ?? deck.id,
             title: lesson.title,
             content: lesson.content,
             cefr: lesson.cefr,

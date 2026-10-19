@@ -58,6 +58,14 @@ export class AIProviderUnavailableError extends AIError {
   }
 }
 
+/** Fail-fast result for interactive requests while durable FIFO work owns or awaits the model. */
+export class AIQueueBusyError extends AIError {
+  constructor(message = "AI đang bận tạo nội dung — hãy thử lại sau.") {
+    super(message);
+    this.name = "AIQueueBusyError";
+  }
+}
+
 /**
  * Safe, user-facing failure for AI output that cannot be parsed or validated.
  */

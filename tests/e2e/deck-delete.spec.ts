@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 test.describe("Deck deletion from DeckView page", () => {
   let deckId: string;
   let folderId: string;
+  let cardIds: string[];
 
   test.beforeEach(async () => {
     const folder = await db.folder.create({
@@ -21,10 +22,11 @@ test.describe("Deck deletion from DeckView page", () => {
       },
     });
     deckId = deck.id;
+    cardIds = [];
 
     // Create 5 flashcards to ensure page has content
     for (let i = 1; i <= 5; i++) {
-      await db.flashcard.create({
+      const card = await db.flashcard.create({
         data: {
           deckId: deck.id,
           term: `word-${i}`,
@@ -32,14 +34,13 @@ test.describe("Deck deletion from DeckView page", () => {
           meaningVi: `nghĩa-${i}`,
         },
       });
+      cardIds.push(card.id);
     }
   });
 
   test.afterEach(async () => {
-    if (deckId) {
-      await db.flashcard.deleteMany({ where: { deckId } }).catch(() => null);
-      await db.deck.deleteMany({ where: { id: deckId } }).catch(() => null);
-    }
+    if (cardIds.length > 0) await db.flashcard.deleteMany({ where: { id: { in: cardIds } } }).catch(() => null);
+    if (deckId) await db.deck.deleteMany({ where: { id: deckId } }).catch(() => null);
     if (folderId) {
       await db.folder.deleteMany({ where: { id: folderId } }).catch(() => null);
     }
@@ -73,7 +74,7 @@ test.describe("Deck deletion from DeckView page", () => {
     await expect(dialog).not.toBeVisible();
   });
 
-  test("confirms deletion, redirects to home, shows success toast, and deletes deck from database", async ({ page }) => {
+  test("confirms deletion, redirects home, and keeps its canonical vocabulary unassigned", async ({ page }) => {
     await page.goto(`/decks/${deckId}`);
     await page.waitForLoadState("networkidle");
 
@@ -104,9 +105,12 @@ test.describe("Deck deletion from DeckView page", () => {
     const deckInDb = await db.deck.findUnique({ where: { id: deckId } });
     expect(deckInDb).toBeNull();
 
-    // Cards should also be deleted via cascade
-    const cardsInDb = await db.flashcard.findMany({ where: { deckId } });
-    expect(cardsInDb).toHaveLength(0);
+    // V1.3 source deletion removes memberships only. Canonical cards remain
+    // unassigned and retain their stable IDs for shared learning history.
+    const cardsInDb = await db.flashcard.findMany({ where: { id: { in: cardIds } } });
+    expect(cardsInDb).toHaveLength(5);
+    expect(cardsInDb.every((card) => card.deckId === null)).toBe(true);
+    expect(await db.deckVocabularyMembership.count({ where: { flashcardId: { in: cardIds } } })).toBe(0);
 
     deckId = "";
   });

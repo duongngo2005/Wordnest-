@@ -27,7 +27,8 @@
 /prisma/*.db
 !/prisma/wordnest.db
 /prisma/*.db-journal
-/backups/*.sql
+/backups/*
+/.wordnest-reports/
 
 # misc
 .DS_Store

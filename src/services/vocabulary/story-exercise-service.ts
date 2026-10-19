@@ -91,7 +91,7 @@ export class StoryExerciseService {
     const [deck, story] = await Promise.all([
       db.deck.findUnique({
         where: { id: deckId },
-        include: { cards: true },
+        include: { vocabularyMemberships: { include: { flashcard: true } } },
       }),
       db.story.findUnique({
         where: { id: storyId },
@@ -105,7 +105,10 @@ export class StoryExerciseService {
       throw new ResourceNotFoundError("Không tìm thấy câu chuyện trong bộ thẻ này.");
     }
 
-    const questions = await this.generateStoryExerciseQuestions(story, deck.cards);
+    const questions = await this.generateStoryExerciseQuestions(
+      story,
+      deck.vocabularyMemberships.map(({ flashcard }) => flashcard)
+    );
 
     const session = await db.quizSession.create({
       data: {
@@ -138,7 +141,7 @@ export class StoryExerciseService {
     const [deck, lesson] = await Promise.all([
       db.deck.findUnique({
         where: { id: deckId },
-        include: { cards: true },
+        include: { vocabularyMemberships: { include: { flashcard: true } } },
       }),
       db.lesson.findUnique({
         where: { id: lessonId },
@@ -154,7 +157,7 @@ export class StoryExerciseService {
 
     const passage: PassageExerciseInput = {
       id: lesson.id,
-      deckId: lesson.deckId,
+      deckId,
       title: lesson.title,
       content: lesson.content,
       cefr: lesson.cefr,
@@ -162,7 +165,10 @@ export class StoryExerciseService {
       sourceType: "lesson",
     };
 
-    const questions = await this.generateStoryExerciseQuestions(passage, deck.cards);
+    const questions = await this.generateStoryExerciseQuestions(
+      passage,
+      deck.vocabularyMemberships.map(({ flashcard }) => flashcard)
+    );
 
     const session = await db.quizSession.create({
       data: {

@@ -19,9 +19,17 @@ import { WordNestMascot } from "@/components/ui/Mascot";
 interface FolderLibraryProps {
   folders: FolderDetail[];
   uncategorizedDecks: FolderDeckSummary[];
+  unassignedVocabularyCount?: number;
 }
 
 type Composer = "folder" | null;
+
+type DeckDeletionImpact = {
+  fingerprint: string;
+  flashcards: number;
+  sharedFlashcards: number;
+  unassignedFlashcards: number;
+};
 
 async function responseError(response: Response, fallback: string) {
   const data: unknown = await response.json().catch(() => null);
@@ -138,7 +146,7 @@ function DeckRow({
   );
 }
 
-export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProps) {
+export function FolderLibrary({ folders, uncategorizedDecks, unassignedVocabularyCount = 0 }: FolderLibraryProps) {
   const router = useRouter();
   const toast = useToast();
   const [composer, setComposer] = useState<Composer>(null);
@@ -179,11 +187,11 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
     }
   };
 
-  const [itemPendingDelete, setItemPendingDelete] = useState<
-    | { type: "folder"; id: string; name: string }
-    | { type: "deck"; id: string; name: string }
-    | null
-  >(null);
+  const [itemPendingDelete, setItemPendingDelete] = useState<{
+    id: string;
+    name: string;
+    impact: DeckDeletionImpact;
+  } | null>(null);
   const [isDeletingItem, setIsDeletingItem] = useState(false);
 
   useEffect(() => {
@@ -197,40 +205,43 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [itemPendingDelete, isDeletingItem]);
 
-  const deleteFolder = (folder: FolderDetail) => {
-    setItemPendingDelete({ type: "folder", id: folder.id, name: folder.name });
-  };
-
-  const deleteDeck = (deck: FolderDeckSummary) => {
-    setItemPendingDelete({ type: "deck", id: deck.id, name: deck.name });
+  const openDeckDeletion = async (deck: Pick<FolderDeckSummary, "id" | "name">) => {
+    try {
+      const response = await fetch(`/api/decks/${deck.id}?impact=delete`, { cache: "no-store" });
+      const data: unknown = await response.json().catch(() => null);
+      if (!response.ok || !data || typeof data !== "object" || !("impact" in data)) {
+        throw new Error("Không thể tính ảnh hưởng trước khi xóa bộ từ.");
+      }
+      setItemPendingDelete({ id: deck.id, name: deck.name, impact: data.impact as DeckDeletionImpact });
+    } catch (error) {
+      toast.error("Không thể chuẩn bị xóa bộ từ", { description: error instanceof Error ? error.message : "Thử lại sau." });
+    }
   };
 
   const confirmDeleteItem = async () => {
     if (!itemPendingDelete) return;
     setIsDeletingItem(true);
     try {
-      if (itemPendingDelete.type === "folder") {
-        const response = await fetch(`/api/folders/${itemPendingDelete.id}`, { method: "DELETE" });
-        if (!response.ok) {
-          toast.error("Không thể xóa bộ sưu tập", { description: await responseError(response, "Thử lại.") });
-          return;
-        }
-        toast.success(`Đã xóa bộ sưu tập “${itemPendingDelete.name}”`);
-      } else {
-        const response = await fetch(`/api/decks/${itemPendingDelete.id}`, { method: "DELETE" });
-        if (!response.ok) {
-          toast.error("Không thể xóa bộ từ", { description: await responseError(response, "Thử lại.") });
-          return;
-        }
-        toast.success(`Đã xóa bộ từ “${itemPendingDelete.name}”`);
+      const response = await fetch(`/api/decks/${itemPendingDelete.id}`, {
+        method: "DELETE",
+        headers: { "x-wordnest-deletion-preview": itemPendingDelete.impact.fingerprint },
+      });
+      if (response.status === 409) {
+        const stalePreview = itemPendingDelete;
+        setItemPendingDelete(null);
+        await openDeckDeletion(stalePreview);
+        toast.error("Dữ liệu đã thay đổi", { description: "Đã cập nhật ảnh hưởng xóa. Hãy xác nhận lại." });
+        return;
       }
+      if (!response.ok) {
+        toast.error("Không thể xóa bộ từ", { description: await responseError(response, "Thử lại.") });
+        return;
+      }
+      toast.success(`Đã xóa bộ từ “${itemPendingDelete.name}”`);
       setItemPendingDelete(null);
       refresh();
     } catch {
-      toast.error(
-        itemPendingDelete.type === "folder" ? "Không thể xóa bộ sưu tập" : "Không thể xóa bộ từ",
-        { description: "Kiểm tra kết nối rồi thử lại." }
-      );
+      toast.error("Không thể xóa bộ từ", { description: "Kiểm tra kết nối rồi thử lại." });
     } finally {
       setIsDeletingItem(false);
     }
@@ -261,6 +272,9 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
           Thư viện
         </h1>
         <div className="flex flex-wrap gap-2">
+          {unassignedVocabularyCount > 0 ? <Link href="/vocabulary/unassigned" className="brick-button-secondary px-3.5 py-2 text-xs sm:text-sm font-black">
+            {unassignedVocabularyCount} từ chưa phân loại
+          </Link> : null}
           <button
             type="button"
             onClick={() => openFolderComposer()}
@@ -450,7 +464,7 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
                   folders={folders}
                   currentFolderId={null}
                   onMove={moveDeck}
-                  onDelete={deleteDeck}
+                  onDelete={openDeckDeletion}
                 />
               ))}
             </ul>
@@ -488,18 +502,20 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
                   id="delete-dialog-title"
                   className="mt-1 text-lg font-black text-[#221C16] leading-snug break-words"
                 >
-                  {itemPendingDelete.type === "folder"
-                    ? `Xóa bộ sưu tập “${itemPendingDelete.name}”?`
-                    : `Xóa bộ từ “${itemPendingDelete.name}”?`}
+                  {`Xóa bộ từ “${itemPendingDelete.name}”?`}
                 </h3>
                 <p
                   id="delete-dialog-desc"
                   className="mt-1.5 text-xs sm:text-sm font-semibold text-[#6B6258] leading-relaxed"
                 >
-                  {itemPendingDelete.type === "folder"
-                    ? "Các bộ từ bên trong sẽ được giữ lại an toàn ở mục Chưa phân loại trong Thư viện."
-                    : "Toàn bộ thẻ flashcard và tiến trình học trong bộ từ này sẽ bị xóa hoàn toàn. Hành động này không thể hoàn tác."}
+                  Thao tác này chỉ gỡ liên kết nguồn Deck, không xóa hồ sơ từ vựng hoặc lịch sử học.
                 </p>
+                <ul className="mt-3 space-y-1 rounded-lg border border-[#DCD3C5] bg-[#FAF6EE] p-3 text-xs font-semibold text-[#4A4036]">
+                  <li>{itemPendingDelete.impact.flashcards} liên kết từ vựng sẽ bị gỡ.</li>
+                  <li>{itemPendingDelete.impact.sharedFlashcards} từ vẫn có Deck khác.</li>
+                  <li>{itemPendingDelete.impact.unassignedFlashcards} từ trở thành chưa phân loại.</li>
+                  <li>0 hồ sơ từ vựng và 0 lịch sử học bị xóa.</li>
+                </ul>
               </div>
             </div>
 
@@ -520,11 +536,7 @@ export function FolderLibrary({ folders, uncategorizedDecks }: FolderLibraryProp
               >
                 <Trash2 className="h-4 w-4" />
                 <span>
-                  {isDeletingItem
-                    ? "Đang xóa..."
-                    : itemPendingDelete.type === "folder"
-                    ? "Xóa bộ sưu tập"
-                    : "Xóa bộ từ"}
+                  {isDeletingItem ? "Đang xóa..." : "Xóa bộ từ"}
                 </span>
               </button>
             </div>

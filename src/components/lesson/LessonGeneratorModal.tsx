@@ -98,6 +98,7 @@ function LessonGeneratorModalContent({
   const [topic, setTopic] = useState("Everyday Communication & Life");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const idempotencyKeyRef = useRef<string | null>(null);
 
   // Dialog open/close lifecycle
   useEffect(() => {
@@ -189,6 +190,8 @@ function LessonGeneratorModalContent({
     setIsSubmitting(true);
 
     try {
+      const idempotencyKey = idempotencyKeyRef.current || crypto.randomUUID();
+      idempotencyKeyRef.current = idempotencyKey;
       const response = await fetch(`/api/decks/${deck.id}/lessons`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -196,6 +199,7 @@ function LessonGeneratorModalContent({
           targetWords: selectedWordIds,
           cefr,
           topic: topic.trim() || undefined,
+          idempotencyKey,
         }),
       });
 
@@ -211,6 +215,8 @@ function LessonGeneratorModalContent({
 
       // Refresh background tasks
       await refreshJobs();
+
+      idempotencyKeyRef.current = null;
 
       onLessonCreated?.(data.jobId);
       onClose();

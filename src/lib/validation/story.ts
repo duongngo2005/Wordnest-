@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CLOUD_TTS_VOICE_IDS } from "@/lib/tts/voice-catalog";
+import { PART_OF_SPEECH_OPTIONS } from "@/lib/validation/flashcard";
 
 export const StoryCefrEnum = z.enum(["A1", "A2", "B1", "B2", "C1"]);
 export type StoryCefr = z.infer<typeof StoryCefrEnum>;
@@ -66,6 +67,8 @@ export type TranslateInContextRequest = z.infer<typeof translateInContextRequest
 
 export const contextualTranslationResponseSchema = z.object({
   selectedText: z.string().min(1),
+  /** Optional structured target for Story → add-card; older cached responses remain valid. */
+  canonicalTerm: z.string().trim().min(1).max(200).nullable().optional().default(null),
   meaningVi: z.string().min(1),
   contextualMeaningVi: z.string().min(1),
   definitionVi: z.string().nullable().optional().default(null),
@@ -85,7 +88,7 @@ export const addCardFromStoryRequestSchema = z.object({
   meaningVi: z.string().min(1),
   definitionEn: z.string().min(1),
   ipa: z.string().nullable().optional(),
-  partOfSpeech: z.string().nullable().optional(),
+  partOfSpeech: z.enum(PART_OF_SPEECH_OPTIONS).optional(),
   cefr: z.string().nullable().optional(),
   exampleEn: z.string().min(1),
   exampleVi: z.string().min(1),

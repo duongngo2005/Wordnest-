@@ -1,21 +1,15 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { deckService } from "./deck-service";
 import { storyService } from "./story-service";
 
 describe("StoryService historical data compatibility", () => {
-  let testDeckId: string | null = null;
-
-  afterAll(async () => {
-    if (testDeckId) await db.deck.deleteMany({ where: { id: testDeckId } });
-  });
-
   it("still reads a persisted Story and permits its historical card data to remain queryable", async () => {
     const deck = await deckService.createManualDeckWithCards({
       deckName: "Historical Story Test Deck",
       cards: [{ term: "apple", meaningVi: "quả táo" }],
     });
-    testDeckId = deck!.id;
+    const testDeckId = deck!.id;
 
     const story = await db.story.create({
       data: {
@@ -42,9 +36,14 @@ describe("StoryService historical data compatibility", () => {
   });
 
   it("keeps historical add-card duplicate protection intact", async () => {
-    expect(testDeckId).toBeDefined();
+    const deck = await deckService.createManualDeckWithCards({
+      deckName: "Historical Story Duplicate Test Deck",
+      cards: [{ term: "apple", meaningVi: "quả táo" }],
+    });
+    const testDeckId = deck!.id;
+
     const duplicateResult = await storyService.addCardFromStory({
-      deckId: testDeckId!,
+      deckId: testDeckId,
       term: "Apple",
       meaningVi: "quả táo",
       definitionEn: "a fruit",
@@ -56,9 +55,14 @@ describe("StoryService historical data compatibility", () => {
   });
 
   it("automatically detects vocabulary coverage when persisting a story without pre-populated usage array", async () => {
-    expect(testDeckId).toBeDefined();
+    const deck = await deckService.createManualDeckWithCards({
+      deckName: "Historical Story Coverage Test Deck",
+      cards: [{ term: "apple", meaningVi: "quả táo" }],
+    });
+    const testDeckId = deck!.id;
+
     const story = await storyService.persistGeneratedStory({
-      deckId: testDeckId!,
+      deckId: testDeckId,
       requestedTerms: ["apple"],
       cefr: "B1",
       length: "short",
@@ -78,4 +82,3 @@ describe("StoryService historical data compatibility", () => {
     ]);
   });
 });
-

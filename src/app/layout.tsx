@@ -28,6 +28,7 @@ import { PwaRegister } from "@/components/pwa/PwaRegister";
 import { MascotThemeProvider } from "@/components/ui/MascotThemeProvider";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import { AiTaskProvider } from "@/components/ai/AiTaskProvider";
+import { OnlineActivityTracker } from "@/components/analytics/OnlineActivityTracker";
 
 const mascotThemeBootstrap = `(() => {
   try {
@@ -85,6 +86,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <script dangerouslySetInnerHTML={{ __html: mascotThemeBootstrap }} />
+        <OnlineActivityTracker />
         <MascotThemeProvider>
           <ToastProvider>
             <AiTaskProvider>{children}</AiTaskProvider>

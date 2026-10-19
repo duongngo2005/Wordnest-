@@ -14,6 +14,7 @@ const generateLessonRequestSchema = z.object({
     .max(20, "Mỗi bài học chỉ nên tập trung tối đa 20 từ vựng."),
   cefr: StoryCefrEnum.optional().default("B1"),
   topic: z.string().trim().max(120, "Chủ đề bài học không được vượt quá 120 ký tự.").optional(),
+  idempotencyKey: z.string().uuid().optional(),
 });
 
 export async function GET(
@@ -67,7 +68,7 @@ export async function POST(
         select: { id: true },
       }),
       db.flashcard.findMany({
-        where: { deckId, id: { in: uniqueTargetWords } },
+        where: { id: { in: uniqueTargetWords }, deckMemberships: { some: { deckId } } },
         select: { id: true },
       }),
     ]);
@@ -88,12 +89,15 @@ export async function POST(
       );
     }
 
-    const job = await aiJobService.createLessonJob({
+    const input = {
       deckId,
       targetWords: uniqueTargetWords,
       cefr: validation.data.cefr,
       topic: validation.data.topic,
-    });
+    };
+    const job = validation.data.idempotencyKey
+      ? await aiJobService.createLessonJob(input, validation.data.idempotencyKey)
+      : await aiJobService.createLessonJob(input);
 
     return NextResponse.json(
       {

@@ -86,6 +86,47 @@ export interface ProgressFolderInsight {
   weakCards: number;
 }
 
+export interface GlobalTypingActivity extends ProgressDateCount {
+  correct: number;
+  accuracy: number | null;
+}
+
+export interface GlobalTypingMistake {
+  flashcardId: string;
+  term: string;
+  meaningVi: string;
+  count: number;
+}
+
+export interface OnlineTimeDay {
+  date: string;
+  label: string;
+  activeSeconds: number;
+}
+
+export interface OnlineTimeAnalytics {
+  days: OnlineTimeDay[];
+  todaySeconds: number;
+  totalSeconds: number;
+  activeDays: number;
+}
+
+/** Practice-only activity for the global Vietnamese-to-English typing mode. */
+export interface GlobalTypingAnalytics {
+  total: number;
+  correct: number;
+  incorrect: number;
+  accuracy: number | null;
+  uniqueCards: number;
+  sessions: number;
+  assistedTotal: number;
+  assistedCorrect: number;
+  unassistedCorrect: number;
+  activity: GlobalTypingActivity[];
+  recentAccuracyChange: number | null;
+  frequentMistakes: GlobalTypingMistake[];
+}
+
 export interface ProgressAnalytics {
   scope: ProgressScope;
   today: {
@@ -114,6 +155,8 @@ export interface ProgressAnalytics {
   decks: ProgressDeckInsight[];
   folders: ProgressFolderInsight[];
   reviewActivity: ReviewActivityData;
+  onlineTime: OnlineTimeAnalytics;
+  globalTyping?: GlobalTypingAnalytics;
 }
 
 export interface ProgressCardRecord {
@@ -143,6 +186,19 @@ export interface ProgressAnalyticsInput {
   now?: Date;
   timezone?: string;
   allTimeReviewLogs?: Array<{ cardId?: string; rating?: number; review: Date }>;
+  globalTypingAttempts?: Array<{
+    sessionId: string;
+    flashcardId: string;
+    correct: boolean;
+    createdAt: Date;
+    term: string;
+    meaningVi: string;
+    assisted: boolean;
+  }>;
+  onlineActivity?: Array<{
+    date: string;
+    activeSeconds: number;
+  }>;
 }
 
 function dayLabel(date: Date, timezone: string = DEFAULT_STUDY_TIMEZONE): string {
@@ -175,6 +231,106 @@ function stateLabel(key: ProgressStateCount["key"]): string {
   }[key];
 }
 
+function buildGlobalTypingAnalytics(
+  attempts: NonNullable<ProgressAnalyticsInput["globalTypingAttempts"]>,
+  todayKey: string,
+  timezone: string
+): GlobalTypingAnalytics {
+  const total = attempts.length;
+  const correct = attempts.filter((attempt) => attempt.correct).length;
+  const assistedAttempts = attempts.filter((attempt) => attempt.assisted);
+  const byDate = new Map<string, { total: number; correct: number }>();
+  for (const attempt of attempts) {
+    const key = getLocalDateKey(attempt.createdAt, timezone);
+    const current = byDate.get(key) ?? { total: 0, correct: 0 };
+    current.total += 1;
+    if (attempt.correct) current.correct += 1;
+    byDate.set(key, current);
+  }
+
+  const activity = Array.from({ length: 14 }, (_, index) => {
+    const key = offsetDateKey(todayKey, -13 + index);
+    const value = byDate.get(key) ?? { total: 0, correct: 0 };
+    return {
+      date: key,
+      label: dayLabel(getStartOfDayInTimezone(key, timezone), timezone),
+      count: value.total,
+      correct: value.correct,
+      accuracy: value.total > 0 ? Number(((value.correct / value.total) * 100).toFixed(1)) : null,
+    };
+  });
+  const previous = activity.slice(0, 7).reduce(
+    (summary, day) => ({ total: summary.total + day.count, correct: summary.correct + day.correct }),
+    { total: 0, correct: 0 }
+  );
+  const recent = activity.slice(7).reduce(
+    (summary, day) => ({ total: summary.total + day.count, correct: summary.correct + day.correct }),
+    { total: 0, correct: 0 }
+  );
+  const recentAccuracyChange =
+    previous.total > 0 && recent.total > 0
+      ? Number(((recent.correct / recent.total - previous.correct / previous.total) * 100).toFixed(1))
+      : null;
+
+  const mistakeMap = new Map<string, GlobalTypingMistake>();
+  for (const attempt of attempts) {
+    if (attempt.correct) continue;
+    const current = mistakeMap.get(attempt.flashcardId);
+    if (current) {
+      current.count += 1;
+    } else {
+      mistakeMap.set(attempt.flashcardId, {
+        flashcardId: attempt.flashcardId,
+        term: attempt.term,
+        meaningVi: attempt.meaningVi,
+        count: 1,
+      });
+    }
+  }
+
+  return {
+    total,
+    correct,
+    incorrect: total - correct,
+    accuracy: total > 0 ? Number(((correct / total) * 100).toFixed(1)) : null,
+    uniqueCards: new Set(attempts.map((attempt) => attempt.flashcardId)).size,
+    sessions: new Set(attempts.map((attempt) => attempt.sessionId)).size,
+    assistedTotal: assistedAttempts.length,
+    assistedCorrect: assistedAttempts.filter((attempt) => attempt.correct).length,
+    unassistedCorrect: attempts.filter((attempt) => attempt.correct && !attempt.assisted).length,
+    activity,
+    recentAccuracyChange,
+    frequentMistakes: [...mistakeMap.values()]
+      .sort((a, b) => b.count - a.count || a.term.localeCompare(b.term))
+      .slice(0, 5),
+  };
+}
+
+function buildOnlineTimeAnalytics(
+  activity: NonNullable<ProgressAnalyticsInput["onlineActivity"]>,
+  todayKey: string,
+  timezone: string
+): OnlineTimeAnalytics {
+  const secondsByDate = new Map(
+    activity.map((entry) => [entry.date, Math.max(0, Math.floor(entry.activeSeconds))])
+  );
+  const days = Array.from({ length: 14 }, (_, index) => {
+    const date = offsetDateKey(todayKey, -13 + index);
+    return {
+      date,
+      label: dayLabel(getStartOfDayInTimezone(date, timezone), timezone),
+      activeSeconds: secondsByDate.get(date) ?? 0,
+    };
+  });
+
+  return {
+    days,
+    todaySeconds: days.at(-1)?.activeSeconds ?? 0,
+    totalSeconds: days.reduce((sum, day) => sum + day.activeSeconds, 0),
+    activeDays: days.filter((day) => day.activeSeconds > 0).length,
+  };
+}
+
 /**
  * Pure aggregation used by the service and focused unit tests. It reports
  * observed activity and evidence, not a synthetic "mastery" or retention score.
@@ -188,13 +344,18 @@ export function buildProgressAnalytics({
   now = new Date(),
   timezone = DEFAULT_STUDY_TIMEZONE,
   allTimeReviewLogs,
+  globalTypingAttempts = [],
+  onlineActivity = [],
 }: ProgressAnalyticsInput): ProgressAnalytics {
   const tz = normalizeTimezone(timezone);
   const todayKey = getTodayDateKey(tz, now);
   const todayStart = getStartOfDayInTimezone(todayKey, tz);
   const todayEnd = getEndOfDayInTimezone(todayKey, tz);
 
-  const cards = decks.flatMap((deck) => deck.cards);
+  const cardOccurrences = decks.flatMap((deck) => deck.cards);
+  // Aggregates describe vocabulary progress, not source memberships. A shared
+  // card is therefore counted once in a combined Folder/global projection.
+  const cards = [...new Map(cardOccurrences.map((card) => [card.id, card])).values()];
   const deckById = new Map(decks.map((deck) => [deck.id, deck]));
 
   // Keep the primary CTA in lockstep with FSRSService.getReviewQueue(): these
@@ -246,6 +407,8 @@ export function buildProgressAnalytics({
     now,
     allTimeLogs: allTimeReviewLogs ?? reviewLogs,
   });
+  const globalTyping = buildGlobalTypingAnalytics(globalTypingAttempts, todayKey, tz);
+  const onlineTime = buildOnlineTimeAnalytics(onlineActivity, todayKey, tz);
 
   const weakCards: ProgressWeakCard[] = [];
   let assessedCards = 0;
@@ -270,12 +433,6 @@ export function buildProgressAnalytics({
     practiceTotals.production.total += evidence.productionAxis.lifetimeFirstPassAttempts;
     practiceTotals.production.correct += evidence.productionAxis.lifetimeFirstPassCorrect;
 
-    const deckFirstPass = firstPassByDeck.get(card.deckId);
-    if (deckFirstPass) {
-      deckFirstPass.total += evidence.firstPassAttempts;
-      deckFirstPass.correct += evidence.firstPassCorrect;
-    }
-
     if (evidence.firstPassAttempts >= EVIDENCE_CONFIG.MIN_STABLE_ATTEMPTS) assessedCards += 1;
     if (!isWeakCardSummary(evidence)) continue;
     const deck = deckById.get(card.deckId);
@@ -289,6 +446,19 @@ export function buildProgressAnalytics({
       reason: evidence.explanationVi,
       priority: getNeedPracticePriority(evidence),
     });
+  }
+
+  // Source-level insight intentionally shows the shared learning signal in
+  // every Deck that contains the card. It must not alter global totals above.
+  for (const deck of decks) {
+    const deckFirstPass = firstPassByDeck.get(deck.id);
+    if (!deckFirstPass) continue;
+    for (const card of deck.cards) {
+      const evidence = practiceEvidence.get(card.id);
+      if (!evidence) continue;
+      deckFirstPass.total += evidence.firstPassAttempts;
+      deckFirstPass.correct += evidence.firstPassCorrect;
+    }
   }
   weakCards.sort((a, b) => b.priority - a.priority || a.term.localeCompare(b.term));
 
@@ -322,29 +492,39 @@ export function buildProgressAnalytics({
         folderName: deck.folderName,
         totalCards: deck.cards.length,
         dueToday: deck.cards.filter((card) => card.state > 0 && card.due <= now).length,
-        weakCards: weakCards.filter((card) => card.deckId === deck.id).length,
+        weakCards: deck.cards.filter((card) => {
+          const evidence = practiceEvidence.get(card.id);
+          return evidence ? isWeakCardSummary(evidence) : false;
+        }).length,
         reviewedRecently: reviewLogs.filter((log) => deckCardIds.has(log.cardId) && log.review >= activityStart).length,
         firstPass: performance("Kết quả lần đầu", deckFirstPass.total, deckFirstPass.correct),
       };
     })
     .sort((a, b) => b.dueToday - a.dueToday || b.weakCards - a.weakCards || a.name.localeCompare(b.name));
 
-  const foldersById = new Map<string, ProgressFolderInsight>();
+  const folderDecksById = new Map<string, ProgressDeckRecord[]>();
   for (const deck of decks) {
     if (!deck.folderId || !deck.folderName) continue;
-    const item = foldersById.get(deck.folderId) ?? {
-      id: deck.folderId,
-      name: deck.folderName,
-      deckCount: 0,
-      totalCards: 0,
-      dueToday: 0,
-      weakCards: 0,
-    };
-    item.deckCount += 1;
-    item.totalCards += deck.cards.length;
-    item.dueToday += deck.cards.filter((card) => card.state > 0 && card.due <= now).length;
-    item.weakCards += weakCards.filter((card) => card.deckId === deck.id).length;
-    foldersById.set(deck.folderId, item);
+    const folderDecks = folderDecksById.get(deck.folderId) ?? [];
+    folderDecks.push(deck);
+    folderDecksById.set(deck.folderId, folderDecks);
+  }
+
+  const foldersById = new Map<string, ProgressFolderInsight>();
+  for (const [folderId, folderDecks] of folderDecksById) {
+    const folderCards = [...new Map(folderDecks.flatMap((deck) => deck.cards).map((card) => [card.id, card])).values()];
+    const firstDeck = folderDecks[0];
+    foldersById.set(folderId, {
+      id: folderId,
+      name: firstDeck.folderName!,
+      deckCount: folderDecks.length,
+      totalCards: folderCards.length,
+      dueToday: folderCards.filter((card) => card.state > 0 && card.due <= now).length,
+      weakCards: folderCards.filter((card) => {
+        const evidence = practiceEvidence.get(card.id);
+        return evidence ? isWeakCardSummary(evidence) : false;
+      }).length,
+    });
   }
   const folders = [...foldersById.values()].sort(
     (a, b) => b.dueToday - a.dueToday || b.weakCards - a.weakCards || a.name.localeCompare(b.name)
@@ -382,6 +562,8 @@ export function buildProgressAnalytics({
     decks: decksInsight,
     folders,
     reviewActivity,
+    onlineTime,
+    globalTyping,
   };
 }
 
@@ -427,15 +609,18 @@ export class ProgressService {
         name: true,
         folderId: true,
         folder: { select: { name: true } },
-        cards: {
+        vocabularyMemberships: {
           select: {
-            id: true,
-            deckId: true,
-            term: true,
-            normalizedTerm: true,
-            meaningVi: true,
-            state: true,
-            due: true,
+            flashcard: {
+              select: {
+                id: true,
+                term: true,
+                normalizedTerm: true,
+                meaningVi: true,
+                state: true,
+                due: true,
+              },
+            },
           },
         },
       },
@@ -446,17 +631,22 @@ export class ProgressService {
       name: deck.name,
       folderId: deck.folderId,
       folderName: deck.folder?.name ?? null,
-      cards: deck.cards,
+      cards: deck.vocabularyMemberships.map(({ flashcard }) => ({
+        ...flashcard,
+        deckId: deck.id,
+      })),
     }));
     const cardIds = deckRecords.flatMap((deck) => deck.cards.map((card) => card.id));
     const deckIds = deckRecords.map((deck) => deck.id);
     const isGlobal = scope.kind === "global";
+    const onlineActivityTodayKey = getTodayDateKey(resolvedTimezone);
+    const onlineActivityStartKey = offsetDateKey(onlineActivityTodayKey, -13);
 
     const evidencePromise =
       cardIds.length > 0
         ? practiceEvidenceService.getDeckPracticeEvidence(deckIds)
         : Promise.resolve(null);
-    const [scopedLogs, evidenceResult, quizAttempts] = await Promise.all([
+    const [scopedLogs, evidenceResult, quizAttempts, globalTypingAttempts, onlineActivity] = await Promise.all([
       cardIds.length > 0
         ? db.reviewLog.findMany({
             where: isGlobal ? undefined : { cardId: { in: cardIds } },
@@ -465,8 +655,34 @@ export class ProgressService {
         : [],
       evidencePromise,
       deckIds.length > 0
-        ? db.quizAttempt.findMany({ where: { deckId: { in: deckIds } }, select: { deckId: true } })
+        ? db.quizAttempt
+            .findMany({ where: { deckId: { in: deckIds } }, select: { deckId: true } })
+            .then((attempts) => attempts.flatMap((attempt) => attempt.deckId ? [{ deckId: attempt.deckId }] : []))
         : [],
+      isGlobal
+        ? db.practiceAttempt.findMany({
+            where: { mode: { in: ["global_typing", "global_typing_hint"] }, attemptNumber: 1 },
+            select: {
+              sessionId: true,
+              flashcardId: true,
+              correct: true,
+              createdAt: true,
+              mode: true,
+              flashcard: { select: { term: true, meaningVi: true } },
+            },
+          })
+        : Promise.resolve([]),
+      isGlobal
+        ? db.dailyOnlineActivity.findMany({
+            where: {
+              date: {
+                gte: onlineActivityStartKey,
+                lte: onlineActivityTodayKey,
+              },
+            },
+            select: { date: true, activeSeconds: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     const reviewLogs = scopedLogs;
@@ -480,6 +696,16 @@ export class ProgressService {
       quizAttempts,
       timezone: resolvedTimezone,
       allTimeReviewLogs,
+      globalTypingAttempts: globalTypingAttempts.map((attempt) => ({
+        sessionId: attempt.sessionId,
+        flashcardId: attempt.flashcardId,
+        correct: attempt.correct,
+        createdAt: attempt.createdAt,
+        term: attempt.flashcard.term,
+        meaningVi: attempt.flashcard.meaningVi,
+        assisted: attempt.mode === "global_typing_hint",
+      })),
+      onlineActivity,
     });
   }
 }
