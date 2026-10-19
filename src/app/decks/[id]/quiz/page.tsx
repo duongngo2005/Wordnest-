@@ -47,6 +47,15 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
       ? []
       : undefined;
 
+  // A deck Challenge is deliberately one production-only experience. Keep the
+  // legacy typed and multiple-choice query aliases routable, but normalize
+  // them to the same Vietnamese-to-English Challenge policy.
+  const isProductionChallenge =
+    modeParam !== "lesson_practice" &&
+    modeParam !== "story_practice" &&
+    modeParam !== "focused_practice" &&
+    modeParam !== "story_cloze";
+
   const initialMode =
     modeParam === "lesson_practice"
       ? ("lesson_practice" as const)
@@ -56,9 +65,7 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
       ? ("focused_practice" as const)
       : modeParam === "story_cloze"
       ? ("story_cloze" as const)
-      : modeParam === "typed" || modeParam === "typed_vi_en"
-      ? ("typed" as const)
-      : ("multiple_choice" as const);
+      : ("typed" as const);
   const deck = await getDeckOverview(id);
 
   if (!deck) {
@@ -160,19 +167,50 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
       questions: focusedQuiz.questions,
       sessionId: focusedQuiz.sessionId,
     };
+  } else if (isProductionChallenge) {
+    const productionChallengeQuiz = await quizService.getProductionChallengeQuiz(deck.id);
+    if (productionChallengeQuiz.questions.length === 0) {
+      const hasOnlyAmbiguousCues = productionChallengeQuiz.emptyReason === "ambiguous_cues";
+      return (
+        <div className="min-h-[100dvh] bg-[#FAF6EE] flex flex-col selection:bg-[#FDE68A] selection:text-[#221C16]">
+          <Header />
+          <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-8 flex items-center justify-center">
+            <div data-testid={hasOnlyAmbiguousCues ? "empty-ambiguous-challenge" : "empty-missing-cue-challenge"} className="brick-card p-8 bg-[#FFFDF9] text-center space-y-4 w-full shadow-[4px_4px_0px_#221C16]">
+              <WordNestMascot mood="thinking" size={90} />
+              <h1 className="text-2xl font-black text-[#221C16]">
+                {hasOnlyAmbiguousCues
+                  ? "Cần làm rõ gợi ý tiếng Việt trước khi luyện gõ."
+                  : "Chưa có gợi ý tiếng Việt để luyện gõ"}
+              </h1>
+              <p className="text-sm font-semibold text-[#6B6258]">
+                {hasOnlyAmbiguousCues
+                  ? "Các thẻ hiện có cùng gợi ý và từ loại nhưng chưa có ngữ cảnh an toàn để phân biệt. Hãy chỉnh sửa thẻ rồi thử lại."
+                  : "Chưa có thẻ nào có gợi ý tiếng Việt đủ rõ để luyện gõ."}
+              </p>
+              <div className="hidden pt-2 sm:block">
+                <Link
+                  href={`/decks/${deck.id}`}
+                  className="brick-button-primary items-center gap-2 px-5 py-2.5 text-xs font-black sm:text-sm"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Quay lại bộ từ vựng</span>
+                </Link>
+              </div>
+            </div>
+          </main>
+        </div>
+      );
+    }
+    quiz = {
+      questions: productionChallengeQuiz.questions,
+      sessionId: productionChallengeQuiz.sessionId,
+    };
   } else {
     // Create a server-side quiz session so submitted answers can be scored safely.
     const allowedTypes =
       initialMode === "story_cloze"
         ? (["story_cloze"] as const)
-        : initialMode === "typed"
-        ? (["typed_vi_en"] as const)
-        : ([
-            "multiple_choice_en_vi",
-            "multiple_choice_vi_en",
-            "fill_in_blank",
-            "typed_vi_en",
-          ] as const);
+        : (["typed_vi_en"] as const);
 
     try {
       quiz = await quizService.getDeckQuiz(deck.id, 10, [...allowedTypes], storyId);
@@ -237,6 +275,7 @@ export default async function QuizPage({ params, searchParams }: QuizPageProps) 
           initialMode={initialMode}
           storyId={storyId}
           lessonId={lessonId}
+          isProductionChallenge={isProductionChallenge}
         />
       </main>
     </div>

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { GET, POST } from "./route";
-import { DELETE } from "./[id]/route";
+import { DELETE, GET as GET_FOLDER } from "./[id]/route";
 
 const TEST_PREFIX = "Folder API test";
 
@@ -50,7 +50,15 @@ describe("Folder API", () => {
       data: { name: `${TEST_PREFIX} retained deck`, folderId: folder.id },
     });
 
-    const response = await DELETE(new Request(`http://localhost/api/folders/${folder.id}`), {
+    const previewResponse = await GET_FOLDER(new Request(`http://localhost/api/folders/${folder.id}?impact=delete`), {
+      params: Promise.resolve({ id: folder.id }),
+    });
+    const preview = await previewResponse.json();
+    expect(previewResponse.status).toBe(200);
+
+    const response = await DELETE(new Request(`http://localhost/api/folders/${folder.id}`, {
+      headers: { "x-wordnest-deletion-preview": preview.impact.fingerprint },
+    }), {
       params: Promise.resolve({ id: folder.id }),
     });
 

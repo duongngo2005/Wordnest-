@@ -422,12 +422,13 @@ export function TodayPostcard({
               />
             </div>
 
-            <div className="wn-postcard__cta-wrap">
+            <div className="wn-postcard__cta-wrap" data-testid="today-action-group">
               {actionHref && recommendation.actionLabel ? (
                 <Link
                   href={actionHref}
                   onClick={() => playUISound("softTap")}
                   className="brick-button-primary wn-postcard__cta"
+                  data-testid="today-primary-action"
                 >
                   <BookOpen className="h-4 w-4" aria-hidden="true" strokeWidth={2.5} />
                   <span>{recommendation.actionLabel}</span>
@@ -438,6 +439,24 @@ export function TodayPostcard({
                   <span>Chọn tạo bộ sưu tập bên dưới để bắt đầu</span>
                 </div>
               )}
+              {plan.kind === "DUE" && dueCount > 0 ? (
+                <Link
+                  href="/practice/typing?source=due"
+                  onClick={() => playUISound("softTap")}
+                  className="brick-button-secondary wn-postcard__due-typing-action"
+                  data-testid="today-due-typing-action"
+                >
+                  <span>Luyện gõ {dueCount} từ đến hạn</span>
+                </Link>
+              ) : null}
+              <Link
+                href="/practice/typing"
+                onClick={() => playUISound("softTap")}
+                className="wn-postcard__typing-action"
+                data-testid="today-typing-action"
+              >
+                Luyện gõ Việt → Anh · Toàn thư viện
+              </Link>
             </div>
           </div>
         </div>

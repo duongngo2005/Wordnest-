@@ -107,23 +107,26 @@ test.describe("Story Generation Background Job E2E", () => {
     // Close indicator popover
     await page.keyboard.press("Escape");
 
-    // 12. Wait for completion toast with action CTA: "✨ Truyện của bạn đã sẵn sàng"
-    console.log(`[E2E] Step 12: Waiting for completion toast (Ollama generation running on GPU)...`);
-    const toastElem = page.locator("[data-sonner-toast]").filter({ hasText: "Truyện của bạn đã sẵn sàng" }).first();
-    await expect(toastElem).toBeVisible({ timeout: 330_000 });
+    // 12. Completion remains in durable history, not an intrusive toast that
+    // reappears after returning to the app.
+    console.log(`[E2E] Step 12: Waiting for durable Story completion...`);
+    await expect.poll(
+      async () => db.aiJob.findFirst({
+        where: { type: "story_generation", input: { path: "$.deckId", equals: testDeckId }, status: "completed" },
+        orderBy: { completedAt: "desc" },
+      }),
+      { timeout: 330_000 }
+    ).toMatchObject({ resultUrl: expect.stringContaining(`/decks/${testDeckId}/story?storyId=`) });
+    await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Truyện của bạn đã sẵn sàng" })).toHaveCount(0);
 
-    // Verify toast description contains words and CEFR
-    await expect(toastElem).toContainText("62 từ");
-    await expect(toastElem).toContainText("C1");
+    const completedJob = await db.aiJob.findFirstOrThrow({
+      where: { type: "story_generation", input: { path: "$.deckId", equals: testDeckId }, status: "completed" },
+      orderBy: { completedAt: "desc" },
+    });
+    await page.goto(completedJob.resultUrl!);
 
-    // 13. Click the CTA button "Xem truyện" inside toast
-    console.log(`[E2E] Step 13: Clicking CTA button 'Xem truyện' in toast`);
-    const viewStoryCta = toastElem.getByRole("button", { name: "Xem truyện" });
-    await expect(viewStoryCta).toBeVisible();
-    await viewStoryCta.click();
-
-    // 14. Verify navigation to the new Story page
-    console.log(`[E2E] Step 14: Verifying navigation to story page`);
+    // 13. Verify navigation to the new Story page
+    console.log(`[E2E] Step 13: Verifying navigation to story page`);
     await expect(page).toHaveURL(new RegExp(`/decks/${testDeckId}/story\\?storyId=`));
 
     // Verify story content is visible on page

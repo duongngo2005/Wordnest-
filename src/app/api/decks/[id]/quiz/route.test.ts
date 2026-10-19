@@ -71,7 +71,7 @@ describe("POST /api/decks/[id]/quiz", () => {
     await expect(response.json()).resolves.toMatchObject({ success: false });
   });
 
-  it("GET with mode=typed returns questions without leaking correctAnswer, options, or explanation", async () => {
+  it("GET with mode=typed normalizes to Challenge without leaking answers or spelling hints", async () => {
     const deck = await db.deck.create({ data: { name: "GET typed quiz test" } });
     deckIds.push(deck.id);
     await db.flashcard.create({
@@ -103,10 +103,41 @@ describe("POST /api/decks/[id]/quiz", () => {
     expect(q.correctAnswer).toBeUndefined();
     expect(q.options).toBeUndefined();
     expect(q.explanation).toBeUndefined();
-    expect(q.spellingHints).toEqual({
-      partial: "_l_oc___",
-      blank: "________",
+    expect(q.spellingHints).toBeUndefined();
+  });
+
+  it("GET without a mode creates the 25-card production-only Challenge", async () => {
+    const deck = await db.deck.create({ data: { name: "Bare Challenge policy" } });
+    deckIds.push(deck.id);
+    await db.flashcard.createMany({
+      data: Array.from({ length: 27 }, (_, index) => ({
+        deckId: deck.id,
+        term: `challenge-${index}`,
+        normalizedTerm: `challenge-${index}`,
+        meaningVi: `gợi ý ${index}`,
+      })),
     });
+
+    const { GET } = await import("./route");
+    const response = await GET(
+      new Request(`http://localhost/api/decks/${deck.id}/quiz`),
+      { params: Promise.resolve({ id: deck.id }) }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.data.questions).toHaveLength(25);
+    expect(body.data.questions.every((question: { type: string }) => question.type === "typed_vi_en")).toBe(true);
+    expect(new Set(body.data.questions.map((question: { cardId: string }) => question.cardId)).size).toBe(25);
+
+    const legacyModeResponse = await GET(
+      new Request(`http://localhost/api/decks/${deck.id}/quiz?mode=multiple_choice&count=2`),
+      { params: Promise.resolve({ id: deck.id }) }
+    );
+    const legacyModeBody = await legacyModeResponse.json();
+    expect(legacyModeBody.data.questions).toHaveLength(2);
+    expect(legacyModeBody.data.questions.every((question: { type: string }) => question.type === "typed_vi_en")).toBe(true);
   });
 
   it("POST /check scores typed answer server-side and returns feedback without claiming session", async () => {

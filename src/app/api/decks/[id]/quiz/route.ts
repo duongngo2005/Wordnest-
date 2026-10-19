@@ -12,7 +12,7 @@ export async function GET(
     const { id: deckId } = await params;
     const { searchParams } = new URL(request.url);
     const countParam = searchParams.get("count");
-    const count = countParam ? parseInt(countParam, 10) : 10;
+    const requestedCount = countParam ? parseInt(countParam, 10) : undefined;
     const modeParam = searchParams.get("mode");
     const storyId = searchParams.get("storyId") || undefined;
     const lessonId = searchParams.get("lessonId") || undefined;
@@ -25,7 +25,7 @@ export async function GET(
     if (modeParam === "focused_practice") {
       const quizData = await quizService.getFocusedPracticeQuiz(
         deckId,
-        isNaN(count) ? 10 : count,
+        requestedCount === undefined || isNaN(requestedCount) ? 10 : requestedCount,
         targetCardIds
       );
       return NextResponse.json({
@@ -50,21 +50,33 @@ export async function GET(
       });
     }
 
+    // Bare deck Challenge and the historical typed/multiple-choice aliases
+    // all resolve to the one production-only Challenge policy.
+    const isProductionChallenge =
+      modeParam !== "focused_practice" &&
+      modeParam !== "story_practice" &&
+      modeParam !== "lesson_practice" &&
+      modeParam !== "story_cloze";
+
+    if (isProductionChallenge) {
+      const quizData = await quizService.getProductionChallengeQuiz(
+        deckId,
+        requestedCount === undefined || isNaN(requestedCount) ? 25 : requestedCount
+      );
+      return NextResponse.json({
+        success: true,
+        data: quizData,
+      });
+    }
+
     const allowedTypes: QuizQuestionType[] =
       modeParam === "story_cloze"
         ? ["story_cloze"]
-        : modeParam === "typed" || modeParam === "typed_vi_en"
-        ? ["typed_vi_en"]
-        : [
-            "multiple_choice_en_vi",
-            "multiple_choice_vi_en",
-            "fill_in_blank",
-            "typed_vi_en",
-          ];
+        : ["typed_vi_en"];
 
     const quizData = await quizService.getDeckQuiz(
       deckId,
-      isNaN(count) ? 10 : count,
+      requestedCount === undefined || isNaN(requestedCount) ? 10 : requestedCount,
       allowedTypes,
       storyId
     );

@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Braces, PenLine, Sparkles, X } from "lucide-react";
-import { AiCardsToDeckForm } from "./AiCardsToDeckForm";
+import { X } from "lucide-react";
 import { JsonFlashcardImport } from "./JsonFlashcardImport";
 import { ManualCardsEditor } from "./ManualCardsEditor";
 
@@ -14,7 +13,7 @@ interface AddCardsToDeckFormProps {
   onCardsCreated: () => void;
 }
 
-type CreationMode = "manual" | "ai" | "json";
+type CreationMode = "manual" | "json";
 
 export function AddCardsToDeckForm({
   deckId,
@@ -27,64 +26,38 @@ export function AddCardsToDeckForm({
   const methods: Array<{
     id: CreationMode;
     label: string;
-    description: string;
-    icon: typeof PenLine;
-    badgeBg: string;
-    iconColor: string;
   }> = [
     {
       id: "manual",
       label: "Thủ công",
-      description: "Tự viết thẻ",
-      icon: PenLine,
-      badgeBg: "bg-[var(--accent-soft)]",
-      iconColor: "text-[var(--accent)]",
-    },
-    {
-      id: "ai",
-      label: "AI",
-      description: "Gợi ý tự động",
-      icon: Sparkles,
-      badgeBg: "bg-[#FEF3C7]",
-      iconColor: "text-[#D97706]",
     },
     {
       id: "json",
-      label: "JSON",
-      description: "Nhập dữ liệu ngoài",
-      icon: Braces,
-      badgeBg: "bg-[#DDF5F1]",
-      iconColor: "text-[#0D9488]",
+      label: "AI JSON",
     },
   ];
 
   return (
     <section
-      className="brick-card rounded-2xl border-2 border-[#221C16] bg-[#FFFDF9] shadow-[4px_4px_0px_#221C16] overflow-hidden"
-      aria-label="Thêm thẻ"
+      className="wn-add-cards-dialog"
+      aria-labelledby="add-cards-title"
     >
-      {/* Warm paper header bar replacing the uniform yellow bar */}
-      <div className="flex items-center justify-between border-b-2 border-dashed border-[#DCD3C5] bg-[#FEF8ED] px-4 py-3 sm:px-5">
-        <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] shadow-[1.5px_1.5px_0px_#221C16]">
-            <PenLine className="h-3.5 w-3.5 text-[var(--accent)]" strokeWidth={2.5} />
-          </span>
-          <h2 className="text-base font-black text-[#221C16]">Thêm thẻ mới</h2>
-        </div>
+      <div className="wn-add-cards-dialog__header">
+        <h2 id="add-cards-title">Thêm thẻ mới</h2>
         <button
           type="button"
           onClick={onClose}
           aria-label="Đóng thêm thẻ"
-          className="wn-button wn-button-quiet wn-icon-button h-11 w-11 rounded-lg"
+          className="wn-dialog-close"
         >
-          <X className="h-5 w-5 text-[#221C16]" />
+          <X className="h-5 w-5" aria-hidden="true" />
         </button>
       </div>
 
-      <div className="p-4 sm:p-5">
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3" aria-label="Cách thêm thẻ">
+      <div className="wn-add-cards-dialog__body">
+        <fieldset className="wn-method-switch">
+          <legend className="wn-sr-only">Cách thêm thẻ</legend>
           {methods.map((method) => {
-            const Icon = method.icon;
             const selected = mode === method.id;
             return (
               <button
@@ -92,45 +65,26 @@ export function AddCardsToDeckForm({
                 type="button"
                 aria-pressed={selected}
                 onClick={() => setMode(method.id)}
-                className={`wn-method-card ${method.id === "json" ? "col-span-2 sm:col-span-1" : ""} ${
-                  selected ? "!border-[#221C16] !bg-[#FFF8E8]" : "bg-[#FFFDF9]"
-                }`}
+                className="wn-method-switch__option"
               >
-                <span
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg border-2 border-[#221C16] ${method.badgeBg} ${method.iconColor} shadow-[1.5px_1.5px_0px_#221C16]`}
-                >
-                  <Icon className="h-4 w-4" strokeWidth={2.5} />
-                </span>
-                <span>
-                  <span className="block text-sm font-black text-[#221C16]">{method.label}</span>
-                  <span className="mt-0.5 block text-xs font-bold text-[#6B6258]">{method.description}</span>
-                </span>
+                {method.label}
               </button>
             );
           })}
-        </div>
+        </fieldset>
 
-        {/* Selected Mode Body */}
-        <div className="mt-4">
-          {mode === "manual" ? (
+        <div className="wn-add-cards-dialog__content">
+          <div hidden={mode !== "manual"}>
             <ManualCardsEditor deckId={deckId} onSaved={onCardsCreated} />
-          ) : null}
-          {mode === "ai" ? (
-            <AiCardsToDeckForm
-              deckId={deckId}
-              onSaved={onCardsCreated}
-              onChooseManual={() => setMode("manual")}
-              onChooseJson={() => setMode("json")}
-            />
-          ) : null}
-          {mode === "json" ? (
+          </div>
+          <div hidden={mode !== "json"}>
             <JsonFlashcardImport
               deckId={deckId}
               deckName={deckName}
               collectionName={collectionName}
               onSaved={onCardsCreated}
             />
-          ) : null}
+          </div>
         </div>
       </div>
     </section>

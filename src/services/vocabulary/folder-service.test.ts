@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FlashcardStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import { folderService } from "./folder-service";
+import { StaleDeletionPreviewError } from "./deck-service";
 
 const TEST_PREFIX = "Folder feature test";
 
@@ -42,6 +43,16 @@ afterEach(async () => {
 });
 
 describe("FolderService", () => {
+  it("rejects a stale collection-deletion preview without uncategorizing its decks", async () => {
+    const folder = await folderService.createFolder({ name: `${TEST_PREFIX} Stale delete` });
+    const firstDeck = await folderService.createDeckInFolder(folder.id, `${TEST_PREFIX} Stale first`);
+    const preview = await folderService.getFolderDeletionImpact(folder.id);
+    await folderService.createDeckInFolder(folder.id, `${TEST_PREFIX} Stale second`);
+
+    await expect(folderService.deleteFolder(folder.id, preview.fingerprint)).rejects.toBeInstanceOf(StaleDeletionPreviewError);
+    await expect(db.deck.findUnique({ where: { id: firstDeck.id } })).resolves.toMatchObject({ folderId: folder.id });
+  });
+
   it("creates and updates a learning collection", async () => {
     const folder = await folderService.createFolder({
       name: `${TEST_PREFIX} TOEIC`,
@@ -134,6 +145,13 @@ describe("FolderService", () => {
     const deck = await folderService.createDeckInFolder(folder.id, `${TEST_PREFIX} Keep deck`);
     const card = await createCard(deck.id, "keep");
 
+    await expect(folderService.getFolderDeletionImpact(folder.id)).resolves.toMatchObject({
+      decks: 1,
+      vocabularyMemberships: 1,
+      canonicalFlashcards: 1,
+      canonicalFlashcardsDeleted: 0,
+      learningHistoriesDeleted: 0,
+    });
     await folderService.deleteFolder(folder.id);
     const retainedDeck = await db.deck.findUniqueOrThrow({
       where: { id: deck.id },

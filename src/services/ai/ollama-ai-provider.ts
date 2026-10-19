@@ -5,6 +5,7 @@ import {
   AIProviderUnavailableError,
   AITimeoutError,
 } from "./ai-core";
+import { runWithInteractiveAiLease } from "./ai-access-service";
 
 type OllamaAiProviderOptions = {
   baseUrl: string;
@@ -82,7 +83,9 @@ export class OllamaAiProvider {
   }
 
   async generateJson(request: OllamaJsonRequest): Promise<string> {
-    return sharedOllamaExecutionGate.runExclusive(() => this.executeGenerateJson(request));
+    return runWithInteractiveAiLease(() =>
+      sharedOllamaExecutionGate.runExclusive(() => this.executeGenerateJson(request))
+    );
   }
 
   private async executeGenerateJson({

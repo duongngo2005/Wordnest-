@@ -58,11 +58,13 @@ describe("StudyMode component", () => {
         deckName="Từ vựng cốt lõi"
         initialCards={mockCards}
         mode="scheduled-review"
+        manualAddDeckId="deck-1"
       />
     );
     expect(html).toContain("resilient");
     expect(html).toContain("CÂU HỎI");
     expect(html).toContain("Hiện đáp án");
     expect(html).toContain("1 / 1");
+    expect(html).toContain("Thêm từ");
   });
 });

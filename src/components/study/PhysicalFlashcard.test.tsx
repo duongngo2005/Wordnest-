@@ -58,6 +58,7 @@ describe("PhysicalFlashcard component", () => {
     expect(html).toContain("C1");
     expect(html).toContain("Hiện đáp án");
     expect(html).toContain("Space");
+    expect(html).toContain("đọc từ");
     expect(html).toContain("hidden text-[11px]");
     expect(html).toContain("sm:block");
   });
@@ -69,6 +70,7 @@ describe("PhysicalFlashcard component", () => {
         isRevealed={true}
         onReveal={vi.fn()}
         onRate={vi.fn()}
+        onEdit={vi.fn()}
         mode="scheduled-review"
         reviewSchedule={null}
         isSubmitting={false}
@@ -82,6 +84,8 @@ describe("PhysicalFlashcard component", () => {
     expect(html).toContain("Hard");
     expect(html).toContain("Good");
     expect(html).toContain("Easy");
+    expect(html).toContain("đọc ví dụ");
+    expect(html).toContain("Chỉnh sửa thẻ ephemeral");
   });
 
   it("disables rating buttons when isSubmitting is true", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, ChevronDown, Loader2, Plus } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/ToastProvider";
 
 export interface ManualCardRow {
@@ -96,7 +96,6 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
           <input
             value={card.term}
             onChange={(event) => update("term", event.target.value)}
-            placeholder="allocate"
             disabled={isSubmitting}
             className="wn-field"
           />
@@ -106,26 +105,22 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
           <input
             value={card.meaningVi}
             onChange={(event) => update("meaningVi", event.target.value)}
-            placeholder="phân bổ"
             disabled={isSubmitting}
             className="wn-field"
           />
         </label>
       </div>
 
-      <details className="rounded-xl border-2 border-dashed border-[#DCD3C5] bg-[#FAF6EE] p-3 group">
-        <summary className="cursor-pointer text-xs font-black text-[#6B6258] hover:text-[#221C16] flex items-center justify-between select-none list-none">
-          <span>Thông tin thêm (IPA, ví dụ, hình ảnh...)</span>
-          <ChevronDown className="h-4 w-4 text-[var(--accent)] group-open:rotate-180 transition-transform" />
-        </summary>
-        <div className="wn-form-group pt-3">
+      <details className="wn-manual-details">
+        <summary>Thông tin thêm</summary>
+        <div className="wn-form-group">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="wn-field-label">
               <span>Từ loại</span>
               <input
                 value={card.partOfSpeech}
                 onChange={(event) => update("partOfSpeech", event.target.value)}
-                placeholder="verb, noun..."
+                disabled={isSubmitting}
                 className="wn-field"
               />
             </label>
@@ -134,7 +129,7 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
               <input
                 value={card.cefr}
                 onChange={(event) => update("cefr", event.target.value)}
-                placeholder="A1, B2, C1..."
+                disabled={isSubmitting}
                 className="wn-field"
               />
             </label>
@@ -144,7 +139,7 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
             <input
               value={card.ipa}
               onChange={(event) => update("ipa", event.target.value)}
-              placeholder="/ˈæləkeɪt/"
+              disabled={isSubmitting}
               className="wn-field font-mono"
             />
           </label>
@@ -153,8 +148,8 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
             <textarea
               value={card.definitionEn}
               onChange={(event) => update("definitionEn", event.target.value)}
+              disabled={isSubmitting}
               rows={2}
-              placeholder="to set apart for a particular purpose..."
               className="wn-field"
             />
           </label>
@@ -163,8 +158,8 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
             <textarea
               value={card.exampleEn}
               onChange={(event) => update("exampleEn", event.target.value)}
+              disabled={isSubmitting}
               rows={2}
-              placeholder="The project manager allocated the budget..."
               className="wn-field"
             />
           </label>
@@ -173,8 +168,8 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
             <textarea
               value={card.exampleVi}
               onChange={(event) => update("exampleVi", event.target.value)}
+              disabled={isSubmitting}
               rows={2}
-              placeholder="Người quản lý dự án đã phân bổ ngân sách..."
               className="wn-field"
             />
           </label>
@@ -183,7 +178,7 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
             <input
               value={card.imageUrl}
               onChange={(event) => update("imageUrl", event.target.value)}
-              placeholder="https://images.unsplash.com/..."
+              disabled={isSubmitting}
               className="wn-field"
             />
           </label>
@@ -191,19 +186,14 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
       </details>
 
       {error ? (
-        <p
-          role="alert"
-          className="flex items-center gap-1.5 rounded-lg border-2 border-[#B91C1C] bg-[#FEE2E2] p-2 text-xs font-bold text-[#B91C1C]"
-        >
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </p>
+        <p role="alert" className="wn-form-error">{error}</p>
       ) : null}
 
       <div className="wn-form-actions">
         <button
           disabled={isSubmitting}
-          className="brick-button-primary px-5 py-2.5 text-sm font-black"
+          aria-busy={isSubmitting}
+          className="wn-dialog-primary"
         >
           {isSubmitting ? (
             <>
@@ -211,10 +201,7 @@ export function ManualCardsEditor({ deckId, onSaved }: ManualCardsEditorProps) {
               <span>Đang lưu...</span>
             </>
           ) : (
-            <>
-              <Plus className="h-4 w-4" strokeWidth={2.5} />
-              <span>Thêm thẻ</span>
-            </>
+            "Thêm thẻ"
           )}
         </button>
       </div>

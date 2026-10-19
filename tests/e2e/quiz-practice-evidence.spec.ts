@@ -36,7 +36,7 @@ const FSRS_SELECT = {
   schedulerVersion: true,
 } as const;
 
-test("Quiz records per-question evidence without changing a card scheduler", async ({ page }) => {
+test("Production Challenge records typed evidence without changing a card scheduler", async ({ page }) => {
   const schedulerBefore = await db.flashcard.findMany({
     where: { id: { in: cardIds } },
     orderBy: { id: "asc" },
@@ -45,9 +45,17 @@ test("Quiz records per-question evidence without changing a card scheduler", asy
 
   await page.goto(`/decks/${deckId}/quiz`);
   await expect(page.getByText("Câu 1 / 2")).toBeVisible();
+  await expect(page.getByText("Thử thách · Tự nhớ & viết")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Đáp án A:/ })).toHaveCount(0);
+  await expect(page.getByText("Lộ một phần chữ")).toHaveCount(0);
 
   for (let questionIndex = 0; questionIndex < 2; questionIndex += 1) {
-    await page.getByRole("button", { name: /^Đáp án A:/ }).click();
+    const isResilient = await page
+      .getByRole("heading", { name: "kiên cường" })
+      .isVisible()
+      .catch(() => false);
+    await page.locator("#typed-recall-input").fill(isResilient ? "resilient" : "ephemeral");
+    await page.getByRole("button", { name: "Kiểm tra" }).click();
     await page
       .getByRole("button", {
         name: questionIndex === 1 ? "Xem kết quả bài Quiz" : "Câu tiếp theo",
@@ -55,14 +63,15 @@ test("Quiz records per-question evidence without changing a card scheduler", asy
       .click();
   }
 
-  await expect(page.getByText("Luyện tập không thay đổi lịch ôn.")).toBeVisible();
+  await expect(page.getByText(/không thay đổi lịch ôn/)).toBeVisible();
   await expect(page.getByText("Câu đã ghi nhận")).toBeVisible();
+  await expect(page.getByText("Kết quả Thử thách")).toBeVisible();
 
   const practiceAttempts = await db.practiceAttempt.findMany({
     where: { flashcardId: { in: cardIds } },
   });
   expect(practiceAttempts).toHaveLength(2);
-  expect(practiceAttempts.every((attempt) => attempt.mode === "quiz" && attempt.responseMs !== null)).toBe(true);
+  expect(practiceAttempts.every((attempt) => attempt.mode === "quiz" && attempt.questionType === "typed_vi_en" && attempt.responseMs !== null)).toBe(true);
   expect(await db.quizAttempt.count({ where: { deckId } })).toBe(1);
   expect(await db.reviewLog.count({ where: { cardId: { in: cardIds } } })).toBe(0);
 
@@ -92,10 +101,11 @@ test("Typed Recall (Phase 2A): Scenarios A & B - correct recall and misspelling 
     // Navigate to typed recall quiz
     await page.goto(`/decks/${typedDeck.id}/quiz?mode=typed`);
     await expect(page.getByText("Câu 1 / 2")).toBeVisible();
-    await expect(page.getByText("Gõ từ vựng tiếng Anh (Recall)")).toBeVisible();
+    await expect(page.getByText("Thử thách · Tự nhớ & viết")).toBeVisible();
 
     // Verify NO answer choices (A, B, C, D) are rendered
     await expect(page.getByRole("button", { name: /^Đáp án A:/ })).toHaveCount(0);
+    await expect(page.getByText("Lộ một phần chữ")).toHaveCount(0);
 
     const input = page.locator("#typed-recall-input");
     await expect(input).toBeVisible();
@@ -128,8 +138,8 @@ test("Typed Recall (Phase 2A): Scenarios A & B - correct recall and misspelling 
     await page.getByRole("button", { name: "Xem kết quả bài Quiz" }).click();
 
     // Results page verification
-    await expect(page.getByText("Kết quả bài Quiz")).toBeVisible();
-    await expect(page.getByText("Luyện tập không thay đổi lịch ôn.")).toBeVisible();
+    await expect(page.getByText("Kết quả Thử thách")).toBeVisible();
+    await expect(page.getByText(/không thay đổi lịch ôn/)).toBeVisible();
 
     // Verify database evidence
     const practiceAttempts = await db.practiceAttempt.findMany({
@@ -203,7 +213,7 @@ test("Typed Recall (Phase 2A): Scenarios C & D - normalization and multi-word ph
   }
 });
 
-test("Typed Recall (Phase 2A): Scenario E - mode switching and existing MC regression", async ({ page }) => {
+test("Production Challenge does not expose a multiple-choice mode switch", async ({ page }) => {
   const switchDeck = await db.deck.create({ data: { name: `Switch E2E ${crypto.randomUUID()}` } });
   try {
     await db.flashcard.createMany({
@@ -215,26 +225,22 @@ test("Typed Recall (Phase 2A): Scenario E - mode switching and existing MC regre
 
     await page.goto(`/decks/${switchDeck.id}/quiz`);
     await expect(page.getByText("Câu 1 / 2")).toBeVisible();
-
-    // Default mode is Multiple Choice: buttons A, B, C, D are present
-    await expect(page.getByRole("button", { name: /^Đáp án A:/ })).toBeVisible();
-
-    // Switch to Typed Recall
-    await page.getByRole("button", { name: "Gõ đáp án (Recall)" }).click();
+    await expect(page.getByText("Thử thách · Tự nhớ & viết")).toBeVisible();
     await expect(page.locator("#typed-recall-input")).toBeVisible();
     await expect(page.getByRole("button", { name: /^Đáp án A:/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Trắc nghiệm" })).toHaveCount(0);
 
-    // Switch back to Multiple Choice
-    await page.getByRole("button", { name: "Trắc nghiệm" }).click();
-    await expect(page.getByRole("button", { name: /^Đáp án A:/ })).toBeVisible();
-
-    // Complete the multiple choice quiz normally
     for (let q = 0; q < 2; q++) {
-      await page.getByRole("button", { name: /^Đáp án A:/ }).click();
+      const isResilient = await page
+        .getByRole("heading", { name: "kiên cường" })
+        .isVisible()
+        .catch(() => false);
+      await page.locator("#typed-recall-input").fill(isResilient ? "resilient" : "ephemeral");
+      await page.getByRole("button", { name: "Kiểm tra" }).click();
       await page.getByRole("button", { name: q === 1 ? "Xem kết quả bài Quiz" : "Câu tiếp theo" }).click();
     }
 
-    await expect(page.getByText("Luyện tập không thay đổi lịch ôn.")).toBeVisible();
+    await expect(page.getByText("Kết quả Thử thách")).toBeVisible();
   } finally {
     await db.deck.delete({ where: { id: switchDeck.id } });
   }
@@ -317,10 +323,10 @@ test.skip("Story Contextual Cloze (Phase 2B): parked active workflow; historical
     await expect(page.getByText("figure out → figured out")).toBeVisible();
     await expect(page.getByText(": hiểu ra")).toBeVisible();
 
-    // Submit quiz
+    // Submit contextual Story Cloze quiz
     await page.getByRole("button", { name: "Xem kết quả bài Quiz" }).click();
     await expect(page.getByText("Kết quả bài Quiz")).toBeVisible();
-    await expect(page.getByText("Luyện tập không thay đổi lịch ôn.")).toBeVisible();
+    await expect(page.getByText(/không thay đổi lịch ôn/)).toBeVisible();
 
     // Verify database evidence in PracticeAttempt
     const attempts = await db.practiceAttempt.findMany({
@@ -465,13 +471,13 @@ test("Phase 2C - Scenario A: 10 questions (7 correct, 3 wrong), retry 3 correct,
     await page.getByRole("button", { name: "Xem kết quả bài Quiz" }).click();
 
     // Results page assertions
-    await expect(page.getByText("Kết quả bài Quiz")).toBeVisible();
+    await expect(page.getByText("Kết quả Thử thách")).toBeVisible();
     await expect(page.getByText("WORDNEST PRACTICE SLIP")).toBeVisible();
     await expect(page.getByText("Kết quả lần đầu", { exact: true })).toBeVisible();
     await expect(page.getByText("Luyện lại", { exact: true })).toBeVisible();
     await expect(page.getByText("7 / 10")).toBeVisible();
     await expect(page.getByText(/Lần đầu:\s*7\/10\.\s*Bạn đã sửa đúng\s*3\/3\s*câu khi luyện lại\./)).toBeVisible();
-    await expect(page.getByText("Luyện tập không thay đổi lịch ôn.")).toBeVisible();
+    await expect(page.getByText(/không thay đổi lịch ôn/)).toBeVisible();
     await expect(page.getByText("Đã sửa đúng khi luyện lại ✓")).toHaveCount(3);
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
@@ -567,7 +573,7 @@ test("Phase 2C - Scenario B: Mistakes exist, user skips retry -> Only attempt 1 
     await finishBtn.click();
 
     // Results page
-    await expect(page.getByText("Kết quả bài Quiz")).toBeVisible();
+    await expect(page.getByText("Kết quả Thử thách")).toBeVisible();
     await expect(page.getByText("1 / 3")).toBeVisible();
     await expect(page.getByText(/Bạn đã sửa đúng/)).toHaveCount(0);
 
@@ -631,7 +637,7 @@ test("Phase 2C - Scenario C: Perfect score (all correct) -> No retry button offe
     await expect(finishBtn).toBeVisible();
     await finishBtn.click();
 
-    await expect(page.getByText("Kết quả bài Quiz")).toBeVisible();
+    await expect(page.getByText("Kết quả Thử thách")).toBeVisible();
     await expect(page.getByText("Bạn đã hoàn thành lượt luyện này.")).toBeVisible();
     await expect(page.getByText(/Bạn đã sửa đúng/)).toHaveCount(0);
   } finally {
@@ -694,7 +700,7 @@ test("Phase 2C - Scenario D: Retry has mistakes -> Score remains first-pass, ret
     await page.getByRole("button", { name: "Xem kết quả bài Quiz" }).click();
 
     // Results page
-    await expect(page.getByText("Kết quả bài Quiz")).toBeVisible();
+    await expect(page.getByText("Kết quả Thử thách")).toBeVisible();
     await expect(page.getByText("0 / 3")).toBeVisible(); // First pass aggregate preserved!
     await expect(page.getByText(/Lần đầu:\s*0\/3\.\s*Bạn đã sửa đúng\s*2\/3\s*câu khi luyện lại\./)).toBeVisible();
     await expect(page.getByText("Đã sửa đúng khi luyện lại ✓")).toHaveCount(2);

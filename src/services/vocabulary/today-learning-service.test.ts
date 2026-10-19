@@ -62,7 +62,7 @@ describe("TodayLearningService", () => {
 
     const weakCountsSpy = vi.spyOn(practiceEvidenceService, "getDeckWeakCardCounts");
     const fullEvidenceSpy = vi.spyOn(practiceEvidenceService, "getDeckPracticeEvidence");
-    const groupBySpy = vi.spyOn(db.flashcard, "groupBy");
+    const groupBySpy = vi.spyOn(db.deckVocabularyMembership, "groupBy");
 
     const states = await todayLearningService.getTodayDeckStates(new Date("2026-10-08T10:00:00.000Z"));
 

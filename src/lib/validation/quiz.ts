@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 export const MAX_QUIZ_RESPONSE_MS = 86_400_000;
+// Due typing permits up to 100 scheduled cards, with one retry for each question.
+export const MAX_QUIZ_SUBMISSION_ANSWERS = 200;
 
 export const quizSubmissionSchema = z.object({
   sessionId: z.string().min(1),
@@ -14,7 +16,7 @@ export const quizSubmissionSchema = z.object({
       })
     )
     .min(1)
-    .max(60),
+    .max(MAX_QUIZ_SUBMISSION_ANSWERS),
 });
 
 export type QuizSubmissionInput = z.infer<typeof quizSubmissionSchema>;
@@ -28,4 +30,3 @@ export const quizCheckSchema = z.object({
 });
 
 export type QuizCheckInput = z.infer<typeof quizCheckSchema>;
-

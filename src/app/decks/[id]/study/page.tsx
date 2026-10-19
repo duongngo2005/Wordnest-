@@ -29,6 +29,7 @@ export default async function StudyPage({ params }: StudyPageProps) {
           deckName={deck.name}
           initialCards={reviewQueue.queue}
           mode="scheduled-review"
+          manualAddDeckId={deck.id}
         />
       </main>
     </div>

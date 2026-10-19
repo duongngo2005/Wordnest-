@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { aiService } from "@/services/ai";
 import { normalizeTerm } from "./parser";
-import { FlashcardStatus } from "@prisma/client";
+import { FlashcardStatus, Prisma } from "@prisma/client";
 import {
   aiStoryResponseSchema,
   type AIStoryResponse,
@@ -43,44 +42,6 @@ function containsVocabularyUsage(content: string, usedAs: string): boolean {
 }
 
 export class StoryService {
-  /**
-   * Generates a story using local AI from selected vocabulary and persists to SQLite.
-   */
-  async createStory({
-    deckId,
-    targetWords,
-    cefr = "B1",
-    length = "medium",
-    topic = "Daily Life",
-  }: {
-    deckId: string;
-    targetWords: string[];
-    cefr?: StoryCefr;
-    length?: StoryLength;
-    topic?: StoryTopic;
-  }) {
-    // 1. Canonicalize against deck-owned Flashcards. Target popup data is then
-    // always available from the deck instead of being duplicated in Story JSON.
-    const requestedTerms = await this.getSelectedDeckTerms(deckId, targetWords);
-
-    // 2. Call AI service to generate story
-    const generated = await aiService.generateStory({
-      targetWords: requestedTerms,
-      cefr,
-      length,
-      topic,
-    });
-
-    return this.persistGeneratedStory({
-      deckId,
-      requestedTerms,
-      cefr,
-      length,
-      topic,
-      generated,
-    });
-  }
-
   /** Persists a validated JSON result supplied by an external AI. */
   async createStoryFromJson({
     deckId,
@@ -119,7 +80,7 @@ export class StoryService {
     return buildStoryPrompt({ targetWords: requestedTerms, cefr, length, topic });
   }
 
-  async persistGeneratedStory({
+  async prepareGeneratedStoryData({
     deckId,
     requestedTerms,
     cefr,
@@ -167,24 +128,31 @@ export class StoryService {
       usage
     );
 
-    // 3. Persist to SQLite. Translation enrichment is optional and never changes
-    // whether the generated Story itself is accepted.
-    const story = await db.story.create({
-      data: {
-        deckId,
-        title: validatedGenerated.title,
-        content: validatedGenerated.content,
-        cefr,
-        length,
-        topic,
-        targetWords: createStoryVocabularyMetadata(requestedTerms, usage, {
-          contextualTranslations,
-          narration: { voiceIds: narrationVoiceId ? [narrationVoiceId] : [] },
-        }),
-      },
-    });
+    return {
+      deckId,
+      title: validatedGenerated.title,
+      content: validatedGenerated.content,
+      cefr,
+      length,
+      topic,
+      targetWords: createStoryVocabularyMetadata(requestedTerms, usage, {
+        contextualTranslations,
+        narration: { voiceIds: narrationVoiceId ? [narrationVoiceId] : [] },
+      }) as unknown as Prisma.InputJsonValue,
+    } satisfies Prisma.StoryUncheckedCreateInput;
+  }
 
-    return story;
+  /** Persists a prepared story for legacy/direct JSON import callers. */
+  async persistGeneratedStory(input: {
+    deckId: string;
+    requestedTerms: string[];
+    cefr: StoryCefr;
+    length: StoryLength;
+    topic: StoryTopic;
+    generated: z.input<typeof aiStoryResponseSchema>;
+    narrationVoiceId?: CloudTtsVoiceId;
+  }) {
+    return db.story.create({ data: await this.prepareGeneratedStoryData(input) });
   }
 
   /**
@@ -327,7 +295,8 @@ export class StoryService {
     if (!story) throw new Error("Không tìm thấy Story.");
 
     const vocabulary = normalizeStoryVocabulary(story.targetWords);
-    const normalizedCanonicalTerm = canonicalTerm ? normalizeTerm(canonicalTerm) : null;
+    const resolvedCanonicalTerm = canonicalTerm?.trim() || translation.canonicalTerm?.trim() || undefined;
+    const normalizedCanonicalTerm = resolvedCanonicalTerm ? normalizeTerm(resolvedCanonicalTerm) : null;
     const targetUsage = vocabulary.usage.find(
       (usage) =>
         normalizedCanonicalTerm === normalizeTerm(usage.term) &&
@@ -355,7 +324,7 @@ export class StoryService {
       );
       existing.push({
         selectedText: selectedText.trim(),
-        canonicalTerm: canonicalTerm?.trim() || null,
+        canonicalTerm: resolvedCanonicalTerm || null,
         surroundingSentence: surroundingSentence.trim(),
         translation,
       });
@@ -378,10 +347,7 @@ export class StoryService {
     });
   }
 
-  /**
-   * Adds a new flashcard to the deck directly from a story reading session.
-   * Prevents duplicates by checking normalizedTerm within the same deck.
-   */
+  /** Adds one globally unique vocabulary record from a story reading session. */
   async addCardFromStory(data: AddCardFromStoryRequest) {
     const normalized = normalizeTerm(data.term);
 
@@ -391,20 +357,29 @@ export class StoryService {
         normalizedTerm: normalized,
       },
       include: {
-        deck: {
-          select: {
-            name: true,
-            folder: { select: { name: true } },
+        deckMemberships: {
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          include: {
+            deck: {
+              select: {
+                name: true,
+                folder: { select: { name: true } },
+              },
+            },
           },
         },
       },
     });
 
     if (existing) {
-      const isSameDeck = existing.deckId === data.deckId;
+      const isSameDeck = existing.deckMemberships.some((membership) => membership.deckId === data.deckId);
+      const source = existing.deckMemberships[0]?.deck;
       const message = isSameDeck
         ? `Từ "${data.term}" đã có trong bộ thẻ này rồi.`
-        : `Từ "${data.term}" đã tồn tại trong bộ thẻ "${existing.deck.name}"${existing.deck.folder ? ` (bộ sưu tập "${existing.deck.folder.name}")` : ""}.`;
+        : source
+          ? `Từ "${data.term}" đã tồn tại trong bộ thẻ "${source.name}"${source.folder ? ` (bộ sưu tập "${source.folder.name}")` : ""}.`
+          : `Từ "${data.term}" đã tồn tại trong WordNest nhưng chưa thuộc bộ thẻ nào.`;
 
       return {
         success: false,
@@ -415,21 +390,56 @@ export class StoryService {
     }
 
     // 2. Create the new flashcard
-    const created = await db.flashcard.create({
-      data: {
-        deckId: data.deckId,
-        term: data.term,
-        normalizedTerm: normalized,
-        meaningVi: data.meaningVi,
-        definitionEn: data.definitionEn,
-        ipa: data.ipa || null,
-        partOfSpeech: data.partOfSpeech || null,
-        cefr: data.cefr || null,
-        exampleEn: data.exampleEn,
-        exampleVi: data.exampleVi,
-        status: FlashcardStatus.NEW,
-      },
-    });
+    let created;
+    try {
+      created = await db.$transaction(async (tx) => {
+        const card = await tx.flashcard.create({
+          data: {
+            deckId: data.deckId,
+            term: data.term,
+            normalizedTerm: normalized,
+            meaningVi: data.meaningVi,
+            definitionEn: data.definitionEn,
+            ipa: data.ipa || null,
+            partOfSpeech: data.partOfSpeech || null,
+            cefr: data.cefr || null,
+            exampleEn: data.exampleEn,
+            exampleVi: data.exampleVi,
+            status: FlashcardStatus.NEW,
+          },
+        });
+        await tx.deckVocabularyMembership.upsert({
+          where: { deckId_flashcardId: { deckId: data.deckId, flashcardId: card.id } },
+          create: { deckId: data.deckId, flashcardId: card.id },
+          update: {},
+        });
+        return card;
+      });
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || !["P2002", "P2003"].includes(error.code)) {
+        throw error;
+      }
+      const racedCard = await db.flashcard.findFirst({
+        where: { normalizedTerm: normalized },
+        include: {
+          deckMemberships: {
+            orderBy: { createdAt: "asc" },
+            take: 1,
+            include: { deck: { select: { name: true, folder: { select: { name: true } } } } },
+          },
+        },
+      });
+      if (!racedCard) throw error;
+      const source = racedCard.deckMemberships[0]?.deck;
+      return {
+        success: false,
+        alreadyExists: true,
+        message: source
+          ? `Từ "${data.term}" vừa được thêm vào bộ thẻ "${source.name}" và sẽ không tạo bản sao.`
+          : `Từ "${data.term}" vừa được thêm vào WordNest và sẽ không tạo bản sao.`,
+        card: racedCard,
+      };
+    }
 
     return {
       success: true,
@@ -451,13 +461,17 @@ export class StoryService {
     const deck = await db.deck.findUnique({
       where: { id: deckId },
       select: {
-        cards: {
+        vocabularyMemberships: {
           select: {
-            term: true,
-            normalizedTerm: true,
-            partOfSpeech: true,
-            meaningVi: true,
-            definitionEn: true,
+            flashcard: {
+              select: {
+                term: true,
+                normalizedTerm: true,
+                partOfSpeech: true,
+                meaningVi: true,
+                definitionEn: true,
+              },
+            },
           },
         },
       },
@@ -466,7 +480,9 @@ export class StoryService {
       throw new Error("Không tìm thấy bộ từ vựng.");
     }
 
-    const cardsByNormalizedTerm = new Map(deck.cards.map((card) => [card.normalizedTerm, card]));
+    const cardsByNormalizedTerm = new Map(
+      deck.vocabularyMemberships.map(({ flashcard }) => [flashcard.normalizedTerm, flashcard])
+    );
     const requestedTerms: SelectedDeckVocabularyTerm[] = [];
     const seenTerms = new Set<string>();
 

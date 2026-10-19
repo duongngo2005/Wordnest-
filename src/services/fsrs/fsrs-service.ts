@@ -259,8 +259,8 @@ export class FSRSService {
   }) {
     const now = options.now || new Date();
     const baseWhere: Prisma.FlashcardWhereInput = {
-      ...(options.deckId ? { deckId: options.deckId } : {}),
-      ...(options.folderId ? { deck: { folderId: options.folderId } } : {}),
+      ...(options.deckId ? { deckMemberships: { some: { deckId: options.deckId } } } : {}),
+      ...(options.folderId ? { deckMemberships: { some: { deck: { folderId: options.folderId } } } } : {}),
     };
 
     // 1. Due / Overdue review cards
@@ -306,7 +306,7 @@ export class FSRSService {
     const endOfToday = new Date(now);
     endOfToday.setHours(23, 59, 59, 999);
 
-    const cardWhere: Prisma.FlashcardWhereInput = deckId ? { deckId } : {};
+    const cardWhere: Prisma.FlashcardWhereInput = deckId ? { deckMemberships: { some: { deckId } } } : {};
 
     // Query cards in parallel
     const [
@@ -328,16 +328,16 @@ export class FSRSService {
       db.reviewLog.count({
         where: {
           review: { gte: startOfToday, lte: endOfToday },
-          ...(deckId ? { card: { deckId } } : {}),
+          ...(deckId ? { card: { deckMemberships: { some: { deckId } } } } : {}),
         },
       }),
       db.reviewLog.count({
-        where: deckId ? { card: { deckId } } : {},
+        where: deckId ? { card: { deckMemberships: { some: { deckId } } } } : {},
       }),
       db.reviewLog.count({
         where: {
           rating: { gte: 3 }, // Good or Easy
-          ...(deckId ? { card: { deckId } } : {}),
+          ...(deckId ? { card: { deckMemberships: { some: { deckId } } } } : {}),
         },
       }),
     ]);

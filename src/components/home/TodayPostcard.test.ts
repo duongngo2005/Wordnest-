@@ -60,8 +60,38 @@ describe("TodayPostcard logic and state mappings", () => {
 
     expect(html).toContain("Ôn 40 thẻ đến hạn");
     expect(html).toContain('href="/review"');
+    expect(html).toContain("Luyện gõ 40 từ đến hạn");
+    expect(html).toContain('href="/practice/typing?source=due"');
+    expect(html).toContain("Luyện gõ Việt → Anh · Toàn thư viện");
     expect(html).toContain("trong 3 bộ từ");
   });
+
+  it.each([0, 26, 999, 1000])(
+    "keeps the primary and typing actions available for a due count of %i",
+    (dueCount) => {
+      const html = renderPostcard({
+        plan: { kind: "DUE", dueCount, dueDeckCount: 1 },
+        reviewedTodayCount: 0,
+        secondaryDecks: [],
+        secondaryDecksRemainingCount: 0,
+        date: testDate,
+      });
+
+      expect(html).toContain(`Ôn ${dueCount} thẻ đến hạn`);
+      expect(html).toContain('data-testid="today-action-group"');
+      expect(html).toContain('data-testid="today-primary-action"');
+      if (dueCount > 0) {
+        expect(html).toContain('data-testid="today-due-typing-action"');
+        expect(html).toContain(`Luyện gõ ${dueCount} từ đến hạn`);
+        expect(html).toContain('href="/practice/typing?source=due"');
+      } else {
+        expect(html).not.toContain('data-testid="today-due-typing-action"');
+      }
+      expect(html).toContain('data-testid="today-typing-action"');
+      expect(html).toContain('href="/practice/typing"');
+      expect(html).toContain("Luyện gõ Việt → Anh · Toàn thư viện");
+    }
+  );
 
   it("keeps weak action deck-scoped and describes it as practice evidence, not mastery", () => {
     const weakDeck: TodayDeckState = {

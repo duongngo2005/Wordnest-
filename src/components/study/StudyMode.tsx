@@ -9,12 +9,20 @@ import {
   ReviewSchedulePreview,
 } from "@/lib/fsrs";
 import { generateUUID } from "@/lib/uuid";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { WordNestMascot } from "../ui/Mascot";
 import { PhysicalFlashcard } from "./PhysicalFlashcard";
 import { StudyCompletionPostcard } from "./StudyCompletionPostcard";
 import { playUISound } from "@/lib/ui-sound";
+import { isSpeechSupported, speakEnglish } from "@/lib/speech";
 import { useToast } from "../ui/ToastProvider";
+import { FlashcardEditorDialog, FlashcardEditDraft } from "../flashcards/FlashcardEditorDialog";
+import {
+  StudyManualDuplicateReviewDialog,
+  StudyManualFlashcardDialog,
+  type StudyManualDuplicatePreview,
+  type StudyManualFlashcardDraft,
+} from "./StudyManualFlashcardDialog";
 
 interface StudyModeProps {
   deckId: string;
@@ -23,6 +31,8 @@ interface StudyModeProps {
   mode: "scheduled-review" | "free-practice";
   backHref?: string;
   backLabel?: string;
+  /** A deck-study route supplies its visible deck; grouped review falls back to the current card's source. */
+  manualAddDeckId?: string;
 }
 
 interface FailedScheduledReview {
@@ -32,6 +42,14 @@ interface FailedScheduledReview {
   expectedSchedulerVersion: number;
 }
 
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])") !== null
+  );
+}
+
 export function StudyMode({
   deckId,
   deckName,
@@ -39,6 +57,7 @@ export function StudyMode({
   mode,
   backHref,
   backLabel = "Quay lại bộ từ",
+  manualAddDeckId,
 }: StudyModeProps) {
   const [reviewedCards, setReviewedCards] = useState<Record<string, FlashcardData>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -54,7 +73,12 @@ export function StudyMode({
   const [failedReview, setFailedReview] = useState<FailedScheduledReview | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittingRating, setSubmittingRating] = useState<Rating | null>(null);
+  const [isEditingCard, setIsEditingCard] = useState(false);
+  const [isManualAddOpen, setIsManualAddOpen] = useState(false);
+  const [manualDraft, setManualDraft] = useState<StudyManualFlashcardDraft | undefined>();
+  const [manualDuplicatePreview, setManualDuplicatePreview] = useState<StudyManualDuplicatePreview | null>(null);
   const reviewInFlight = useRef(false);
+  const lastAutoPronouncedCardId = useRef<string | null>(null);
   const { error: toastError } = useToast();
 
   const cards = useMemo(
@@ -64,6 +88,32 @@ export function StudyMode({
 
   const totalCards = cards.length;
   const currentCard = cards[currentIndex];
+  const currentCardId = currentCard?.id;
+  const currentCardTerm = currentCard?.term;
+  const currentCardExample = currentCard?.exampleEn;
+  const manualTargetDeckId = manualAddDeckId ?? currentCard?.deckId ?? null;
+  const isStudyOverlayOpen = isEditingCard || isManualAddOpen || manualDuplicatePreview !== null;
+
+  // A review card always presents its English term on the front. Read it once
+  // whenever a new scheduled-review card becomes current, while preserving the
+  // learner's selected system or WordNest voice and rate. The ref prevents a
+  // state-only re-render (for example, a schedule preview update) from reading
+  // the same card again.
+  useEffect(() => {
+    if (
+      mode !== "scheduled-review" ||
+      isCompleted ||
+      !currentCardId ||
+      !currentCardTerm ||
+      lastAutoPronouncedCardId.current === currentCardId ||
+      !isSpeechSupported()
+    ) {
+      return;
+    }
+
+    lastAutoPronouncedCardId.current = currentCardId;
+    speakEnglish(currentCardTerm);
+  }, [currentCardId, currentCardTerm, isCompleted, mode]);
 
   // Calculate FSRS next review preview intervals for the current card
   const reviewSchedule: ReviewSchedulePreview | null = useMemo(() => {
@@ -114,7 +164,7 @@ export function StudyMode({
 
   const handleReviewAction = useCallback(
     async (rating: Rating) => {
-      if (mode !== "scheduled-review" || !currentCard || reviewInFlight.current) return;
+      if (mode !== "scheduled-review" || !currentCard || isStudyOverlayOpen || reviewInFlight.current) return;
 
       // Tactile sound feedback based on rating choice
       if (rating === Rating.Again) {
@@ -173,7 +223,37 @@ export function StudyMode({
         setSubmittingRating(null);
       }
     },
-    [advanceCard, currentCard, failedReview, mode, toastError]
+    [advanceCard, currentCard, failedReview, isStudyOverlayOpen, mode, toastError]
+  );
+
+  const saveCurrentCardEdit = useCallback(
+    async (draft: FlashcardEditDraft) => {
+      if (!currentCard) return;
+
+      const response = await fetch(`/api/cards/${currentCard.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "Không thể lưu thẻ."
+        );
+      }
+      if (typeof payload !== "object" || payload === null || !("card" in payload) || !payload.card) {
+        throw new Error("Máy chủ không trả về thẻ đã cập nhật.");
+      }
+
+      const updatedCard = payload.card as FlashcardData;
+      setReviewedCards((previous) => ({
+        ...previous,
+        [currentCard.id]: { ...currentCard, ...updatedCard },
+      }));
+    },
+    [currentCard]
   );
 
   const handleFreePracticeNext = useCallback(() => {
@@ -183,6 +263,7 @@ export function StudyMode({
   }, [advanceCard, mode]);
 
   const handleRestart = useCallback(() => {
+    lastAutoPronouncedCardId.current = null;
     setCurrentIndex(0);
     setIsAnswerRevealed(false);
     setIsCompleted(false);
@@ -192,12 +273,52 @@ export function StudyMode({
     setSessionEasy(0);
     setSaveError(null);
     setFailedReview(null);
+    setIsEditingCard(false);
+    setIsManualAddOpen(false);
+    setManualDraft(undefined);
+    setManualDuplicatePreview(null);
   }, []);
 
-  // Keyboard navigation: Space = Reveal, 1 = Again, 2 = Hard, 3 = Good, 4 = Easy
+  const speakCurrentTerm = useCallback(() => {
+    if (!currentCardTerm || !isSpeechSupported()) return;
+    speakEnglish(currentCardTerm);
+  }, [currentCardTerm]);
+
+  const speakCurrentExample = useCallback(() => {
+    if (!isAnswerRevealed || !currentCardExample || !isSpeechSupported()) return;
+    speakEnglish(currentCardExample);
+  }, [currentCardExample, isAnswerRevealed]);
+
+  // Keyboard navigation: S = term, E = revealed example, Space = reveal,
+  // 1 = Again, 2 = Hard, 3 = Good, 4 = Easy.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isCompleted) return;
+      if (
+        isCompleted ||
+        isStudyOverlayOpen ||
+        e.defaultPrevented ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey ||
+        e.isComposing ||
+        isTextEntryTarget(e.target)
+      ) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+
+      if (key === "s") {
+        e.preventDefault();
+        speakCurrentTerm();
+        return;
+      }
+
+      if (key === "e" && isAnswerRevealed && currentCardExample) {
+        e.preventDefault();
+        speakCurrentExample();
+        return;
+      }
 
       if (e.code === "Space" && !isAnswerRevealed) {
         e.preventDefault();
@@ -221,7 +342,18 @@ export function StudyMode({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleReveal, handleReviewAction, isAnswerRevealed, isCompleted, isSubmitting, mode]);
+  }, [
+    currentCardExample,
+    handleReveal,
+    handleReviewAction,
+    isAnswerRevealed,
+    isCompleted,
+    isStudyOverlayOpen,
+    isSubmitting,
+    mode,
+    speakCurrentExample,
+    speakCurrentTerm,
+  ]);
 
   // If deck is empty
   if (!cards || cards.length === 0) {
@@ -286,6 +418,19 @@ export function StudyMode({
           </Link>
 
           <div className="flex items-center gap-2">
+            {manualTargetDeckId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  playUISound("softTap");
+                  setIsManualAddOpen(true);
+                }}
+                className="wn-button wn-button-quiet gap-1.5 px-3 py-1.5 text-xs font-black"
+              >
+                <Plus className="h-4 w-4 text-[var(--accent)]" aria-hidden="true" strokeWidth={2.5} />
+                <span>Thêm từ</span>
+              </button>
+            ) : null}
             <span className="text-[11px] font-mono font-black uppercase tracking-wider text-[#6B6258] bg-[#FAF6EE] px-2.5 py-1 rounded-lg border-2 border-[#221C16] shadow-[1.5px_1.5px_0px_#221C16]">
               {mode === "scheduled-review" ? "Ôn tập" : "Luyện tự do"}
             </span>
@@ -332,6 +477,7 @@ export function StudyMode({
           isRevealed={isAnswerRevealed}
           onReveal={handleReveal}
           onRate={handleReviewAction}
+          onEdit={isSubmitting ? undefined : () => setIsEditingCard(true)}
           onNextFreePractice={handleFreePracticeNext}
           mode={mode}
           reviewSchedule={reviewSchedule}
@@ -339,6 +485,50 @@ export function StudyMode({
           submittingRating={submittingRating}
         />
       </div>
+
+      {isEditingCard ? (
+        <FlashcardEditorDialog
+          card={currentCard}
+          onClose={() => setIsEditingCard(false)}
+          onSave={saveCurrentCardEdit}
+        />
+      ) : null}
+
+      {isManualAddOpen && manualTargetDeckId ? (
+        <StudyManualFlashcardDialog
+          deckId={manualTargetDeckId}
+          initialDraft={manualDraft}
+          onClose={() => {
+            setIsManualAddOpen(false);
+            setManualDraft(undefined);
+          }}
+          onDuplicateFound={(draft, preview) => {
+            setManualDraft(draft);
+            setManualDuplicatePreview(preview);
+            setIsManualAddOpen(false);
+          }}
+          onCreated={() => {
+            setIsManualAddOpen(false);
+            setManualDraft(undefined);
+          }}
+        />
+      ) : null}
+
+      {manualDuplicatePreview && manualTargetDeckId ? (
+        <StudyManualDuplicateReviewDialog
+          deckId={manualTargetDeckId}
+          draft={manualDraft ?? { term: "", meaningVi: "" }}
+          preview={manualDuplicatePreview}
+          onBack={() => {
+            setManualDuplicatePreview(null);
+            setIsManualAddOpen(true);
+          }}
+          onClose={() => {
+            setManualDuplicatePreview(null);
+            setManualDraft(undefined);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

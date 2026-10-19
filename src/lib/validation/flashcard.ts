@@ -36,14 +36,22 @@ export const AUTO_IMAGE_MIN_SCORE = 75;
 
 export const generatedFlashcardItemSchema = z
   .object({
-    term: z.string().min(1),
-    meaningVi: z.string().min(1, "Vietnamese meaning is required"),
-    definitionEn: z.string().min(1, "English definition is required"),
+    /**
+     * Image and legacy import extraction use this shared shape too. Direct
+     * lexical authoring requires this echo in validateLexicalDraft instead of
+     * forcing unrelated extraction paths to fabricate it.
+     */
+    requestedTerm: z.string().trim().min(1).max(200).optional(),
+    term: z.string().trim().min(1).max(200),
+    meaningVi: z.string().trim().min(1, "Vietnamese meaning is required").max(400),
+    definitionEn: z.string().trim().min(1, "English definition is required").max(1_000),
     ipa: z.string().nullable().optional().default(null),
-    partOfSpeech: z.string().nullable().optional().default(null),
+    // Direct AI drafts must provide a controlled POS at the authoring
+    // boundary. Null remains parseable here for legacy/image compatibility.
+    partOfSpeech: PartOfSpeechEnum.nullable().optional().default(null),
     cefr: cefrLevelSchema,
-    exampleEn: z.string().min(1, "English example is required"),
-    exampleVi: z.string().min(1, "Vietnamese example translation is required"),
+    exampleEn: z.string().trim().min(1, "English example is required").max(1_000),
+    exampleVi: z.string().trim().min(1, "Vietnamese example translation is required").max(1_000),
     visualScore: z.number().min(0).max(100).optional(),
     imageUseful: z.boolean().optional(),
     imageSearchQuery: z.string().nullable().optional().default(null),
@@ -67,12 +75,7 @@ export const generatedFlashcardItemSchema = z
     };
   });
 
-export const aiBatchFlashcardResponseSchema = z.object({
-  flashcards: z.array(generatedFlashcardItemSchema),
-});
-
 export type GeneratedFlashcardItem = z.infer<typeof generatedFlashcardItemSchema>;
-export type AIBatchFlashcardResponse = z.infer<typeof aiBatchFlashcardResponseSchema>;
 
 const optionalText = (maxLength: number) =>
   z.preprocess(
@@ -107,6 +110,44 @@ export const manualFlashcardItemSchema = z.object({
 
 export type ManualFlashcardItem = z.infer<typeof manualFlashcardItemSchema>;
 
+/**
+ * The study flow checks one learner-authored card before writing it, so a
+ * duplicate can be reviewed instead of being silently skipped.
+ */
+export const manualFlashcardDuplicatePreviewRequestSchema = z
+  .object({ card: manualFlashcardItemSchema })
+  .strict();
+
+const manualFlashcardIncomingFingerprintSchema = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/i, "Bản xem trước thẻ không hợp lệ.");
+
+export const manualFlashcardStudyCommitRequestSchema = z
+  .object({
+    card: manualFlashcardItemSchema,
+    decision: z.discriminatedUnion("action", [
+      z
+        .object({
+          action: z.literal("create"),
+          incomingFingerprint: manualFlashcardIncomingFingerprintSchema,
+        })
+        .strict(),
+      z
+        .object({
+          action: z.literal("overwrite"),
+          existingCardId: z.string().trim().min(1),
+          contentVersion: z.string().datetime(),
+          incomingFingerprint: manualFlashcardIncomingFingerprintSchema,
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+
+export type ManualFlashcardStudyCommitRequest = z.infer<
+  typeof manualFlashcardStudyCommitRequestSchema
+>;
+
 /** Lexical-only boundary: scheduler and learning-history fields are not editable here. */
 export const updateFlashcardRequestSchema = z
   .object({
@@ -131,17 +172,4 @@ export type UpdateFlashcardRequest = z.infer<typeof updateFlashcardRequestSchema
 
 export const manualCardsRequestSchema = z.object({
   cards: z.array(manualFlashcardItemSchema).min(1).max(30),
-});
-
-/** AI generation maximum limit: 50 terms per operation. */
-export const AI_CARD_GENERATION_LIMIT = 50;
-
-export const aiCardGenerationRequestSchema = z.object({
-  action: z.literal("generate"),
-  rawInput: z.string().trim().min(1, "Nhập ít nhất một từ hoặc cụm từ.").max(10_000),
-});
-
-export const aiCardPersistRequestSchema = z.object({
-  action: z.literal("persist"),
-  cards: z.array(manualFlashcardItemSchema).min(1).max(AI_CARD_GENERATION_LIMIT),
 });

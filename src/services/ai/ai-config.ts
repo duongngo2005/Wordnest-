@@ -21,7 +21,6 @@ export const AI_CONFIG = {
 
   // Context sizes
   defaultContextSize: 4096,
-  flashcardContextSize: 4096,
 
   // Sampling parameters
   story: {
@@ -43,13 +42,6 @@ export const AI_CONFIG = {
     think: false,
     batchSize: 15,
     timeoutMs: 120_000, // 2 minutes per batch
-  },
-  flashcards: {
-    temperature: 0.2,
-    topP: 0.9,
-    think: false,
-    batchSize: 10,
-    timeoutMs: 90_000,
   },
   contextualTranslation: {
     temperature: 0.2,

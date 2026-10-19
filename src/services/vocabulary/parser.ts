@@ -1,12 +1,13 @@
+import { normalizeVocabularyTerm } from "@/lib/vocabulary/term-normalization";
+
 export const MAX_VOCABULARY_TERMS = 30;
 
 /**
  * Normalizes a vocabulary term for comparison and database indexing:
  * trims leading/trailing whitespace, converts to lowercase, collapses internal spaces.
  */
-export function normalizeTerm(term: string): string {
-  return term.trim().toLowerCase().replace(/\s+/g, " ");
-}
+export const normalizeTerm = normalizeVocabularyTerm;
+export { normalizeVocabularyTerm };
 
 export interface ParseResult {
   terms: string[];

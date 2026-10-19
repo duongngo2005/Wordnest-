@@ -140,6 +140,34 @@ describe("QuizResults component", () => {
     expect(html).toContain("1 <span class=\"text-sm font-bold text-[#92400E]\">/ 1</span>");
   });
 
+  it("uses production-only Challenge result copy without a mastery or FSRS claim", () => {
+    const html = renderToStaticMarkup(
+      <QuizResults
+        deck={{ id: "deck-1", name: "Trái cây căn bản" }}
+        score={1}
+        total={2}
+        accuracy={50}
+        records={mockRecords}
+        submissionResult={{
+          attemptId: "att-1",
+          deckId: "deck-1",
+          score: 1,
+          total: 2,
+          accuracy: 50,
+          cardsUpdatedCount: 2,
+        }}
+        isProductionChallenge
+        onRestart={vi.fn()}
+      />
+    );
+
+    expect(html).toContain("Kết quả Thử thách");
+    expect(html).toContain("Tự nhớ &amp; viết");
+    expect(html).toContain("Làm lại Thử thách");
+    expect(html).toContain("không thay đổi lịch ôn");
+    expect(html).not.toContain("mastery");
+  });
+
   it("keeps contextual first-pass vocabulary mistakes targetable and returns to the exact Story", () => {
     const contextualRecords: AnswerRecord[] = [
       {

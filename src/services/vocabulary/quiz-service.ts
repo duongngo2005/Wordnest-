@@ -13,6 +13,16 @@ import {
 import { Flashcard, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { practiceEvidenceService, type FocusedPracticeCandidate, type PracticeEvidenceSummary } from "./practice-evidence-service";
+import {
+  PRODUCTION_CHALLENGE_DEFAULT_COUNT,
+  selectProductionChallengeCardIds,
+  type TypedChallengeEvidence,
+} from "./production-challenge-selector";
+import {
+  buildProductionCues,
+  normalizeProductionCue,
+  type ProductionCueCandidate,
+} from "@/lib/quiz/production-cue";
 
 export const TYPED_ANSWER_NORMALIZATION_VERSION = 1;
 
@@ -105,6 +115,24 @@ export function isTypedAnswerMatch(answer: string, expectedAnswer: string): bool
   return false;
 }
 
+function matchesSnapshottedCollisionSibling(
+  question: ServerQuizQuestion,
+  answer: string,
+  correct: boolean
+): boolean {
+  if (correct || question.type !== "typed_vi_en" || !question.collisionSiblingTargets?.length) {
+    return false;
+  }
+
+  const normalizedAnswer = normalizeSurfaceForm(answer);
+  return Boolean(
+    normalizedAnswer &&
+      question.collisionSiblingTargets.some(
+        (target) => normalizeSurfaceForm(target) === normalizedAnswer
+      )
+  );
+}
+
 /**
  * Backwards-compatible alias for normalizeSurfaceForm.
  */
@@ -153,7 +181,12 @@ export interface TypedViEnQuizQuestion {
   type: "typed_vi_en";
   prompt: string;
   promptDetail?: string;
-  spellingHints: TypedAnswerHints;
+  /** Optional exact-target-safe context for an ambiguous Vietnamese cue. */
+  cueContext?: string;
+  /** Present only for typed flows that intentionally offer spelling support. */
+  spellingHints?: TypedAnswerHints;
+  /** A server-created, partial letter mask for an explicit learner-requested hint. */
+  letterHint?: string;
   options?: never;
   correctAnswer?: never;
   explanation?: never;
@@ -186,11 +219,16 @@ export interface ServerTypedViEnQuizQuestion {
   type: "typed_vi_en";
   prompt: string;
   promptDetail?: string;
+  cueContext?: string;
   correctAnswer: string;
   options: string[];
   explanation: QuizQuestionExplanation;
   mode?: string;
   selectionReason?: string;
+  /** Server-only same-cue target snapshot used for cautious post-answer feedback. */
+  collisionSiblingTargets?: string[];
+  /** Persisted only as a partial mask; the expected answer remains server-only. */
+  letterHint?: string;
 }
 
 export interface ServerStoryClozeQuizQuestion {
@@ -216,7 +254,10 @@ export type ServerQuizQuestion = ServerChoiceQuizQuestion | ServerTypedQuizQuest
 
 export type QuizQuestion = ChoiceQuizQuestion | TypedQuizQuestion;
 
-export function sanitizeQuizQuestionForClient(question: ServerQuizQuestion): QuizQuestion {
+function sanitizeQuizQuestionForClientWithOptions(
+  question: ServerQuizQuestion,
+  includeTypedSpellingHints: boolean
+): QuizQuestion {
   if (question.type === "typed_vi_en") {
     return {
       id: question.id,
@@ -224,7 +265,11 @@ export function sanitizeQuizQuestionForClient(question: ServerQuizQuestion): Qui
       type: "typed_vi_en",
       prompt: question.prompt,
       promptDetail: question.promptDetail,
-      spellingHints: createTypedAnswerHints(question.correctAnswer),
+      cueContext: question.cueContext,
+      ...(question.letterHint ? { letterHint: question.letterHint } : {}),
+      ...(includeTypedSpellingHints
+        ? { spellingHints: createTypedAnswerHints(question.correctAnswer) }
+        : {}),
       selectionReason: question.selectionReason,
       mode: question.mode,
     };
@@ -257,11 +302,23 @@ export function sanitizeQuizQuestionForClient(question: ServerQuizQuestion): Qui
   };
 }
 
+/** Sanitizes regular multi-type quiz questions, retaining their existing typed hints. */
+export function sanitizeQuizQuestionForClient(question: ServerQuizQuestion): QuizQuestion {
+  return sanitizeQuizQuestionForClientWithOptions(question, true);
+}
+
+/** Sanitizes normal Challenge questions without exposing pre-answer spelling hints. */
+export function sanitizeProductionChallengeQuestionForClient(
+  question: ServerQuizQuestion
+): QuizQuestion {
+  return sanitizeQuizQuestionForClientWithOptions(question, false);
+}
+
 export type QuizSubmissionPayload = QuizSubmissionInput;
 
 export interface QuizSubmissionResult {
   attemptId: string;
-  deckId: string;
+  deckId: string | null;
   score: number;
   total: number;
   accuracy: number;
@@ -270,6 +327,20 @@ export interface QuizSubmissionResult {
   retryScore?: number;
   retryTotal?: number;
   cardsUpdatedCount: number;
+}
+
+export interface GenerateQuizQuestionsOptions {
+  /** The caller already selected the session cards in a deterministic order. */
+  preserveInputOrder?: boolean;
+}
+
+export type ProductionChallengeEmptyReason = "ambiguous_cues" | "missing_cues" | null;
+
+export interface ProductionChallengeQuiz {
+  deck: { id: string; name: string };
+  sessionId: string;
+  questions: QuizQuestion[];
+  emptyReason: ProductionChallengeEmptyReason;
 }
 
 const storedQuizQuestionSchema = z.object({
@@ -285,9 +356,13 @@ const storedQuizQuestionSchema = z.object({
     "story_contextual_vocab",
   ]),
   prompt: z.string().optional(),
+  promptDetail: z.string().optional(),
+  cueContext: z.string().optional(),
   correctAnswer: z.string(),
   mode: z.string().optional(),
   selectionReason: z.string().optional(),
+  collisionSiblingTargets: z.array(z.string()).optional(),
+  letterHint: z.string().optional(),
 });
 
 const storedQuizQuestionsSchema = z.array(storedQuizQuestionSchema).min(1);
@@ -493,7 +568,8 @@ export class QuizService {
     cards: Flashcard[],
     count?: number,
     allowedTypes?: QuizQuestionType[],
-    evidenceSummaries?: Map<string, PracticeEvidenceSummary>
+    evidenceSummaries?: Map<string, PracticeEvidenceSummary>,
+    options?: GenerateQuizQuestionsOptions
   ): ServerQuizQuestion[];
   generateQuestions(
     cards: Flashcard[],
@@ -504,14 +580,17 @@ export class QuizService {
       "fill_in_blank",
       "typed_vi_en",
     ],
-    evidenceSummaries?: Map<string, PracticeEvidenceSummary>
+    evidenceSummaries?: Map<string, PracticeEvidenceSummary>,
+    options?: GenerateQuizQuestionsOptions
   ): ServerQuizQuestion[] {
     if (!cards || cards.length === 0) {
       return [];
     }
 
     const safeCount = Math.max(1, Math.min(count, cards.length));
-    const selectedCards = evidenceSummaries
+    const selectedCards = options?.preserveInputOrder
+      ? cards.slice(0, safeCount)
+      : evidenceSummaries
       ? selectBreadthQuizCards(cards, evidenceSummaries, safeCount)
       : shuffleArray(cards).slice(0, safeCount);
     const questions: ServerQuizQuestion[] = [];
@@ -780,7 +859,10 @@ export class QuizService {
     const deck = await db.deck.findUnique({
       where: { id: deckId },
       include: {
-        cards: true,
+        vocabularyMemberships: {
+          include: { flashcard: true },
+          orderBy: { createdAt: "asc" },
+        },
       },
     });
 
@@ -788,7 +870,8 @@ export class QuizService {
       throw new ResourceNotFoundError("Không tìm thấy bộ thẻ.");
     }
 
-    if (deck.cards.length === 0) {
+    const deckCards = deck.vocabularyMemberships.map(({ flashcard }) => flashcard);
+    if (deckCards.length === 0) {
       throw new Error("Bộ thẻ này chưa có từ vựng nào để tạo bài quiz.");
     }
 
@@ -803,7 +886,7 @@ export class QuizService {
         throw new Error("Không tìm thấy câu chuyện nào để tạo bài tập Cloze.");
       }
 
-      const clozeQuestions = this.generateStoryClozeQuestions(story, deck.cards);
+      const clozeQuestions = this.generateStoryClozeQuestions(story, deckCards);
       if (clozeQuestions.length === 0) {
         throw new Error("Không có từ phù hợp để tạo bài Cloze từ Story này.");
       }
@@ -813,7 +896,7 @@ export class QuizService {
     } else {
       const safeCount = Math.max(1, Math.min(count, 30));
       const evidence = await practiceEvidenceService.getDeckPracticeEvidence(deckId);
-      questions = this.generateQuestions(deck.cards, safeCount, allowedTypes, evidence.summaries);
+      questions = this.generateQuestions(deckCards, safeCount, allowedTypes, evidence.summaries);
     }
 
     const session = await db.quizSession.create({
@@ -828,6 +911,157 @@ export class QuizService {
       deck: { id: deck.id, name: deck.name },
       sessionId: session.id,
       questions: questions.map(sanitizeQuizQuestionForClient),
+    };
+  }
+
+  /**
+   * Creates the regular Deck Challenge: direct Vietnamese-to-English recall
+   * only. Its selector uses typed_vi_en evidence exclusively; Production's
+   * Story Cloze records remain available to Progress but never alter this queue.
+   */
+  async getProductionChallengeQuiz(
+    deckId: string,
+    count = PRODUCTION_CHALLENGE_DEFAULT_COUNT,
+    now: Date = new Date()
+  ): Promise<ProductionChallengeQuiz> {
+    const [deck, candidateCards, typedEvidence] = await Promise.all([
+      db.deck.findUnique({
+        where: { id: deckId },
+        select: { id: true, name: true },
+      }),
+      db.flashcard.findMany({
+        where: { deckMemberships: { some: { deckId } } },
+        select: {
+          id: true,
+          term: true,
+          meaningVi: true,
+          normalizedTerm: true,
+          partOfSpeech: true,
+          definitionEn: true,
+          ipa: true,
+          exampleEn: true,
+          exampleVi: true,
+          createdAt: true,
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      }),
+      practiceEvidenceService.getDeckTypedChallengeEvidence(deckId),
+    ]);
+
+    if (!deck) {
+      throw new ResourceNotFoundError("Không tìm thấy bộ thẻ.");
+    }
+
+    if (candidateCards.length === 0) {
+      throw new Error("Bộ thẻ này chưa có từ vựng nào để tạo bài quiz.");
+    }
+
+    const typedChallengeEvidence = new Map<string, TypedChallengeEvidence>();
+    for (const [cardId, evidence] of typedEvidence) {
+      typedChallengeEvidence.set(cardId, {
+        state: evidence.state,
+        lifetimeFirstPassAttempts: evidence.lifetimeFirstPassAttempts,
+        lifetimeFirstPassCorrect: evidence.lifetimeFirstPassCorrect,
+        lifetimeFirstPassIncorrect: evidence.lifetimeFirstPassIncorrect,
+        recentIncorrectCount: evidence.recentIncorrectCount,
+        latestFirstPassCorrect: evidence.latestFirstPassCorrect,
+        lastFirstPassAt: evidence.lastFirstPassAt,
+        lastFirstPassIncorrectAt:
+          evidence.recentFirstPassAttempts
+            .filter((attempt) => !attempt.correct)
+            .at(-1)?.createdAt ?? null,
+        latestFirstPassMatchingRetryCorrect: evidence.latestFirstPassMatchingRetryCorrect,
+      });
+    }
+
+    const cueCandidates: ProductionCueCandidate[] = candidateCards.map((card) => ({
+      id: card.id,
+      term: card.term,
+      meaningVi: card.meaningVi,
+      partOfSpeech: card.partOfSpeech,
+      exampleEn: card.exampleEn,
+    }));
+    const cuesByCardId = buildProductionCues(cueCandidates);
+    const cueBearingCards = candidateCards.filter((card) => normalizeProductionCue(card.meaningVi));
+    const eligibleCandidateCards = candidateCards.filter((card) => {
+      const cue = cuesByCardId.get(card.id);
+      return Boolean(normalizeProductionCue(card.meaningVi)) && cue?.tier !== "excluded";
+    });
+
+    const selectedCardIds = selectProductionChallengeCardIds(
+      eligibleCandidateCards,
+      typedChallengeEvidence,
+      now,
+      Math.max(1, Math.min(count, PRODUCTION_CHALLENGE_DEFAULT_COUNT))
+    );
+
+    if (selectedCardIds.length === 0) {
+      return {
+        deck,
+        sessionId: "",
+        questions: [],
+        emptyReason:
+          cueBearingCards.length > 0 && eligibleCandidateCards.length === 0
+            ? "ambiguous_cues"
+            : "missing_cues",
+      };
+    }
+
+    const cardById = new Map(candidateCards.map((card) => [card.id, card]));
+    const orderedCards = selectedCardIds.flatMap((cardId) => {
+      const card = cardById.get(cardId);
+      return card ? [card] : [];
+    });
+
+    if (orderedCards.length === 0) {
+      return {
+        deck,
+        sessionId: "",
+        questions: [],
+        emptyReason: "missing_cues",
+      };
+    }
+
+    const questions: ServerTypedViEnQuizQuestion[] = orderedCards.map((card, index) => {
+      const cue = cuesByCardId.get(card.id);
+      if (!cue || cue.tier === "excluded") {
+        throw new QuizSubmissionError("Gợi ý tiếng Việt của thẻ không đủ rõ để luyện gõ.");
+      }
+
+      return {
+        id: `q_production_${card.id}_${index}_${Date.now()}`,
+        cardId: card.id,
+        type: "typed_vi_en",
+        prompt: cue.prompt,
+        promptDetail: cue.promptDetail,
+        ...(cue.context ? { cueContext: cue.context } : {}),
+        correctAnswer: card.term,
+        options: [],
+        explanation: {
+          term: card.term,
+          ipa: card.ipa,
+          partOfSpeech: card.partOfSpeech,
+          meaningVi: card.meaningVi,
+          definitionEn: card.definitionEn,
+          exampleEn: card.exampleEn,
+          exampleVi: card.exampleVi,
+        },
+        collisionSiblingTargets: cue.collisionSiblingTargets,
+      };
+    });
+    const session = await db.quizSession.create({
+      data: {
+        deckId,
+        questions: questions as unknown as Prisma.InputJsonValue,
+        expiresAt: new Date(Date.now() + QUIZ_SESSION_DURATION_MS),
+      },
+    });
+
+    return {
+      deck,
+      sessionId: session.id,
+      questions: questions.map(sanitizeProductionChallengeQuestionForClient),
+      emptyReason: null,
     };
   }
 
@@ -851,7 +1085,12 @@ export class QuizService {
   }> {
     const deck = await db.deck.findUnique({
       where: { id: deckId },
-      include: { cards: true },
+      include: {
+        vocabularyMemberships: {
+          include: { flashcard: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
     });
 
     if (!deck) {
@@ -889,7 +1128,7 @@ export class QuizService {
       };
     }
 
-    const allCards = deck.cards;
+    const allCards = deck.vocabularyMemberships.map(({ flashcard }) => flashcard);
     const allTerms = Array.from(new Set(allCards.map((c) => c.term.trim())));
     const allMeanings = Array.from(new Set(allCards.map((c) => c.meaningVi.trim())));
 
@@ -1036,7 +1275,7 @@ export class QuizService {
    * Evaluates a single question answer without mutating FSRS or claiming the session.
    */
   async checkQuestionAnswer(
-    deckId: string,
+    deckId: string | null,
     payload: { sessionId: string; questionId: string; answer: string }
   ): Promise<{
     questionId: string;
@@ -1044,6 +1283,7 @@ export class QuizService {
     correct: boolean;
     expectedAnswer: string;
     explanation: QuizQuestionExplanation;
+    collisionSiblingAnswer?: boolean;
   }> {
     const session = await db.quizSession.findUnique({
       where: { id: payload.sessionId },
@@ -1075,6 +1315,9 @@ export class QuizService {
       correct: isCorrect,
       expectedAnswer: question.correctAnswer,
       explanation: question.explanation,
+      ...(matchesSnapshottedCollisionSibling(question, payload.answer, isCorrect)
+        ? { collisionSiblingAnswer: true }
+        : {}),
     };
   }
 
@@ -1082,7 +1325,7 @@ export class QuizService {
    * Scores answers against the server-created quiz session and writes a QuizAttempt.
    * Quiz is practice-only: it never changes FSRS scheduler state.
    */
-  async submitQuizResult(deckId: string, payload: QuizSubmissionPayload): Promise<QuizSubmissionResult> {
+  async submitQuizResult(deckId: string | null, payload: QuizSubmissionPayload): Promise<QuizSubmissionResult> {
     return db.$transaction(async (tx) => {
       const session = await tx.quizSession.findUnique({
         where: { id: payload.sessionId },

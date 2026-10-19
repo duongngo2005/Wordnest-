@@ -1,18 +1,20 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- user-provided image URLs are not configured for Next/Image. */
 
-import { useEffect, useRef, useState } from "react";
-import { Edit3, Image as ImageIcon, MoreHorizontal, Search, Trash2, X } from "lucide-react";
+import { useState } from "react";
+import { Edit3, Image as ImageIcon, MoreHorizontal, Trash2 } from "lucide-react";
 import { FlashcardStatus } from "@/lib/flashcards/status";
 import { PronounceButton } from "./PronounceButton";
 import { ImagePickerModal } from "./ImagePickerModal";
 import { SerializedPracticeEvidenceSummary } from "@/services/vocabulary";
-import { CEFR_LEVELS, PART_OF_SPEECH_OPTIONS } from "@/lib/validation/flashcard";
 import { useToast } from "@/components/ui/ToastProvider";
+import { FlashcardEditorDialog } from "./FlashcardEditorDialog";
 
 export interface FlashcardData {
   id: string;
-  deckId: string;
+  // The primary source deck is legacy metadata. A card can now be shared by
+  // several decks or intentionally have no source membership.
+  deckId: string | null;
   term: string;
   normalizedTerm: string;
   meaningVi: string;
@@ -40,6 +42,11 @@ export interface FlashcardData {
   learningSteps?: number;
   state?: number;
   schedulerVersion?: number;
+  sources?: Array<{
+    deckId: string;
+    deckName: string;
+    folderName: string | null;
+  }>;
 }
 
 interface FlashcardItemProps {
@@ -49,54 +56,13 @@ interface FlashcardItemProps {
   onUpdate?: (cardId: string, updated: Partial<FlashcardData>) => Promise<void>;
 }
 
-type Draft = Pick<
-  FlashcardData,
-  | "term"
-  | "meaningVi"
-  | "definitionEn"
-  | "ipa"
-  | "partOfSpeech"
-  | "cefr"
-  | "exampleEn"
-  | "exampleVi"
-  | "imageUrl"
-  | "imageSource"
-  | "imageSearchQuery"
-  | "imagePageUrl"
-  | "imageAuthor"
-  | "imageLicense"
->;
-
-function draftFrom(card: FlashcardData): Draft {
-  return {
-    term: card.term,
-    meaningVi: card.meaningVi,
-    definitionEn: card.definitionEn,
-    ipa: card.ipa,
-    partOfSpeech: card.partOfSpeech,
-    cefr: card.cefr,
-    exampleEn: card.exampleEn,
-    exampleVi: card.exampleVi,
-    imageUrl: card.imageUrl,
-    imageSource: card.imageSource,
-    imageSearchQuery: card.imageSearchQuery,
-    imagePageUrl: card.imagePageUrl ?? null,
-    imageAuthor: card.imageAuthor ?? null,
-    imageLicense: card.imageLicense ?? null,
-  };
-}
-
 export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardItemProps) {
   const toast = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [draft, setDraft] = useState<Draft>(() => draftFrom(card));
-  const editorRef = useRef<HTMLElement | null>(null);
-  const editorTermRef = useRef<HTMLInputElement | null>(null);
 
   const evidenceLabel =
     !evidence || evidence.classification === "NO_EVIDENCE"
@@ -107,45 +73,7 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
       ? "Cần thêm dữ liệu"
       : evidence.explanationVi;
 
-  const updateDraft = <K extends keyof Draft>(key: K, value: Draft[K]) =>
-    setDraft((current) => ({ ...current, [key]: value }));
-
-  const startEdit = () => {
-    setDraft(draftFrom(card));
-    setIsEditing(true);
-  };
-
-  useEffect(() => {
-    if (!isEditing) return;
-    const previousFocus = document.activeElement as HTMLElement | null;
-    const timer = window.setTimeout(() => editorTermRef.current?.focus(), 0);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setIsEditing(false);
-      }
-      if (event.key !== "Tab" || !editorRef.current) return;
-      const focusable = editorRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])'
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus();
-    };
-  }, [isEditing]);
+  const startEdit = () => setIsEditing(true);
 
   const selectImage = async (image: {
     imageUrl: string;
@@ -163,10 +91,6 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
       imageLicense: null,
     };
     setImageError(false);
-    if (isEditing) {
-      setDraft((current) => ({ ...current, ...media }));
-      return;
-    }
     if (!onUpdate) return;
     await onUpdate(card.id, media);
     toast.success("Đã cập nhật hình ảnh");
@@ -181,29 +105,9 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
       imageAuthor: null,
       imageLicense: null,
     };
-    if (isEditing) {
-      setDraft((current) => ({ ...current, ...media }));
-      return;
-    }
     if (!onUpdate) return;
     await onUpdate(card.id, media);
     toast.success("Đã xóa hình ảnh");
-  };
-
-  const save = async () => {
-    if (!draft.term.trim() || !draft.meaningVi.trim() || !onUpdate) return;
-    setIsSaving(true);
-    try {
-      await onUpdate(card.id, draft);
-      setIsEditing(false);
-      toast.success("Đã lưu thẻ");
-    } catch (error) {
-      toast.error("Không thể lưu thẻ", {
-        description: error instanceof Error ? error.message : "Thử lại.",
-      });
-    } finally {
-      setIsSaving(false);
-    }
   };
 
   const remove = async () => {
@@ -218,207 +122,14 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
 
   if (isEditing) {
     return (
-      <div className="wn-modal-sheet-backdrop fixed inset-0 z-50 flex items-end bg-[#221C16]/35 p-0 sm:items-center sm:justify-center sm:p-6">
-      <article
-        ref={editorRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`edit-card-${card.id}`}
-        className="brick-card flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-b-none border-2 border-[#221C16] bg-[#FFFDF9] shadow-[4px_4px_0px_#221C16] sm:rounded-2xl"
-      >
-        <div className="flex shrink-0 items-center justify-between border-b-2 border-dashed border-[#DCD3C5] bg-[#FEF8ED] px-4 py-3 sm:px-5">
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg border-2 border-[#221C16] bg-[#FEF3C7] shadow-[1.5px_1.5px_0px_#221C16]">
-              <Edit3 className="h-4 w-4 text-[var(--accent)]" strokeWidth={2.5} />
-            </span>
-            <h3 id={`edit-card-${card.id}`} className="text-base font-black text-[#221C16]">Chỉnh sửa thẻ</h3>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsEditing(false)}
-            aria-label="Đóng chỉnh sửa"
-            className="wn-button wn-button-quiet wn-icon-button"
-          >
-            <X className="h-5 w-5 text-[#6B6258]" />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-        <section className="wn-form-group">
-          <h4 className="text-sm font-black text-[#221C16]">Cơ bản</h4>
-          <label className="wn-field-label">
-            <span>Từ</span>
-            <input
-              ref={editorTermRef}
-              value={draft.term}
-              onChange={(event) => updateDraft("term", event.target.value)}
-              className="wn-field"
-            />
-          </label>
-          <label className="wn-field-label">
-            <span>Nghĩa tiếng Việt</span>
-            <input
-              value={draft.meaningVi}
-              onChange={(event) => updateDraft("meaningVi", event.target.value)}
-              className="wn-field"
-            />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="wn-field-label">
-              <span>Từ loại</span>
-              <select
-                value={draft.partOfSpeech ?? ""}
-                onChange={(event) => updateDraft("partOfSpeech", event.target.value || null)}
-                className="wn-field"
-              >
-                <option value="">Không chọn</option>
-                {draft.partOfSpeech &&
-                !PART_OF_SPEECH_OPTIONS.includes(
-                  draft.partOfSpeech as (typeof PART_OF_SPEECH_OPTIONS)[number]
-                ) ? (
-                  <option value={draft.partOfSpeech}>{draft.partOfSpeech}</option>
-                ) : null}
-                {PART_OF_SPEECH_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="wn-field-label">
-              <span>CEFR</span>
-              <select
-                value={draft.cefr ?? ""}
-                onChange={(event) => updateDraft("cefr", event.target.value || null)}
-                className="wn-field"
-              >
-                <option value="">Không chọn</option>
-                {draft.cefr &&
-                !CEFR_LEVELS.includes(draft.cefr as (typeof CEFR_LEVELS)[number]) ? (
-                  <option value={draft.cefr}>{draft.cefr}</option>
-                ) : null}
-                {CEFR_LEVELS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </section>
-
-        <section className="wn-form-group">
-          <h4 className="text-sm font-black text-[#221C16]">Phát âm</h4>
-          <label className="wn-field-label">
-            <span>IPA</span>
-            <input
-              value={draft.ipa ?? ""}
-              onChange={(event) => updateDraft("ipa", event.target.value || null)}
-              placeholder="/.../"
-              className="wn-field font-mono"
-            />
-          </label>
-        </section>
-
-        <section className="wn-form-group">
-          <h4 className="text-sm font-black text-[#221C16]">Ngữ cảnh</h4>
-          <label className="wn-field-label">
-            <span>Định nghĩa tiếng Anh</span>
-            <textarea
-              value={draft.definitionEn ?? ""}
-              onChange={(event) => updateDraft("definitionEn", event.target.value || null)}
-              rows={2}
-              className="wn-field"
-            />
-          </label>
-          <label className="wn-field-label">
-            <span>Ví dụ tiếng Anh</span>
-            <textarea
-              value={draft.exampleEn ?? ""}
-              onChange={(event) => updateDraft("exampleEn", event.target.value || null)}
-              rows={2}
-              className="wn-field"
-            />
-          </label>
-          <label className="wn-field-label">
-            <span>Dịch ví dụ</span>
-            <textarea
-              value={draft.exampleVi ?? ""}
-              onChange={(event) => updateDraft("exampleVi", event.target.value || null)}
-              rows={2}
-              className="wn-field"
-            />
-          </label>
-        </section>
-
-        <section className="wn-form-group">
-          <h4 className="text-sm font-black text-[#221C16]">Hình ảnh</h4>
-          {draft.imageUrl ? (
-            <div className="relative overflow-hidden rounded-xl border-2 border-[#221C16]">
-              <img
-                src={draft.imageUrl}
-                alt=""
-                className="max-h-48 w-full object-cover"
-                onError={() => setImageError(true)}
-              />
-            </div>
-          ) : null}
-          {imageError ? (
-            <p className="text-xs font-bold text-[#B91C1C]">Không thể tải ảnh hiện tại.</p>
-          ) : null}
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setIsPickerOpen(true)}
-              className="brick-button-secondary px-3 py-1.5 text-xs font-black"
-            >
-              <Search className="h-4 w-4" />
-              <span>Tìm hoặc tải ảnh</span>
-            </button>
-            {draft.imageUrl ? (
-              <button
-                type="button"
-                onClick={removeImage}
-                className="wn-button-quiet text-xs font-bold px-3 py-1.5"
-              >
-                Gỡ ảnh
-              </button>
-            ) : null}
-          </div>
-        </section>
-
-        </div>
-        <div className="wn-form-actions wn-modal-footer-safe shrink-0 bg-[#FFFDF9] px-4 sm:px-5">
-          <button
-            type="button"
-            onClick={save}
-            disabled={isSaving}
-            className="brick-button-primary px-5 py-2 text-sm font-black"
-          >
-            {isSaving ? "Đang lưu..." : "Lưu"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsEditing(false)}
-            className="brick-button-secondary px-4 py-2 text-sm font-bold"
-          >
-            Hủy
-          </button>
-        </div>
-
-        {isPickerOpen ? (
-          <ImagePickerModal
-            isOpen={isPickerOpen}
-            onClose={() => setIsPickerOpen(false)}
-            term={card.term}
-            currentImageUrl={draft.imageUrl}
-            initialQuery={draft.imageSearchQuery}
-            onSelectImage={selectImage}
-            onRemoveImage={removeImage}
-          />
-        ) : null}
-      </article>
-      </div>
+      <FlashcardEditorDialog
+        card={card}
+        onClose={() => setIsEditing(false)}
+        onSave={async (draft) => {
+          if (!onUpdate) throw new Error("Không thể cập nhật thẻ từ vựng.");
+          await onUpdate(card.id, draft);
+        }}
+      />
     );
   }
 
@@ -519,6 +230,19 @@ export function FlashcardItem({ card, evidence, onDelete, onUpdate }: FlashcardI
           <div className="grid gap-3 pt-3 text-xs font-semibold text-[#6B6258]">
             {card.partOfSpeech || card.cefr ? (
               <p>{[card.partOfSpeech, card.cefr].filter(Boolean).join(" · ")}</p>
+            ) : null}
+
+            {card.sources && card.sources.length > 0 ? (
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-[#6B6258]">Nguồn học</p>
+                <ul className="mt-1 flex flex-wrap gap-1.5" aria-label={`Nguồn học của ${card.term}`}>
+                  {card.sources.map((source) => (
+                    <li key={source.deckId} className="rounded-md border border-[#DCD3C5] bg-[#FAF6EE] px-2 py-1 text-[11px] font-bold text-[#4A4036]">
+                      {source.folderName ? `${source.folderName} → ` : ""}{source.deckName}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : null}
 
             {card.definitionEn ? (

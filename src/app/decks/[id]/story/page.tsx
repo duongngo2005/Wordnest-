@@ -45,7 +45,9 @@ export default async function DeckStoryPage({
           weakWordIds={practiceEvidence.needPracticeCards.map((item) => item.card.id)}
           initialStories={stories.map((story) => ({
             id: story.id,
-            deckId: story.deckId,
+            // getStoriesByDeckId scopes this list to the open Deck. Retained
+            // unassigned stories are intentionally not rendered on this page.
+            deckId: story.deckId ?? deck.id,
             title: story.title,
             content: story.content,
             cefr: story.cefr,

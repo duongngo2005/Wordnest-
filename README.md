@@ -63,3 +63,45 @@ curl http://127.0.0.1:8000/healthz
 ```
 
 Audio is cached on this self-hosted app at `.wordnest-cache/tts` by default. Set `TTS_CACHE_DIR` to a persistent writable directory when the app is hosted elsewhere.
+
+### Durable AI generation worker
+
+AI flashcard batches are persisted before the browser receives its `202 Accepted`
+response. A separate worker process owns model execution; the web server must
+not be relied on to keep an unawaited request alive.
+
+Apply forward-only migrations before upgrading a running installation:
+
+```bash
+DATABASE_URL="file:./wordnest.db" npx prisma migrate deploy
+```
+
+`npm run dev` and `npm run start` use the included launcher, which starts a
+separate Next.js child process and a separate AI-worker child process together.
+If either exits, the launcher exits so a service manager can restart the pair:
+
+```bash
+npm run dev
+```
+
+For a local Ubuntu production process manager, build first, then supervise the
+launcher (for example with systemd):
+
+```bash
+npm run build
+npm run start
+```
+
+For debugging, the worker may instead be run independently with `npm run
+worker:ai` alongside a direct Next.js command. Do not start two workers unless
+testing recovery: the SQLite claim/lease is safe across processes, but one
+worker is the intended local deployment.
+
+The SQLite queue permits one active local-model lease across web and worker
+processes for Story and Lesson work. If a worker stops, an expired lease is
+fenced before work is safely recovered. The worker cannot run while the computer
+is powered off.
+
+To create flashcards with AI, open a deck and use **Thêm thẻ → JSON** to generate
+the External AI V3 prompt, then paste the returned JSON for validation, duplicate
+review, and import. This workflow does not require Ollama to be online.

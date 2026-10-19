@@ -1,28 +1,96 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { db } from "@/lib/db";
 import { FlashcardStatus } from "@prisma/client";
 
 let testDeckId: string | null = null;
 
-test.beforeEach(async () => {
+const VIEWPORTS = [
+  { width: 1440, height: 900 },
+  { width: 1280, height: 900 },
+  { width: 1024, height: 900 },
+  { width: 768, height: 900 },
+  { width: 390, height: 844 },
+] as const;
+
+async function getRequiredBox(locator: Locator) {
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) throw new Error("Expected visible element to have a bounding box");
+  return box;
+}
+
+function rectanglesOverlap(
+  first: { x: number; y: number; width: number; height: number },
+  second: { x: number; y: number; width: number; height: number }
+) {
+  return !(
+    first.x + first.width <= second.x ||
+    second.x + second.width <= first.x ||
+    first.y + first.height <= second.y ||
+    second.y + second.height <= first.y
+  );
+}
+
+async function expectTodayActionsToFit(page: Page, viewportWidth: number) {
+  const primaryAction = page.getByTestId("today-primary-action");
+  const dueTypingAction = page.getByTestId("today-due-typing-action");
+  const typingAction = page.getByTestId("today-typing-action");
+  const mascot = page.locator(".wn-postcard__mascot-wrapper");
+
+  await expect(primaryAction).toBeVisible();
+  await expect(dueTypingAction).toBeVisible();
+  await expect(typingAction).toBeVisible();
+  await expect(primaryAction).toHaveAttribute("href", "/review");
+  await expect(dueTypingAction).toHaveAttribute("href", "/practice/typing?source=due");
+  await expect(typingAction).toHaveAttribute("href", "/practice/typing");
+
+  const [primaryBox, dueTypingBox, typingBox, mascotBox] = await Promise.all([
+    getRequiredBox(primaryAction),
+    getRequiredBox(dueTypingAction),
+    getRequiredBox(typingAction),
+    getRequiredBox(mascot),
+  ]);
+
+  expect(rectanglesOverlap(primaryBox, typingBox)).toBe(false);
+  expect(rectanglesOverlap(primaryBox, dueTypingBox)).toBe(false);
+  expect(rectanglesOverlap(dueTypingBox, typingBox)).toBe(false);
+  expect(rectanglesOverlap(mascotBox, primaryBox)).toBe(false);
+  expect(rectanglesOverlap(mascotBox, dueTypingBox)).toBe(false);
+  expect(rectanglesOverlap(mascotBox, typingBox)).toBe(false);
+  expect(typingBox.y - (primaryBox.y + primaryBox.height)).toBeGreaterThanOrEqual(8);
+  expect(dueTypingBox.y - (primaryBox.y + primaryBox.height)).toBeGreaterThanOrEqual(8);
+  expect(typingBox.y - (dueTypingBox.y + dueTypingBox.height)).toBeGreaterThanOrEqual(8);
+  expect(primaryBox.x).toBeGreaterThanOrEqual(0);
+  expect(dueTypingBox.x).toBeGreaterThanOrEqual(0);
+  expect(typingBox.x).toBeGreaterThanOrEqual(0);
+  expect(primaryBox.x + primaryBox.width).toBeLessThanOrEqual(viewportWidth);
+  expect(dueTypingBox.x + dueTypingBox.width).toBeLessThanOrEqual(viewportWidth);
+  expect(typingBox.x + typingBox.width).toBeLessThanOrEqual(viewportWidth);
+  expect(primaryBox.height).toBeGreaterThanOrEqual(44);
+  expect(dueTypingBox.height).toBeGreaterThanOrEqual(44);
+  expect(typingBox.height).toBeGreaterThanOrEqual(44);
+}
+
+test.beforeEach(async ({}, testInfo) => {
   // Create a test deck with 1 due card and 1 reviewed today card for full visual testing
   const now = new Date();
+  const termPrefix = `postcard-${testInfo.testId}`.toLowerCase();
   const deck = await db.deck.create({
     data: {
       name: `Postcard Test Deck ${Date.now()}`,
       cards: {
         create: [
           {
-            term: "ephemeral",
-            normalizedTerm: "ephemeral",
+            term: `${termPrefix}-due`,
+            normalizedTerm: `${termPrefix}-due`,
             meaningVi: "phù du, chóng tàn",
             status: FlashcardStatus.LEARNING,
             state: 1,
             due: new Date(now.getTime() - 60_000), // Due now
           },
           {
-            term: "resilience",
-            normalizedTerm: "resilience",
+            term: `${termPrefix}-reviewed`,
+            normalizedTerm: `${termPrefix}-reviewed`,
             meaningVi: "sự kiên cường",
             status: FlashcardStatus.LEARNING,
             state: 2,
@@ -66,90 +134,37 @@ test.afterEach(async () => {
   }
 });
 
-test("renders WordNest Daily Postcard on Desktop and iPhone 15 Pro Max without overflow", async ({ page }) => {
-  // 1. Desktop Viewport (1440 × 900)
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/");
+test("keeps Today postcard actions separate across target viewports and due-count labels", async ({ page }) => {
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
 
-  const postcard = page.locator(".wn-postcard");
-  await expect(postcard).toBeVisible();
-  await expect(page.locator(".wn-postcard__layout")).toBeVisible();
+    const postcard = page.locator(".wn-postcard");
+    await expect(postcard).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Hôm nay" })).toBeVisible();
+    await expect(page.getByTestId("today-progress")).toBeVisible();
+    await expect(page.locator(".wn-postcard__mascot-wrapper")).toBeVisible();
 
-  // Check Heading
-  await expect(page.getByRole("heading", { name: "Hôm nay" })).toBeVisible();
+    for (const dueCount of [0, 26, 999, 1000]) {
+      await page.getByTestId("today-primary-action").locator("span").last().evaluate(
+        (element, count) => {
+          element.textContent = `Ôn ${count} thẻ đến hạn`;
+        },
+        dueCount
+      );
+      await expect(page.getByTestId("today-primary-action")).toContainText(`Ôn ${dueCount} thẻ đến hạn`);
+      await expectTodayActionsToFit(page, viewport.width);
+    }
 
-  // Check Postcard Tag & Vintage Postmark
-  await expect(page.locator(".wn-postcard__postmark-desktop")).toBeVisible();
+    const hasHorizontalOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth
+    );
+    expect(hasHorizontalOverflow).toBe(false);
 
-  // Check Motivational Quote
-  const quote = page.locator(".wn-postcard__quote");
-  await expect(quote).toBeVisible();
-  const quoteText = await quote.textContent();
-  expect(quoteText?.length).toBeGreaterThan(5);
-
-  // Check Stats
-  const dueStat = page.getByTestId("today-due-stat");
-  await expect(dueStat).toBeVisible();
-  await expect(dueStat).toContainText("cần ôn");
-
-  const reviewedStat = page.getByTestId("today-reviewed-stat");
-  await expect(reviewedStat).toBeVisible();
-  await expect(reviewedStat).toContainText("đã ôn");
-
-  // Check Progress
-  const progress = page.getByTestId("today-progress");
-  await expect(progress).toBeVisible();
-
-  // Check Mascot
-  const mascot = page.locator(".wn-postcard__mascot-wrapper");
-  await expect(mascot).toBeVisible();
-  await expect(page.locator(".wn-postcard__mascot-wrapper [aria-hidden='true']").first()).toBeVisible();
-
-  // Due-now recommendation uses the existing global review queue.
-  const cta = page.getByRole("link", { name: /^Ôn \d+ thẻ đến hạn$/ }).first();
-  await expect(cta).toBeVisible();
-  await expect(cta).toHaveAttribute("href", "/review");
-
-  // Check Touch Target on Desktop
-  const ctaBox = await cta.boundingBox();
-  expect(ctaBox).toBeTruthy();
-  expect(ctaBox!.height).toBeGreaterThanOrEqual(44);
-
-  // Check No Horizontal Overflow on Desktop
-  const hasOverflowDesktop = await page.evaluate(
-    () => document.documentElement.scrollWidth > window.innerWidth
-  );
-  expect(hasOverflowDesktop).toBe(false);
-
-  // Screenshot on Desktop
-  await postcard.screenshot({ path: "scratch/postcard-desktop-card.png" });
-  await page.screenshot({ path: "scratch/postcard-desktop-1440.png" });
-
-  // 2. iPhone 15 Pro Max Viewport (430 × 932)
-  await page.setViewportSize({ width: 430, height: 932 });
-  await page.reload();
-
-  await expect(postcard).toBeVisible();
-  await expect(page.locator(".wn-postcard__postmark-mobile")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Hôm nay" })).toBeVisible();
-  await expect(dueStat).toBeVisible();
-  await expect(reviewedStat).toBeVisible();
-  await expect(cta).toBeVisible();
-
-  // Check Touch Target on Mobile
-  const mobileCtaBox = await cta.boundingBox();
-  expect(mobileCtaBox).toBeTruthy();
-  expect(mobileCtaBox!.height).toBeGreaterThanOrEqual(44);
-
-  // Check No Horizontal Overflow on iPhone 15 Pro Max
-  const hasOverflowMobile = await page.evaluate(
-    () => document.documentElement.scrollWidth > window.innerWidth
-  );
-  expect(hasOverflowMobile).toBe(false);
-
-  // Screenshot on iPhone 15 Pro Max
-  await postcard.screenshot({ path: "scratch/postcard-mobile-card.png" });
-  await page.screenshot({ path: "scratch/postcard-mobile-430.png" });
+    if (viewport.width === 1440 || viewport.width === 390) {
+      await postcard.screenshot({ path: `scratch/postcard-actions-${viewport.width}.png` });
+    }
+  }
 });
 
 test("renders the no-due postcard state without implying final mastery", async ({ page }) => {

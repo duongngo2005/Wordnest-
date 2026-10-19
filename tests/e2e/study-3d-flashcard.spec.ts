@@ -17,6 +17,7 @@ test.beforeEach(async () => {
       normalizedTerm: "resilient",
       meaningVi: "kiên cường, phục hồi nhanh",
       ipa: "/rɪˈzɪl.jənt/",
+      exampleEn: "She remained resilient after the setback.",
       status: FlashcardStatus.NEW,
       state: 0,
       due: new Date(),
@@ -30,6 +31,7 @@ test.beforeEach(async () => {
       normalizedTerm: "ephemeral",
       meaningVi: "phù du, chóng tàn",
       ipa: "/ɪˈfem.ər.əl/",
+      exampleEn: "The rainbow was ephemeral.",
       status: FlashcardStatus.NEW,
       state: 0,
       due: new Date(),
@@ -44,6 +46,68 @@ test.afterEach(async () => {
 });
 
 test.describe("Study 3D Flashcard & Completion Reform", () => {
+  test("automatically pronounces each newly displayed scheduled-review card once", async ({ page }) => {
+    await page.addInitScript(() => {
+      const spokenTerms: string[] = [];
+      Object.defineProperty(window, "__wordNestAutoPronouncedTerms", {
+        configurable: true,
+        value: spokenTerms,
+      });
+      Object.defineProperty(window.speechSynthesis, "speak", {
+        configurable: true,
+        value: (utterance: SpeechSynthesisUtterance) => {
+          spokenTerms.push(utterance.text);
+          utterance.onstart?.(new Event("start") as SpeechSynthesisEvent);
+          utterance.onend?.(new Event("end") as SpeechSynthesisEvent);
+        },
+      });
+    });
+
+    await page.goto(`/decks/${deckId}/study`);
+    await expect.poll(() => page.evaluate(
+      () => (window as Window & { __wordNestAutoPronouncedTerms?: string[] }).__wordNestAutoPronouncedTerms ?? []
+    )).toEqual(["resilient"]);
+
+    await page.keyboard.press("KeyS");
+    await expect.poll(() => page.evaluate(
+      () => (window as Window & { __wordNestAutoPronouncedTerms?: string[] }).__wordNestAutoPronouncedTerms ?? []
+    )).toEqual(["resilient", "resilient"]);
+
+    await page.evaluate(() => {
+      const input = document.createElement("input");
+      input.setAttribute("aria-label", "Temporary shortcut guard");
+      document.body.append(input);
+      input.focus();
+    });
+    await page.keyboard.press("KeyS");
+    await expect.poll(() => page.evaluate(
+      () => (window as Window & { __wordNestAutoPronouncedTerms?: string[] }).__wordNestAutoPronouncedTerms ?? []
+    )).toEqual(["resilient", "resilient"]);
+
+    await page.getByRole("button", { name: "Hiện đáp án" }).focus();
+    await page.keyboard.press("KeyE");
+    await expect.poll(() => page.evaluate(
+      () => (window as Window & { __wordNestAutoPronouncedTerms?: string[] }).__wordNestAutoPronouncedTerms ?? []
+    )).toEqual(["resilient", "resilient"]);
+
+    await page.getByRole("button", { name: "Hiện đáp án" }).click();
+    await page.keyboard.press("KeyE");
+    await expect.poll(() => page.evaluate(
+      () => (window as Window & { __wordNestAutoPronouncedTerms?: string[] }).__wordNestAutoPronouncedTerms ?? []
+    )).toEqual(["resilient", "resilient", "She remained resilient after the setback."]);
+
+    await page.getByRole("button", { name: /Good/ }).click();
+    await expect(page.getByRole("heading", { name: "ephemeral" })).toBeVisible();
+    await expect.poll(() => page.evaluate(
+      () => (window as Window & { __wordNestAutoPronouncedTerms?: string[] }).__wordNestAutoPronouncedTerms ?? []
+    )).toEqual([
+      "resilient",
+      "resilient",
+      "She remained resilient after the setback.",
+      "ephemeral",
+    ]);
+  });
+
   test("Desktop: Space key reveals 3D card, rating triggers next card, and last card shows completion postcard", async ({
     page,
   }) => {

@@ -19,6 +19,34 @@ interface FolderDetailViewProps {
   folder: FolderDetail;
 }
 
+type DeckDeletionImpact = {
+  fingerprint: string;
+  flashcards: number;
+  sharedFlashcards: number;
+  unassignedFlashcards: number;
+  stories: number;
+  lessons: number;
+  quizAttempts: number;
+};
+
+type FolderDeletionImpact = {
+  fingerprint: string;
+  decks: number;
+  decksBecomingUncategorized: number;
+  vocabularyMemberships: number;
+  canonicalFlashcards: number;
+  sharedWithOtherCollections: number;
+  vocabularyPreserved: true;
+  learningDataPreserved: true;
+};
+
+async function responseError(response: Response, fallback: string) {
+  const data: unknown = await response.json().catch(() => null);
+  return typeof data === "object" && data !== null && "error" in data && typeof data.error === "string"
+    ? data.error
+    : fallback;
+}
+
 export function FolderDetailView({ folder }: FolderDetailViewProps) {
   const router = useRouter();
   const toast = useToast();
@@ -27,16 +55,27 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [folderDeletionImpact, setFolderDeletionImpact] = useState<FolderDeletionImpact | null>(null);
 
   const dueCount = folder.progress.dueTodayCount;
   const nextDeck = folder.decks.find((deck) => deck.learningStatus !== "COMPLETED") ?? folder.decks[0];
   const continueHref = nextDeck ? `/decks/${nextDeck.id}/study` : `/folders/${folder.id}/review`;
 
   const deleteFolder = async () => {
+    if (!folderDeletionImpact) return;
     setIsDeleting(true);
     try {
-      const response = await fetch(`/api/folders/${folder.id}`, { method: "DELETE" });
+      const response = await fetch(`/api/folders/${folder.id}`, {
+        method: "DELETE",
+        headers: { "x-wordnest-deletion-preview": folderDeletionImpact.fingerprint },
+      });
       if (!response.ok) {
+        if (response.status === 409) {
+          setIsDeleting(false);
+          await openFolderDeletionConfirmation();
+          toast.error("Ảnh hưởng đã thay đổi", { description: "WordNest đã tính lại dữ liệu. Hãy kiểm tra rồi xác nhận lại." });
+          return;
+        }
         toast.error("Không thể xóa bộ sưu tập", { description: "Thử lại sau." });
         setIsDeleting(false);
         return;
@@ -49,7 +88,21 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
     }
   };
 
-  const [deckPendingDelete, setDeckPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const openFolderDeletionConfirmation = async () => {
+    try {
+      const response = await fetch(`/api/folders/${folder.id}?impact=delete`, { cache: "no-store" });
+      const data: unknown = await response.json().catch(() => null);
+      if (!response.ok || !data || typeof data !== "object" || !("impact" in data)) {
+        throw new Error("Không thể tính ảnh hưởng trước khi xóa bộ sưu tập.");
+      }
+      setFolderDeletionImpact(data.impact as FolderDeletionImpact);
+      setIsConfirmingDelete(true);
+    } catch (error) {
+      toast.error("Không thể chuẩn bị xóa bộ sưu tập", { description: error instanceof Error ? error.message : "Thử lại sau." });
+    }
+  };
+
+  const [deckPendingDelete, setDeckPendingDelete] = useState<{ id: string; name: string; impact: DeckDeletionImpact } | null>(null);
   const [isDeletingDeck, setIsDeletingDeck] = useState(false);
 
   useEffect(() => {
@@ -72,9 +125,18 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
     if (!deckPendingDelete) return;
     setIsDeletingDeck(true);
     try {
-      const response = await fetch(`/api/decks/${deckPendingDelete.id}`, { method: "DELETE" });
+      const response = await fetch(`/api/decks/${deckPendingDelete.id}`, {
+        method: "DELETE",
+        headers: { "x-wordnest-deletion-preview": deckPendingDelete.impact.fingerprint },
+      });
       if (!response.ok) {
-        toast.error("Không thể xóa bộ từ", { description: "Thử lại sau." });
+        if (response.status === 409) {
+          setDeckPendingDelete(null);
+          await openDeckDeletionConfirmation({ id: deckPendingDelete.id, name: deckPendingDelete.name });
+          toast.error("Ảnh hưởng đã thay đổi", { description: "WordNest đã tính lại dữ liệu. Hãy kiểm tra rồi xác nhận lại." });
+          return;
+        }
+        toast.error("Không thể xóa bộ từ", { description: await responseError(response, "Thử lại sau.") });
         return;
       }
       toast.success(`Đã xóa bộ từ “${deckPendingDelete.name}”`);
@@ -84,6 +146,19 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
       toast.error("Không thể xóa bộ từ", { description: "Kiểm tra kết nối mạng rồi thử lại." });
     } finally {
       setIsDeletingDeck(false);
+    }
+  };
+
+  const openDeckDeletionConfirmation = async (deck: { id: string; name: string }) => {
+    try {
+      const response = await fetch(`/api/decks/${deck.id}?impact=delete`, { cache: "no-store" });
+      const data: unknown = await response.json().catch(() => null);
+      if (!response.ok || !data || typeof data !== "object" || !("impact" in data)) {
+        throw new Error("Không thể tính ảnh hưởng trước khi xóa bộ từ.");
+      }
+      setDeckPendingDelete({ ...deck, impact: data.impact as DeckDeletionImpact });
+    } catch (error) {
+      toast.error("Không thể chuẩn bị xóa bộ từ", { description: error instanceof Error ? error.message : "Thử lại sau." });
     }
   };
 
@@ -164,7 +239,7 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
 
             <button
               type="button"
-              onClick={() => setIsConfirmingDelete(true)}
+              onClick={() => void openFolderDeletionConfirmation()}
               aria-label={`Xóa bộ sưu tập ${folder.name}`}
               className="wn-icon-button flex h-11 w-11 items-center justify-center rounded-lg border-2 border-[#B91C1C] bg-[#FFF0EC] text-[#B91C1C] shadow-[1.5px_1.5px_0px_#221C16] transition-transform hover:bg-[#FEE2E2] active:translate-y-0.5"
             >
@@ -257,6 +332,12 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
                 >
                   Các bộ từ bên trong sẽ được giữ lại an toàn ở mục Chưa phân loại trong Thư viện.
                 </p>
+                {folderDeletionImpact ? <ul className="mt-3 space-y-1 rounded-lg border border-[#DCD3C5] bg-[#FAF6EE] p-3 text-xs font-semibold text-[#4A4036]">
+                  <li>{folderDeletionImpact.decksBecomingUncategorized} Deck sẽ chuyển sang Chưa phân loại.</li>
+                  <li>{folderDeletionImpact.vocabularyMemberships} liên kết nguồn và {folderDeletionImpact.canonicalFlashcards} hồ sơ từ vựng được giữ.</li>
+                  <li>{folderDeletionImpact.sharedWithOtherCollections} từ cũng xuất hiện ở Collection khác.</li>
+                  <li>0 hồ sơ từ vựng và 0 lịch sử học bị xóa.</li>
+                </ul> : null}
               </div>
             </div>
 
@@ -423,7 +504,7 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
                           type="button"
                           onClick={(e) => {
                             e.currentTarget.closest("details")?.removeAttribute("open");
-                            setDeckPendingDelete({ id: deck.id, name: deck.name });
+                            void openDeckDeletionConfirmation({ id: deck.id, name: deck.name });
                           }}
                           className="wn-button wn-button-quiet wn-button-danger w-full justify-start text-xs font-bold cursor-pointer"
                         >
@@ -476,8 +557,14 @@ export function FolderDetailView({ folder }: FolderDetailViewProps) {
                   id="delete-deck-dialog-desc"
                   className="mt-1.5 text-xs sm:text-sm font-semibold text-[#6B6258] leading-relaxed"
                 >
-                  Toàn bộ thẻ flashcard và tiến trình học trong bộ từ này sẽ bị xóa hoàn toàn. Hành động này không thể hoàn tác.
+                  Thao tác này gỡ liên kết nguồn Deck, không xóa hồ sơ từ vựng hoặc lịch sử học.
                 </p>
+                <ul className="mt-3 space-y-1 rounded-lg border border-[#DCD3C5] bg-[#FAF6EE] p-3 text-xs font-semibold text-[#4A4036]">
+                  <li>{deckPendingDelete.impact.flashcards} liên kết từ vựng sẽ bị gỡ.</li>
+                  <li>{deckPendingDelete.impact.sharedFlashcards} từ vẫn có Deck khác.</li>
+                  <li>{deckPendingDelete.impact.unassignedFlashcards} từ trở thành chưa phân loại.</li>
+                  <li>0 hồ sơ từ vựng và 0 lịch sử học bị xóa.</li>
+                </ul>
               </div>
             </div>
 

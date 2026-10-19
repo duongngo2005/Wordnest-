@@ -57,9 +57,9 @@ test.beforeEach(() => {
 });
 
 test.afterEach(async () => {
-  // Deleting a test deck cascades only its own flashcards/review logs. Do not
-  // touch user-created decks, including the deck intentionally unassigned by
-  // the safe folder-delete scenario below.
+  // The V1.3 database keeps canonical cards when a source Deck is deleted.
+  // These E2E fixture terms are unique, so leaving them in the isolated test
+  // database cannot affect user data or a later production run.
   if (deckIds.length > 0) {
     await db.deck.deleteMany({ where: { id: { in: deckIds } } });
   }

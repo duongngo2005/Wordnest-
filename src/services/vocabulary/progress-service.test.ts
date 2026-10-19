@@ -69,6 +69,113 @@ function analyticsForPracticeAttempts(practiceAttempts: PracticeAttempt[]) {
 }
 
 describe("buildProgressAnalytics", () => {
+  it("reports global typing separately from FSRS reviews without double-counting retries", () => {
+    const analytics = buildProgressAnalytics({
+      scope: { kind: "global", name: "Tất cả bộ từ" },
+      decks: [],
+      reviewLogs: [],
+      practiceEvidence: new Map(),
+      quizAttempts: [],
+      now,
+      globalTypingAttempts: [
+        {
+          sessionId: "typing-a",
+          flashcardId: "orphan-card",
+          correct: false,
+          createdAt: new Date("2026-09-22T10:00:00.000Z"),
+          term: "allocate",
+          meaningVi: "phân bổ",
+          assisted: false,
+        },
+        {
+          sessionId: "typing-b",
+          flashcardId: "orphan-card",
+          correct: true,
+          createdAt: new Date("2026-09-23T10:00:00.000Z"),
+          term: "allocate",
+          meaningVi: "phân bổ",
+          assisted: true,
+        },
+        {
+          sessionId: "typing-b",
+          flashcardId: "deck-card",
+          correct: true,
+          createdAt: new Date("2026-09-23T10:01:00.000Z"),
+          term: "resilient",
+          meaningVi: "kiên cường",
+          assisted: false,
+        },
+      ],
+    });
+
+    expect(analytics.today).toMatchObject({ reviewedCards: 0, reviewEvents: 0 });
+    expect(analytics.reviewRatings.every((rating) => rating.count === 0)).toBe(true);
+    expect(analytics.globalTyping).toMatchObject({
+      total: 3,
+      correct: 2,
+      incorrect: 1,
+      accuracy: 66.7,
+      uniqueCards: 2,
+      sessions: 2,
+      assistedTotal: 1,
+      assistedCorrect: 1,
+      unassistedCorrect: 1,
+    });
+    expect(analytics.globalTyping?.frequentMistakes).toEqual([
+      { flashcardId: "orphan-card", term: "allocate", meaningVi: "phân bổ", count: 1 },
+    ]);
+  });
+
+  it("summarizes daily online time in the study timezone without treating it as review evidence", () => {
+    const analytics = buildProgressAnalytics({
+      scope: { kind: "global", name: "Tất cả bộ từ" },
+      decks: [],
+      reviewLogs: [],
+      practiceEvidence: new Map(),
+      quizAttempts: [],
+      now,
+      timezone: "Asia/Ho_Chi_Minh",
+      onlineActivity: [
+        { date: "2026-09-22", activeSeconds: 1_800 },
+        { date: "2026-09-23", activeSeconds: 900 },
+      ],
+    });
+
+    expect(analytics.onlineTime).toMatchObject({
+      todaySeconds: 900,
+      totalSeconds: 2_700,
+      activeDays: 2,
+    });
+    expect(analytics.onlineTime.days).toHaveLength(14);
+    expect(analytics.onlineTime.days.at(-1)).toMatchObject({ date: "2026-09-23", activeSeconds: 900 });
+    expect(analytics.onlineTime.totalSeconds).toBe(
+      analytics.onlineTime.days.reduce((total, day) => total + day.activeSeconds, 0)
+    );
+    expect(analytics.today).toMatchObject({ reviewedCards: 0, reviewEvents: 0 });
+  });
+
+  it("keeps total online time in seconds even when individual days are below one displayed minute", () => {
+    const analytics = buildProgressAnalytics({
+      scope: { kind: "global", name: "Tất cả bộ từ" },
+      decks: [],
+      reviewLogs: [],
+      practiceEvidence: new Map(),
+      quizAttempts: [],
+      now,
+      timezone: "Asia/Ho_Chi_Minh",
+      onlineActivity: [
+        { date: "2026-09-22", activeSeconds: 59 },
+        { date: "2026-09-23", activeSeconds: 59 },
+      ],
+    });
+
+    expect(analytics.onlineTime.totalSeconds).toBe(118);
+    expect(analytics.onlineTime.activeDays).toBe(2);
+    expect(analytics.onlineTime.totalSeconds).toBe(
+      analytics.onlineTime.days.reduce((total, day) => total + day.activeSeconds, 0)
+    );
+  });
+
   it("reports observed states, activity, first-pass results, and weak evidence without a mastery score", () => {
     const analytics = buildProgressAnalytics({
       scope: { kind: "global", name: "Tất cả bộ từ" },

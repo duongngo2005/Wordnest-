@@ -45,6 +45,21 @@ interface DeckViewProps {
 
 const pageSize = 20;
 
+type DeckDeletionImpact = {
+  fingerprint: string;
+  flashcards: number;
+  sharedFlashcards: number;
+  unassignedFlashcards: number;
+  canonicalFlashcardsDeleted: number;
+  learningHistoriesDeleted: number;
+  reviewLogs: number;
+  practiceAttempts: number;
+  stories: number;
+  lessons: number;
+  quizAttempts: number;
+  quizSessions: number;
+};
+
 export function DeckView({
   initialDeck,
   evidenceMap,
@@ -61,6 +76,7 @@ export function DeckView({
   const [page, setPage] = useState(1);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [deletionImpact, setDeletionImpact] = useState<DeckDeletionImpact | null>(null);
   const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
   const [isReadingHubOpen, setIsReadingHubOpen] = useState(false);
 
@@ -164,9 +180,9 @@ export function DeckView({
       cards: current.cards.filter((card) => card.id !== cardId),
     }));
     try {
-      const response = await fetch(`/api/cards/${cardId}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("Không thể xóa thẻ.");
-      toast.success("Đã xóa thẻ");
+      const response = await fetch(`/api/cards/${cardId}?deckId=${encodeURIComponent(deck.id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Không thể gỡ từ khỏi bộ thẻ.");
+      toast.success("Đã gỡ từ khỏi bộ thẻ; lịch sử học vẫn được giữ");
     } catch (error) {
       setDeck((current) => ({ ...current, cards: previous }));
       throw error;
@@ -174,16 +190,53 @@ export function DeckView({
   };
 
   const deleteDeck = async () => {
+    if (!deletionImpact) return;
     setIsDeleting(true);
     try {
-      const response = await fetch(`/api/decks/${deck.id}`, { method: "DELETE" });
-      if (!response.ok) throw new Error();
+      const response = await fetch(`/api/decks/${deck.id}`, {
+        method: "DELETE",
+        headers: { "x-wordnest-deletion-preview": deletionImpact.fingerprint },
+      });
+      const data: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        if (response.status === 409) {
+          setIsDeleting(false);
+          await openDeckDeletionConfirmation();
+          toast.error("Ảnh hưởng đã thay đổi", {
+            description: "WordNest đã tính lại dữ liệu. Hãy kiểm tra rồi xác nhận lại.",
+          });
+          return;
+        }
+        throw new Error(
+          typeof data === "object" && data !== null && "error" in data && typeof data.error === "string"
+            ? data.error
+            : "Thử lại."
+        );
+      }
       toast.success(`Đã xóa bộ từ “${deck.name}”`);
       router.push("/");
       router.refresh();
-    } catch {
+    } catch (error) {
       setIsDeleting(false);
-      toast.error("Không thể xóa bộ từ", { description: "Thử lại." });
+      toast.error("Không thể xóa bộ từ", {
+        description: error instanceof Error ? error.message : "Thử lại.",
+      });
+    }
+  };
+
+  const openDeckDeletionConfirmation = async () => {
+    try {
+      const response = await fetch(`/api/decks/${deck.id}?impact=delete`, { cache: "no-store" });
+      const data: unknown = await response.json().catch(() => null);
+      if (!response.ok || !data || typeof data !== "object" || !("impact" in data)) {
+        throw new Error("Không thể tính ảnh hưởng trước khi xóa bộ từ.");
+      }
+      setDeletionImpact(data.impact as DeckDeletionImpact);
+      setIsConfirmingDelete(true);
+    } catch (error) {
+      toast.error("Không thể chuẩn bị xóa bộ từ", {
+        description: error instanceof Error ? error.message : "Thử lại sau.",
+      });
     }
   };
 
@@ -222,7 +275,7 @@ export function DeckView({
               className="inline-flex items-center gap-1.5 rounded-lg border-2 border-[#221C16] bg-[#FFFDF9] px-3 py-1.5 text-xs font-black text-[#221C16] shadow-[1.5px_1.5px_0px_#221C16] transition-transform active:translate-y-0.5 cursor-pointer hover:bg-[#FAF6EE]"
             >
               <Plus className="h-3.5 w-3.5 text-[var(--accent)]" strokeWidth={2.5} />
-              <span>Thêm từ</span>
+              <span>{isAddingCards ? "Ẩn form" : "Thêm từ"}</span>
             </button>
 
             <details className="relative wn-menu-details">
@@ -283,7 +336,7 @@ export function DeckView({
                   type="button"
                   onClick={(e) => {
                     e.currentTarget.closest("details")?.removeAttribute("open");
-                    setIsConfirmingDelete(true);
+                    void openDeckDeletionConfirmation();
                   }}
                   className="wn-button wn-button-quiet wn-button-danger justify-start text-xs font-bold cursor-pointer"
                 >
@@ -338,7 +391,7 @@ export function DeckView({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 pt-1 sm:pt-0 shrink-0">
+          {recommendation.primaryAction.actionType !== "OPEN_ADD_CARDS" || !isAddingCards ? <div className="flex flex-wrap items-center gap-2 pt-1 sm:pt-0 shrink-0">
             {recommendation.secondaryAction ? (
               <Link
                 href={recommendation.secondaryAction.href!}
@@ -376,7 +429,7 @@ export function DeckView({
                 <span>{recommendation.primaryAction.label}</span>
               </button>
             )}
-          </div>
+          </div> : null}
         </div>
       </section>
 
@@ -429,7 +482,7 @@ export function DeckView({
                   <Target className="h-5 w-5 text-[#0369A1]" strokeWidth={2.5} />
                 </span>
                 <span className="rounded-full border border-[#221C16] bg-[#FFFDF9] px-2.5 py-0.5 text-xs font-black text-[#0369A1] shadow-[1px_1px_0px_#221C16]">
-                  Trắc nghiệm &amp; Gõ từ
+                  Tự nhớ &amp; viết
                 </span>
               </div>
               <h3 className="mt-3.5 text-base sm:text-lg font-black text-[#221C16] flex items-center gap-1.5">
@@ -437,11 +490,11 @@ export function DeckView({
                 <ArrowRight className="h-4 w-4 text-[#6B6258] group-hover:translate-x-1 transition-transform" />
               </h3>
               <p className="mt-1 text-xs font-semibold text-[#6B6258] leading-relaxed">
-                Kiểm tra nhận diện, ngữ cảnh và khả năng tự nhớ từ.
+                Nhìn nghĩa tiếng Việt, tự nhớ và gõ từ tiếng Anh.
               </p>
             </div>
             <div className="mt-4 pt-2.5 border-t border-dashed border-[#DCD3C5] text-[11px] font-black text-[#0369A1]">
-              Kiểm tra phản xạ &amp; ghi nhớ →
+              Luyện phản xạ Việt → Anh →
             </div>
           </Link>
 
@@ -697,8 +750,15 @@ export function DeckView({
                   id="delete-deck-dialog-desc"
                   className="mt-1.5 text-xs sm:text-sm font-semibold text-[#6B6258] leading-relaxed"
                 >
-                  Toàn bộ thẻ flashcard và tiến trình học trong bộ từ này sẽ bị xóa hoàn toàn. Hành động này không thể hoàn tác.
+                  Thao tác này chỉ xóa nguồn Deck; WordNest giữ toàn bộ hồ sơ từ vựng và lịch sử học.
                 </p>
+                {deletionImpact ? <ul className="mt-3 space-y-1 rounded-lg border border-[#DCD3C5] bg-[#FAF6EE] p-3 text-xs font-semibold text-[#4A4036]">
+                  <li>{deletionImpact.flashcards} liên kết từ vựng sẽ bị gỡ.</li>
+                  <li>{deletionImpact.sharedFlashcards} từ vẫn thuộc Deck khác.</li>
+                  <li>{deletionImpact.unassignedFlashcards} từ sẽ thành chưa phân loại.</li>
+                  <li>0 hồ sơ từ vựng và 0 lịch sử học bị xóa.</li>
+                  <li className="text-[#6B6258]">Giữ lại: {deletionImpact.stories} Story, {deletionImpact.lessons} Lesson, {deletionImpact.quizAttempts} kết quả quiz.</li>
+                </ul> : null}
               </div>
             </div>
 

@@ -1,117 +1,85 @@
+import { CEFR_LEVELS, PART_OF_SPEECH_OPTIONS } from "@/lib/validation/flashcard";
+
+const EXTERNAL_AI_V3_TITLE = "WORDNEST — EXTERNAL AI FLASHCARD ENGINE V3";
+
+/** Largest term manifest the external-AI prompt workflow can submit at once. */
+export const EXTERNAL_AI_V3_PROMPT_TERM_LIMIT = 50;
+
+const JSON_CONTRACT = `{
+  "schemaVersion": 1,
+  "cards": [
+    {
+      "term": "exact input term",
+      "meaningVi": "natural Vietnamese meaning for one sense",
+      "partOfSpeech": "one allowed partOfSpeech value",
+      "ipa": null,
+      "definitionEn": "clear English definition for the same sense",
+      "exampleEn": "natural English example using the term",
+      "exampleVi": "faithful, natural Vietnamese translation of exampleEn",
+      "cefr": null,
+      "imageUrl": null
+    }
+  ]
+}`;
+
+function promptSection(title: string, content: string): string {
+  return `## ${title}\n${content}`;
+}
+
 export function getJsonFlashcardImportPrompt(context: {
   collectionName: string | null | undefined;
   deckName: string;
   terms?: string[];
+  sourceContext?: string;
 }): string {
   const collectionName = context.collectionName?.trim() || "Không thuộc Collection";
   const terms = context.terms?.filter(Boolean) ?? [];
   const vocabularyBlock = terms.length > 0
-    ? terms.map((term) => `- ${term}`).join("\n")
-    : "- (Chưa có từ vựng)";
+    ? terms.map((term, index) => `${index + 1}. ${term}`).join("\n")
+    : "(Chưa có từ vựng)";
+  const sourceContext = context.sourceContext?.trim();
 
-  return `Bạn tạo flashcard tiếng Anh cho WordNest.
-
-Context hiện tại:
-- Collection: ${collectionName}
-- Deck: ${context.deckName}
-
-Tên Collection và Deck chỉ là metadata tham khảo; không được dùng chúng để suy đoán domain, nghĩa hoặc ngữ cảnh sử dụng.
-
-Danh sách từ cần chuyển thành flashcard. Giữ nguyên từng term, không bỏ sót, không thêm term mới:
-${vocabularyBlock}
-
-Chuyển TOÀN BỘ danh sách trên thành đúng một JSON hợp lệ. Chỉ trả JSON thuần: không markdown, không code fence, không giải thích, không có bất kỳ text nào trước hoặc sau JSON.
-
-JSON contract (schemaVersion phải là 1):
-{
-  "schemaVersion": 1,
-  "cards": [
-    {
-      "term": "English word or phrase",
-      "meaningVi": "Vietnamese meaning",
-      "partOfSpeech": "noun | verb | adjective | adverb | preposition | conjunction | phrase | phrasal verb | idiom | other | null",
-      "ipa": "/IPA/ or null",
-      "definitionEn": "simple English definition or null",
-      "exampleEn": "natural English example or null",
-      "exampleVi": "Vietnamese translation of exampleEn or null",
-      "cefr": "A1 | A2 | B1 | B2 | C1 | C2 | null",
-      "imageUrl": "https://... or null"
-    }
-  ]
-}
-
-Required fields: term, meaningVi.
-Optional and nullable fields: partOfSpeech, ipa, definitionEn, exampleEn, exampleVi, cefr, imageUrl.
-
-CORE RULE: 1 flashcard = 1 sense = 1 part of speech.
-- Mỗi card chỉ biểu diễn một nghĩa cụ thể, một part of speech, và một cách dùng nhất quán.
-- term, meaningVi, partOfSpeech, definitionEn, exampleEn, exampleVi và imageUrl (nếu có) phải cùng đúng một sense.
-- Không gộp noun với verb, hoặc hai nghĩa khác nhau, vào cùng một card.
-- Với term đa nghĩa hoặc đa POS: User-provided context có priority cao nhất. Nếu không có context, chọn một nghĩa phổ biến, tự nhiên và hữu ích nhất; không liệt kê nhiều nghĩa để thay thế cho việc chọn sense.
-
-Ví dụ về consistency cho "access":
-Đúng — verb:
-{
-  "term": "access",
-  "meaningVi": "truy cập",
-  "partOfSpeech": "verb",
-  "definitionEn": "to open, use, or reach information or a place",
-  "exampleEn": "You can access the building through the main entrance.",
-  "exampleVi": "Bạn có thể vào tòa nhà qua lối vào chính."
-}
-Đúng — noun:
-{
-  "term": "access",
-  "meaningVi": "quyền truy cập",
-  "partOfSpeech": "noun",
-  "definitionEn": "the right or ability to use or enter something",
-  "exampleEn": "Only members have access to this area.",
-  "exampleVi": "Chỉ thành viên mới có quyền truy cập khu vực này."
-}
-Không được trộn meaningVi "truy cập; quyền truy cập", POS noun, và ví dụ dùng access như verb trong cùng một card.
-
-Quy tắc nội dung:
-- Giữ nguyên term mà tôi gửi: không thay bằng synonym, không tự đổi singular/plural, và giữ nguyên toàn bộ phrase, phrasal verb hoặc idiom.
-- meaningVi ngắn gọn, tự nhiên, đúng sense và POS đang học. Chỉ dùng ";" cho các cách diễn đạt gần như cùng một sense và cùng POS; ưu tiên một nghĩa rõ ràng.
-- partOfSpeech phải khớp chính xác với cách term được dùng trong exampleEn. Hãy tự kiểm tra điều này trước khi output.
-- ipa: chỉ điền khi chắc chắn; nếu phát âm thay đổi theo POS/sense thì theo POS/sense đã chọn; nếu không chắc, null.
-- definitionEn: simple English, ngắn, không quá học thuật, và chỉ định nghĩa sense hiện tại.
-- exampleEn: tự nhiên, ngắn hoặc trung bình, thể hiện rõ sense và dùng đúng POS.
-- exampleVi phải là bản dịch của chính exampleEn, không phải một câu khác; nếu không chắc về cặp ví dụ, đặt cả exampleEn và exampleVi là null.
-- cefr chỉ là A1, A2, B1, B2, C1 hoặc C2. Nếu không chắc, null.
-
-Natural, domain-neutral generation:
-- Nếu user không cung cấp context/domain: KHÔNG mặc định IT, business, TOEIC, academic hoặc workplace. Không kéo các example về cùng một chủ đề.
-- Khi không có context, chọn nghĩa phổ biến, tự nhiên, trung lập; definition đơn giản và example đời thường, dễ hiểu.
-- Ví dụ: với "capacity", có thể chọn sense sức chứa: "The theater has a seating capacity of 800 people." Không tự dùng ví dụ server.
-- Với "provider", có thể dùng service provider nói chung; với "display" hoặc "run", chọn sense phổ biến và trung lập, không mặc định là màn hình máy tính hoặc chạy chương trình.
-- Chỉ khi user cung cấp context/domain rõ ràng thì definition, exampleEn, exampleVi và imageUrl mới bám theo đúng context đó.
-
-Context và polysemy:
-- Tôi có thể gửi "bank | bờ sông" hoặc "bank" rồi kèm "Context: We sat on the bank beside the river." Khi có context, meaningVi, partOfSpeech, definitionEn, exampleEn, exampleVi và imageUrl đều phải theo đúng context đó, không quay về nghĩa phổ biến khác.
-
-Image policy:
-- imageUrl vẫn là optional. "No image is better than a wrong or irrelevant image."
-- Chỉ thêm imageUrl nếu ảnh thực sự giúp nhớ hoặc hiểu đúng sense: thường là đồ vật cụ thể, động vật, cây cối, đồ ăn, xe cộ, dụng cụ, vật thể đặc trưng, hành động/trạng thái dễ nhìn thấy (ví dụ apple, banana, giraffe, microscope, parachute, yawn, shiver, crowded).
-- Các khái niệm trừu tượng như perspective, nevertheless, comprehensive, significantly, initiative, responsibility, strategy hoặc relevant thường không cần ảnh.
-- Chỉ cung cấp imageUrl nếu bạn có web access và đã xác minh URL là HTTPS, là ảnh thật có thể truy cập, đúng chính sense, ưu tiên ảnh chụp rõ chủ thể.
-- Không dùng logo, vocabulary card, dictionary screenshot, infographic, worksheet, icon, vector, silhouette, watermark hoặc ảnh có nhiều chữ.
-- Tuyệt đối không bịa URL. Nếu không thể xác minh, imageUrl = null.
-
-Không được output bất kỳ field nội bộ nào ngoài JSON contract, gồm id, deckId, collectionId, status, learningStatus, reviewCount, nextReviewAt, createdAt, updatedAt, visualScore, imageSource, imageSearchQuery, SRS fields, timestamps hoặc field nội bộ khác.
-
-Self-check từng card trước output:
-1. term có đúng nguyên văn input không?
-2. meaningVi có đúng một sense không?
-3. POS có đúng không?
-4. definitionEn có cùng sense không?
-5. exampleEn có dùng term đúng POS không?
-6. exampleVi có dịch đúng exampleEn không?
-7. example có tự nhiên và có vô tình bị ép vào một domain không?
-8. IPA có chắc chắn không?
-9. CEFR có hợp lệ và đủ chắc chắn không?
-10. ảnh có thật sự cần không?
-11. image URL có được xác minh không?
-
-Sau đó self-check cả batch: JSON parse được, schemaVersion = 1, số card bằng số term đầu vào, không duplicate, không bỏ sót term, không tự thêm term, và không có text ngoài JSON. Tối đa 100 cards.`;
+  return [
+    `# ${EXTERNAL_AI_V3_TITLE}`,
+    "",
+    "Bạn là English lexicographer, English usage editor và English–Vietnamese translator. Tạo flashcard chính xác, tự nhiên và hữu ích lâu dài cho người Việt học tiếng Anh.",
+    "",
+    promptSection("Context", [
+      `- Collection: ${collectionName}`,
+      `- Deck: ${context.deckName}`,
+      "- Collection và Deck chỉ là metadata tổ chức, không bao giờ là bằng chứng cho nghĩa hoặc từ loại. Only explicitly provided learner semantic context may override the default lexical sense.",
+      `- Ngữ cảnh người học (ưu tiên cao nhất): ${sourceContext ? JSON.stringify(sourceContext) : "không có"}.`,
+      "- Nếu không có ngữ cảnh, chọn một nghĩa phổ biến, hiện đại, trung tính và hữu ích. Không mặc định IT, business, TOEIC, academic hoặc workplace.",
+    ].join("\n")),
+    "",
+    promptSection("Requested terms — preserve exactly this spelling and order", vocabularyBlock),
+    "",
+    promptSection("Lexical rules", [
+      "- ONE CARD = ONE INPUT TERM + ONE PRIMARY SENSE + ONE PRIMARY PART OF SPEECH.",
+      "- Return exactly one card for every requested term. Preserve the exact requested term in term; do not add, omit, reorder, stem, singularize, pluralize, or replace it with a synonym.",
+      "- When explicitly provided learner semantic context supplies meaning evidence, follow it. Otherwise select one well-established, useful modern sense that can be demonstrated naturally; do not merge senses or POS values, or invent usage-frequency evidence.",
+      "- meaningVi is a concise, natural Vietnamese recall cue for that sense. Avoid literal dictionary translations, awkward calques, and broader, narrower, or unrelated lists; add a short clarification only when a direct equivalent misleads.",
+      "- definitionEn must be accurate, concise, and focused on the selected sense. Avoid unsupported restrictions, unnecessary technical details, or wording that conflicts with meaningVi or exampleEn.",
+      "- definitionEn, exampleEn and exampleVi must describe that same selected sense. exampleEn must be authentic contemporary English with natural collocations, grammar and prepositions; use the target lexical item in the selected POS, allowing natural inflections when needed. Examples may be original, but never present them as sourced quotations.",
+      "- Prefer one realistic, memorable example over an artificial one. Use concrete context when it clarifies the sense, vary domains naturally, and aim for about 8–20 English words when appropriate.",
+      "- exampleVi must faithfully and naturally translate exampleEn: preserve agent, action, negation, modality, important tense/aspect, cause/effect and the selected sense; do not mechanically copy English structure, omit meaning, or add unsupported information.",
+      "- Use General American IPA consistently; do not mix dialect conventions; use null if uncertain. Use CEFR only when confident; do not fabricate source verification or usage-frequency evidence, and do not derive CEFR from Collection or Deck names.",
+      "- imageUrl must be null. Do not invent image URLs or other metadata.",
+    ].join("\n")),
+    "",
+    promptSection("Strict JSON contract", [
+      "Return one JSON object only: no Markdown, code fence, explanation, comment, or extra fields.",
+      "Every field shown below must be present. term, meaningVi, partOfSpeech, definitionEn, exampleEn and exampleVi are required non-empty strings; ipa, cefr and imageUrl are nullable.",
+      `Allowed partOfSpeech values: ${PART_OF_SPEECH_OPTIONS.join(", ")}.`,
+      `Allowed CEFR values: ${CEFR_LEVELS.join(", ")}.`,
+      "partOfSpeech must be exactly one allowed value, never an enum description or list. schemaVersion must be the number 1.",
+      JSON_CONTRACT,
+    ].join("\n")),
+    "",
+    promptSection("Final internal check", [
+      "Before responding, verify an exact one-to-one manifest match: count, spelling and order, with no missing, extra or duplicate terms; required lexical fields; valid POS/CEFR enums; schemaVersion 1; valid JSON; and no fields outside the contract.",
+      "Check term ↔ partOfSpeech ↔ definitionEn ↔ meaningVi ↔ exampleEn ↔ exampleVi for one sense. If exampleEn is wrong, rewrite it and retranslate; if only exampleVi is awkward, revise only exampleVi.",
+      "Do this check internally. Output only the JSON object.",
+    ].join("\n")),
+  ].join("\n");
 }
